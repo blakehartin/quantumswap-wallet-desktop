@@ -1,6 +1,6 @@
 [![Build/release](https://github.com/quantumswapdex/quantumswap-wallet-desktop/actions/workflows/electron-forge-publish.yml/badge.svg)](https://github.com/quantumswapdex/quantumswap-wallet-desktop/actions/workflows/electron-forge-publish.yml)
 
-# Quantum Coin Desktop Wallet
+# QuantumSwap Desktop Wallet
 QuantumSwap Desktop Wallets for Windows, Mac and Linux (Ubuntu) are built using Electron. 
 
 ## Building
