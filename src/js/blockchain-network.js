@@ -12,6 +12,10 @@ const isValidDomainName = (supposedDomainName) => {
     if(/localhost:[0-9]{1,5}/.test(supposedDomainName) === true){
         return true;
     }
+    // Allow any IPv4 address with optional port for HTTP (e.g. 192.168.1.1:8545 or 127.0.0.1)
+    if(/^(\d{1,3}\.){3}\d{1,3}(:[0-9]{1,5})?$/.test(supposedDomainName) === true){
+        return true;
+    }
 
     return /^(?!-)[A-Za-z0-9-]+([\-\.]{1}[a-z0-9]+)*\.[A-Za-z]{2,6}$/i.test(
         supposedDomainName

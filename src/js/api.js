@@ -2,6 +2,12 @@ const HTTPS = "https://";
 const HTTP = "http://";
 const ADDRESS_LENGTH_CHECK = 64
 
+// Use HTTP for localhost or any IP address; HTTPS for other domains
+const isHttpAllowedDomain = (domain) => {
+    if (domain.startsWith("localhost:")) return true;
+    return /^(\d{1,3}\.){3}\d{1,3}(:[0-9]{1,5})?$/.test(domain);
+};
+
 class AccountDetails {
     constructor(address, nonce, balance) {
         if (address.startsWith("0x") == false) {
@@ -35,7 +41,7 @@ class AccountTokenDetails {
 
 async function getAccountDetails(scanApiDomain, address) {
     let url = HTTPS;
-    if(scanApiDomain.startsWith("localhost:")) {
+    if(isHttpAllowedDomain(scanApiDomain)) {
         url = HTTP;
     }
     url = url + scanApiDomain + "/account/" + address;
@@ -80,7 +86,7 @@ async function getPendingTransactionDetails(scanApiDomain, address, pageIndex) {
 
 async function getTransactionDetails(scanApiDomain, address, pageIndex, isPending) {
     let url = HTTPS;
-    if(scanApiDomain.startsWith("localhost:")) {
+    if(isHttpAllowedDomain(scanApiDomain)) {
         url = HTTP;
     }
 
@@ -168,7 +174,7 @@ async function getTransactionDetails(scanApiDomain, address, pageIndex, isPendin
 
 async function postTransaction(txnApiDomain, txnData) {
     let url = HTTPS;
-    if(txnApiDomain.startsWith("localhost:")) {
+    if(isHttpAllowedDomain(txnApiDomain)) {
         url = HTTP;
     }
     url = url + txnApiDomain + "/transactions";
@@ -207,7 +213,7 @@ async function postTransaction(txnApiDomain, txnData) {
 
 async function listAccountTokens(scanApiDomain, address, pageIndex) {
     let url = HTTPS;
-    if(scanApiDomain.startsWith("localhost:")) {
+    if(isHttpAllowedDomain(scanApiDomain)) {
         url = HTTP;
     }
     url = url + scanApiDomain + "/account/" + address + "/tokens/" + pageIndex;
