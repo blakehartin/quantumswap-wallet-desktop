@@ -1483,6 +1483,48 @@ async function getSwapBalanceForSymbol(value) {
     return "0";
 }
 
+function getSwapContractAddress(value) {
+    return (!value || value === "Q") ? zero_address : value;
+}
+
+function updateSwapContractLabels() {
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var fromAddr = getSwapContractAddress(fromValue);
+    var toAddr = getSwapContractAddress(toValue);
+    var fromShort = fromAddr.length >= 10 ? fromAddr.substring(0, 5) + "..." + fromAddr.slice(-5) : fromAddr;
+    var toShort = toAddr.length >= 10 ? toAddr.substring(0, 5) + "..." + toAddr.slice(-5) : toAddr;
+    var explorerBase = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork ? currentBlockchainNetwork.blockExplorerDomain : "");
+    document.getElementById("aSwapFromContract").textContent = fromShort;
+    document.getElementById("aSwapFromContract").setAttribute("data-contract-address", fromAddr);
+    document.getElementById("aSwapFromContract").href = explorerBase.replace(ADDRESS_TEMPLATE, fromAddr);
+    document.getElementById("aSwapToContract").textContent = toShort;
+    document.getElementById("aSwapToContract").setAttribute("data-contract-address", toAddr);
+    document.getElementById("aSwapToContract").href = explorerBase.replace(ADDRESS_TEMPLATE, toAddr);
+}
+
+async function openSwapFromContractInExplorer() {
+    var addr = document.getElementById("aSwapFromContract").getAttribute("data-contract-address") || getSwapContractAddress(document.getElementById("ddlSwapFromToken").value);
+    var url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork.blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    await OpenUrl(url);
+}
+
+async function openSwapToContractInExplorer() {
+    var addr = document.getElementById("aSwapToContract").getAttribute("data-contract-address") || getSwapContractAddress(document.getElementById("ddlSwapToToken").value);
+    var url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork.blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    await OpenUrl(url);
+}
+
+async function copySwapFromContractAddress() {
+    var addr = getSwapContractAddress(document.getElementById("ddlSwapFromToken").value);
+    await WriteTextToClipboard(addr);
+}
+
+async function copySwapToContractAddress() {
+    var addr = getSwapContractAddress(document.getElementById("ddlSwapToToken").value);
+    await WriteTextToClipboard(addr);
+}
+
 async function updateSwapBalanceLabels() {
     var fromSymbol = document.getElementById("ddlSwapFromToken").value;
     var toSymbol = document.getElementById("ddlSwapToToken").value;
@@ -1490,6 +1532,7 @@ async function updateSwapBalanceLabels() {
     var toBal = await getSwapBalanceForSymbol(toSymbol);
     document.getElementById("spanSwapFromBalance").textContent = fromBal;
     document.getElementById("spanSwapToBalance").textContent = toBal;
+    updateSwapContractLabels();
 }
 
 function setSwapFromQuantityToBalance() {
@@ -1657,8 +1700,8 @@ function openSwapScreen() {
 }
 
 function executeSwap() {
-    var fromValue = document.getElementById("ddlSwapFromToken").value;
-    var toValue = document.getElementById("ddlSwapToToken").value;
+    var fromContractAddress = document.getElementById("ddlSwapFromToken").value;
+    var toContractAddress = document.getElementById("ddlSwapToToken").value;
     var fromQty = document.getElementById("txtSwapFromQuantity").value;
     var toQty = document.getElementById("txtSwapToQuantity").value;
     if (!fromQty || parseFloat(fromQty) <= 0) {

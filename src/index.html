@@ -1387,6 +1387,10 @@
                                 <div style="font-size: 0.85em; color: #372339;">
                                     <span data-lang-key="balance">Balance</span>: <span id="spanSwapFromBalance" role="button" tabindex="0" class="swap-balance-label" onclick="return setSwapFromQuantityToBalance();" style="cursor:pointer;text-decoration:underline;">0</span>
                                 </div>
+                                <div style="font-size: 0.85em; color: #372339; margin-top:4px;">
+                                    <span data-lang-key="contract">Contract</span>: <a href="#" id="aSwapFromContract" onclick="openSwapFromContractInExplorer(); return false;" style="color: inherit; text-decoration: underline;">...</a>
+                                    <span class="copy-container" role="button" style="display:inline-block; width:30px; height:30px; margin-left:6px; vertical-align: middle; cursor:pointer;" onclick="copySwapFromContractAddress();" tabindex="0" id="divCopySwapFromContract" title="Copy"></span>
+                                </div>
                             </div>
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
@@ -1402,6 +1406,10 @@
                             <div class="input_container" style="margin-top:6px;">
                                 <div style="font-size: 0.85em; color: #372339;">
                                     <span data-lang-key="balance">Balance</span>: <span id="spanSwapToBalance" role="button" tabindex="0" class="swap-balance-label" onclick="return setSwapToQuantityToBalance();" style="cursor:pointer;text-decoration:underline;">0</span>
+                                </div>
+                                <div style="font-size: 0.85em; color: #372339; margin-top:4px;">
+                                    <span data-lang-key="contract">Contract</span>: <a href="#" id="aSwapToContract" onclick="openSwapToContractInExplorer(); return false;" style="color: inherit; text-decoration: underline;">...</a>
+                                    <span class="copy-container" role="button" style="display:inline-block; width:30px; height:30px; margin-left:6px; vertical-align: middle; cursor:pointer;" onclick="copySwapToContractAddress();" tabindex="0" id="divCopySwapToContract" title="Copy"></span>
                                 </div>
                             </div>
                             <input class="tab-name"
