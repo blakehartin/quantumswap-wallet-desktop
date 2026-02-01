@@ -155,6 +155,7 @@
       "scan-api-url": "Scan API URL",
       "txn-api-url": "Transaction API URL",
       "block-explorer-url": "Block Explorer URL",
+      "rpc-endpoint": "RPC Endpoint",
       "add-network": "Add Network",
       "add": "Add",
       "enter-network-json": "Enter Blockchain Network JSON",

@@ -30,6 +30,7 @@ const BLOCKCHAIN_NETWORK_ID_TEMPLATE = "[BLOCKCHAIN_NETWORK_ID]";
 const BLOCKCHAIN_SCAN_API_DOMAIN_TEMPLATE = "[BLOCKCHAIN_SCAN_API_URL]";
 const BLOCKCHAIN_TXN_API_DOMAIN_TEMPLATE = "[BLOCKCHAIN_TXN_API_URL]";
 const BLOCKCHAIN_EXPLORER_API_DOMAIN_TEMPLATE = "[BLOCKCHAIN_EXPLORER_API_URL]";
+const BLOCKCHAIN_RPC_ENDPOINT_TEMPLATE = "[BLOCKCHAIN_RPC_ENDPOINT_URL]";
 const TRANSACTION_HASH_TEMPLATE = "[TRANSACTION_HASH]";
 const DROPDOWN_TEXT = "&#x25BC;";
 const DEFAULT_OFFLINE_TXN_SIGNING_SETTING_KEY = "DefaultOfflineTxnSigningSettingKey";
@@ -288,6 +289,7 @@ async function showBlockchainNetworksTable() {
         networkString = networkString.replaceAll(BLOCKCHAIN_SCAN_API_DOMAIN_TEMPLATE, htmlEncode(networkItem.scanApiDomain));
         networkString = networkString.replaceAll(BLOCKCHAIN_TXN_API_DOMAIN_TEMPLATE, htmlEncode(networkItem.txnApiDomain));
         networkString = networkString.replaceAll(BLOCKCHAIN_EXPLORER_API_DOMAIN_TEMPLATE, htmlEncode(networkItem.blockExplorerDomain));
+        networkString = networkString.replaceAll(BLOCKCHAIN_RPC_ENDPOINT_TEMPLATE, htmlEncode(networkItem.rpcEndpoint));
         networkListString = networkListString + networkString;
     }
     document.getElementById("tbodyNetworkRow").innerHTML = networkListString;
