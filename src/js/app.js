@@ -22,6 +22,7 @@ const ERROR_TEMPLATE = "[ERROR]";
 const BLOCK_EXPLORER_DOMAIN_TEMPLATE = "[BLOCK_EXPLORER_DOMAIN]";
 const BLOCK_EXPLORER_ACCOUNT_TEMPLATE = "https://[BLOCK_EXPLORER_DOMAIN]/account/[ADDRESS]"
 const BLOCK_EXPLORER_TRANSACTION_TEMPLATE = "https://[BLOCK_EXPLORER_DOMAIN]/txn/[TRANSACTION_HASH]"
+const zero_address = "0x0000000000000000000000000000000000000000000000000000000000000000"; // 32 bytes hex
 
 const BLOCKCHAIN_NETWORK_INDEX_TEMPLATE = "[BLOCKCHAIN_NETWORK_INDEX]";
 const TAB_INDEX_TEMPLATE = "[TAB_INDEX]";
@@ -1294,13 +1295,18 @@ async function refreshTokenList() {
     }
 
     let tbody = "";
+    let filteredTokenList = [];
 
     for (var i = 0; i < tokenListDetails.tokenList.length; i++) {
         let token = tokenListDetails.tokenList[i];
+        if (htmlEncode(token.name) !== token.name || htmlEncode(token.symbol) !== token.symbol) {
+            continue;
+        }
+        filteredTokenList.push(token);
         let tokenRow = tokenListRowTemplate;
         let tokenName = token.name;
         let tokenSymbol = token.symbol;
-        let tokenShortContractAddress = getShortAddress(token.contractAddress);
+        let tokenShortContractAddress = getShortAddress(token.contractAddress); //contract address is already verified for correctness in api.js listAccountTokens function
 
         if (tokenName.length > maxTokenNameLength) {
             tokenName = tokenName.substring(0, maxTokenNameLength - 1);
@@ -1327,7 +1333,7 @@ async function refreshTokenList() {
 
     document.getElementById('tbodyAccountTokens').innerHTML = tbody;
     document.getElementById('divAccountTokens').style.display = '';
-    currentWalletTokenList = tokenListDetails.tokenList;
+    currentWalletTokenList = filteredTokenList;
 }
 
 async function initRefreshAccountBalanceBackground() {
@@ -1452,14 +1458,25 @@ function getTokenBalance(contactAddress) {
     return null;
 }
 
-async function getSwapBalanceForSymbol(symbol) {
-    if (!symbol) return "0";
-    if (symbol === "Q" && currentAccountDetails != null) {
+function getSwapSymbolFromValue(value) {
+    if (!value || value === "Q") return "Q";
+    if (currentWalletTokenList == null) return "Q";
+    for (let i = 0; i < currentWalletTokenList.length; i++) {
+        if (currentWalletTokenList[i].contractAddress === value) {
+            return currentWalletTokenList[i].symbol || "Q";
+        }
+    }
+    return "Q";
+}
+
+async function getSwapBalanceForSymbol(value) {
+    if (!value) return "0";
+    if (value === "Q" && currentAccountDetails != null) {
         return await weiToEtherFormatted(currentAccountDetails.balance);
     }
     if (currentWalletTokenList == null) return "0";
     for (let i = 0; i < currentWalletTokenList.length; i++) {
-        if (currentWalletTokenList[i].symbol && currentWalletTokenList[i].symbol.toUpperCase() === symbol.toUpperCase()) {
+        if (currentWalletTokenList[i].contractAddress === value) {
             return currentWalletTokenList[i].tokenBalance || "0";
         }
     }
@@ -1517,29 +1534,45 @@ function showSwapScreen() {
     return false;
 }
 
-var swapTokenList = [
-    { symbol: "Q", name: "Quantum" },
-    { symbol: "Y2Q", name: "Y2Q" },
-    { symbol: "hei", name: "Heisen" },
-    { symbol: "DP", name: "DogeP" },
-    { symbol: "USDT", name: "Tether USD" },
-    { symbol: "ETH", name: "Ethereum" },
-    { symbol: "WBTC", name: "Wrapped BTC" }
-];
+function getSwapDropdownDisplayText(tokenName, tokenSymbol, contractAddress) {
+    var namePart = (tokenName || "").substring(0, 25);
+    var symbolPart = (tokenSymbol || "").substring(0, 6);
+    var addr = contractAddress || "";
+    var addrPart = addr.length >= 10 ? addr.substring(0, 5) + "..." + addr.slice(-5) : addr;
+    return namePart + " (" + symbolPart + ") " + addrPart;
+}
+
+function getSwapTokenListFromWallet() {
+    var list = [];
+    list.push({ value: "Q", displayText: getSwapDropdownDisplayText("Quantum", "Q", zero_address) });
+    if (currentWalletTokenList != null && currentWalletTokenList.length > 0) {
+        for (var i = 0; i < currentWalletTokenList.length; i++) {
+            var t = currentWalletTokenList[i];
+            if (!t.symbol || !t.name || !t.contractAddress) continue;
+            if (htmlEncode(t.name) !== t.name || htmlEncode(t.symbol) !== t.symbol) continue;
+            list.push({
+                value: t.contractAddress,
+                displayText: getSwapDropdownDisplayText(t.name, t.symbol, t.contractAddress)
+            });
+        }
+    }
+    return list;
+}
 
 function populateSwapTokenDropdowns() {
+    var swapTokenList = getSwapTokenListFromWallet();
     var ddlFrom = document.getElementById("ddlSwapFromToken");
     var ddlTo = document.getElementById("ddlSwapToToken");
     removeOptions(ddlFrom);
     removeOptions(ddlTo);
     for (var i = 0; i < swapTokenList.length; i++) {
         var optFrom = document.createElement("option");
-        optFrom.text = swapTokenList[i].symbol + " (" + swapTokenList[i].name + ")";
-        optFrom.value = swapTokenList[i].symbol;
+        optFrom.text = swapTokenList[i].displayText;
+        optFrom.value = swapTokenList[i].value;
         ddlFrom.add(optFrom);
         var optTo = document.createElement("option");
-        optTo.text = swapTokenList[i].symbol + " (" + swapTokenList[i].name + ")";
-        optTo.value = swapTokenList[i].symbol;
+        optTo.text = swapTokenList[i].displayText;
+        optTo.value = swapTokenList[i].value;
         ddlTo.add(optTo);
     }
     if (swapTokenList.length > 0) {
@@ -1550,7 +1583,9 @@ function populateSwapTokenDropdowns() {
 
 var swapQuantityUpdating = false;
 
-function getSwapRate(fromSymbol, toSymbol) {
+function getSwapRate(fromValue, toValue) {
+    var fromSymbol = getSwapSymbolFromValue(fromValue);
+    var toSymbol = getSwapSymbolFromValue(toValue);
     if (fromSymbol === toSymbol) return 1;
     var rates = {
         "Q": { "Y2Q": 2, "hei": 1.5, "DP": 0.8, "USDT": 0.1, "ETH": 0.00005, "WBTC": 0.000002 },
@@ -1573,9 +1608,9 @@ function updateToQuantityFromFrom() {
         document.getElementById("txtSwapToQuantity").value = "";
         return;
     }
-    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
-    var toSymbol = document.getElementById("ddlSwapToToken").value;
-    var rate = getSwapRate(fromSymbol, toSymbol);
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var rate = getSwapRate(fromValue, toValue);
     swapQuantityUpdating = true;
     document.getElementById("txtSwapToQuantity").value = (fromQty * rate).toFixed(8).replace(/\.?0+$/, "") || (fromQty * rate);
     swapQuantityUpdating = false;
@@ -1588,9 +1623,9 @@ function updateFromQuantityFromTo() {
         document.getElementById("txtSwapFromQuantity").value = "";
         return;
     }
-    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
-    var toSymbol = document.getElementById("ddlSwapToToken").value;
-    var rate = getSwapRate(fromSymbol, toSymbol);
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var rate = getSwapRate(fromValue, toValue);
     if (rate === 0) return;
     swapQuantityUpdating = true;
     document.getElementById("txtSwapFromQuantity").value = (toQty / rate).toFixed(8).replace(/\.?0+$/, "") || (toQty / rate);
@@ -1622,8 +1657,8 @@ function openSwapScreen() {
 }
 
 function executeSwap() {
-    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
-    var toSymbol = document.getElementById("ddlSwapToToken").value;
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
     var fromQty = document.getElementById("txtSwapFromQuantity").value;
     var toQty = document.getElementById("txtSwapToQuantity").value;
     if (!fromQty || parseFloat(fromQty) <= 0) {
