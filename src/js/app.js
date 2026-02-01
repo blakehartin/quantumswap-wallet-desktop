@@ -1465,6 +1465,11 @@ async function showTransactionsScreen() {
     return false;
 }
 
+function showSwapScreen() {
+    showWarnAlert(langJson.langValues.swap + " - Coming soon");
+    return false;
+}
+
 async function refreshTransactionList() {
     return await refreshTransactionListWithContext(false);
 }
