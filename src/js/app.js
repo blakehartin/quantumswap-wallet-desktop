@@ -714,6 +714,7 @@ async function showWalletScreen() {
     document.getElementById('wallets-content').style.display = 'none';
     document.getElementById('SendScreen').style.display = 'none';
     document.getElementById('OfflineSignScreen').style.display = 'none';
+    document.getElementById('SwapScreen').style.display = 'none';
     document.getElementById('ReceiveScreen').style.display = 'none';
     document.getElementById('TransactionsScreen').style.display = 'none';
     document.getElementById('backupWalletScreen').style.display = 'none';
@@ -725,9 +726,10 @@ async function showWalletScreen() {
     document.getElementById('divNetworkDropdown').style.display = 'block';
 
     document.getElementById('SendScreen').style.display = 'none';
+    document.getElementById('SwapScreen').style.display = 'none';
     document.getElementById('ReceiveScreen').style.display = 'none';
     document.getElementById('TransactionsScreen').style.display = 'none';
-    
+
     document.getElementById('gradient').style.height = '224px';
     document.getElementById('walletAddress').textContent = currentWalletAddress;
 
@@ -1450,6 +1452,49 @@ function getTokenBalance(contactAddress) {
     return null;
 }
 
+async function getSwapBalanceForSymbol(symbol) {
+    if (!symbol) return "0";
+    if (symbol === "Q" && currentAccountDetails != null) {
+        return await weiToEtherFormatted(currentAccountDetails.balance);
+    }
+    if (currentWalletTokenList == null) return "0";
+    for (let i = 0; i < currentWalletTokenList.length; i++) {
+        if (currentWalletTokenList[i].symbol && currentWalletTokenList[i].symbol.toUpperCase() === symbol.toUpperCase()) {
+            return currentWalletTokenList[i].tokenBalance || "0";
+        }
+    }
+    return "0";
+}
+
+async function updateSwapBalanceLabels() {
+    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
+    var toSymbol = document.getElementById("ddlSwapToToken").value;
+    var fromBal = await getSwapBalanceForSymbol(fromSymbol);
+    var toBal = await getSwapBalanceForSymbol(toSymbol);
+    document.getElementById("spanSwapFromBalance").textContent = fromBal;
+    document.getElementById("spanSwapToBalance").textContent = toBal;
+}
+
+function setSwapFromQuantityToBalance() {
+    (async function () {
+        var fromSymbol = document.getElementById("ddlSwapFromToken").value;
+        var bal = await getSwapBalanceForSymbol(fromSymbol);
+        document.getElementById("txtSwapFromQuantity").value = bal;
+        updateToQuantityFromFrom();
+    })();
+    return false;
+}
+
+function setSwapToQuantityToBalance() {
+    (async function () {
+        var toSymbol = document.getElementById("ddlSwapToToken").value;
+        var bal = await getSwapBalanceForSymbol(toSymbol);
+        document.getElementById("txtSwapToQuantity").value = bal;
+        updateFromQuantityFromTo();
+    })();
+    return false;
+}
+
 async function showTransactionsScreen() {
     document.getElementById('HomeScreen').style.display = 'none';
     document.getElementById('TransactionsScreen').style.display = 'block';
@@ -1467,8 +1512,129 @@ async function showTransactionsScreen() {
 
 function showSwapScreen() {
     showYesNoConfirm(langJson.langValues.swapEarlyPhaseWarn, function () {
-        showWarnAlert(langJson.langValues.swap + " - Coming soon");
+        openSwapScreen();
     });
+    return false;
+}
+
+var swapTokenList = [
+    { symbol: "Q", name: "Quantum" },
+    { symbol: "Y2Q", name: "Y2Q" },
+    { symbol: "hei", name: "Heisen" },
+    { symbol: "DP", name: "DogeP" },
+    { symbol: "USDT", name: "Tether USD" },
+    { symbol: "ETH", name: "Ethereum" },
+    { symbol: "WBTC", name: "Wrapped BTC" }
+];
+
+function populateSwapTokenDropdowns() {
+    var ddlFrom = document.getElementById("ddlSwapFromToken");
+    var ddlTo = document.getElementById("ddlSwapToToken");
+    removeOptions(ddlFrom);
+    removeOptions(ddlTo);
+    for (var i = 0; i < swapTokenList.length; i++) {
+        var optFrom = document.createElement("option");
+        optFrom.text = swapTokenList[i].symbol + " (" + swapTokenList[i].name + ")";
+        optFrom.value = swapTokenList[i].symbol;
+        ddlFrom.add(optFrom);
+        var optTo = document.createElement("option");
+        optTo.text = swapTokenList[i].symbol + " (" + swapTokenList[i].name + ")";
+        optTo.value = swapTokenList[i].symbol;
+        ddlTo.add(optTo);
+    }
+    if (swapTokenList.length > 0) {
+        ddlFrom.selectedIndex = 0;
+        ddlTo.selectedIndex = 1 < swapTokenList.length ? 1 : 0;
+    }
+}
+
+var swapQuantityUpdating = false;
+
+function getSwapRate(fromSymbol, toSymbol) {
+    if (fromSymbol === toSymbol) return 1;
+    var rates = {
+        "Q": { "Y2Q": 2, "hei": 1.5, "DP": 0.8, "USDT": 0.1, "ETH": 0.00005, "WBTC": 0.000002 },
+        "Y2Q": { "Q": 0.5, "hei": 0.75, "DP": 0.4, "USDT": 0.05, "ETH": 0.000025, "WBTC": 0.000001 },
+        "hei": { "Q": 0.67, "Y2Q": 1.33, "DP": 0.53, "USDT": 0.067, "ETH": 0.000033, "WBTC": 0.0000013 },
+        "DP": { "Q": 1.25, "Y2Q": 2.5, "hei": 1.9, "USDT": 0.125, "ETH": 0.0000625, "WBTC": 0.0000025 },
+        "USDT": { "Q": 10, "Y2Q": 20, "hei": 15, "DP": 8, "ETH": 0.0005, "WBTC": 0.00002 },
+        "ETH": { "Q": 20000, "Y2Q": 40000, "hei": 30000, "DP": 16000, "USDT": 2000, "WBTC": 40 },
+        "WBTC": { "Q": 500000, "Y2Q": 1000000, "hei": 750000, "DP": 400000, "USDT": 50000, "ETH": 0.025 }
+    };
+    var fromRates = rates[fromSymbol];
+    if (fromRates && fromRates[toSymbol] != null) return fromRates[toSymbol];
+    return 1;
+}
+
+function updateToQuantityFromFrom() {
+    if (swapQuantityUpdating) return;
+    var fromQty = parseFloat(document.getElementById("txtSwapFromQuantity").value);
+    if (isNaN(fromQty) || fromQty < 0) {
+        document.getElementById("txtSwapToQuantity").value = "";
+        return;
+    }
+    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
+    var toSymbol = document.getElementById("ddlSwapToToken").value;
+    var rate = getSwapRate(fromSymbol, toSymbol);
+    swapQuantityUpdating = true;
+    document.getElementById("txtSwapToQuantity").value = (fromQty * rate).toFixed(8).replace(/\.?0+$/, "") || (fromQty * rate);
+    swapQuantityUpdating = false;
+}
+
+function updateFromQuantityFromTo() {
+    if (swapQuantityUpdating) return;
+    var toQty = parseFloat(document.getElementById("txtSwapToQuantity").value);
+    if (isNaN(toQty) || toQty < 0) {
+        document.getElementById("txtSwapFromQuantity").value = "";
+        return;
+    }
+    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
+    var toSymbol = document.getElementById("ddlSwapToToken").value;
+    var rate = getSwapRate(fromSymbol, toSymbol);
+    if (rate === 0) return;
+    swapQuantityUpdating = true;
+    document.getElementById("txtSwapFromQuantity").value = (toQty / rate).toFixed(8).replace(/\.?0+$/, "") || (toQty / rate);
+    swapQuantityUpdating = false;
+}
+
+function updateSwapScreenInfo() {
+    updateSwapBalanceLabels();
+    updateToQuantityFromFrom();
+    return false;
+}
+
+function openSwapScreen() {
+    document.getElementById('divNetworkDropdown').style.display = 'none';
+    document.getElementById('HomeScreen').style.display = 'none';
+    document.getElementById('SendScreen').style.display = 'none';
+    document.getElementById('OfflineSignScreen').style.display = 'none';
+    document.getElementById('SwapScreen').style.display = 'block';
+    document.getElementById('ReceiveScreen').style.display = 'none';
+    document.getElementById('TransactionsScreen').style.display = 'none';
+    document.getElementById('gradient').style.height = '116px';
+
+    populateSwapTokenDropdowns();
+    document.getElementById("txtSwapFromQuantity").value = "";
+    document.getElementById("txtSwapToQuantity").value = "";
+    document.getElementById("txtSwapFromQuantity").focus();
+    updateSwapBalanceLabels();
+    return false;
+}
+
+function executeSwap() {
+    var fromSymbol = document.getElementById("ddlSwapFromToken").value;
+    var toSymbol = document.getElementById("ddlSwapToToken").value;
+    var fromQty = document.getElementById("txtSwapFromQuantity").value;
+    var toQty = document.getElementById("txtSwapToQuantity").value;
+    if (!fromQty || parseFloat(fromQty) <= 0) {
+        showWarnAlert((langJson.langValues["swap-from-quantity"] || "From quantity") + " " + (langJson.errors && langJson.errors.invalidValue ? langJson.errors.invalidValue : "is required"));
+        return false;
+    }
+    if (!toQty || parseFloat(toQty) <= 0) {
+        showWarnAlert((langJson.langValues["swap-to-quantity"] || "To quantity") + " " + (langJson.errors && langJson.errors.invalidValue ? langJson.errors.invalidValue : "is required"));
+        return false;
+    }
+    showWarnAlert(langJson.langValues.swap + " - Coming soon");
     return false;
 }
 
