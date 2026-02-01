@@ -1466,7 +1466,9 @@ async function showTransactionsScreen() {
 }
 
 function showSwapScreen() {
-    showWarnAlert(langJson.langValues.swap + " - Coming soon");
+    showYesNoConfirm(langJson.langValues.swapEarlyPhaseWarn, function () {
+        showWarnAlert(langJson.langValues.swap + " - Coming soon");
+    });
     return false;
 }
 

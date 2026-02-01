@@ -13,6 +13,35 @@ var spanCancel = document.getElementsByClassName("cancel")[0];
 
 var onConfirmFunc = null;
 
+// Yes/No confirmation
+var modalYesNoDialog = document.getElementById("modalYesNoDialog");
+var pDetailsYesNo = document.getElementById("pDetailsYesNo");
+var btnYesNoYes = document.getElementById("btnYesNoYes");
+var btnYesNoNo = document.getElementById("btnYesNoNo");
+var onYesNoConfirmFunc = null;
+
+function showYesNoConfirm(txt, onConfirm) {
+    pDetailsYesNo.innerText = htmlEncode(txt);
+    onYesNoConfirmFunc = onConfirm;
+    modalYesNoDialog.style.display = "block";
+    modalYesNoDialog.showModal();
+}
+
+btnYesNoYes.onclick = function () {
+    modalYesNoDialog.style.display = "none";
+    modalYesNoDialog.close();
+    if (onYesNoConfirmFunc != null) {
+        onYesNoConfirmFunc();
+        onYesNoConfirmFunc = null;
+    }
+};
+
+btnYesNoNo.onclick = function () {
+    modalYesNoDialog.style.display = "none";
+    modalYesNoDialog.close();
+    onYesNoConfirmFunc = null;
+};
+
 //Network
 var modalNetwork = document.getElementById("modalNetworkDialog");
 var spanNetwork = document.getElementsByClassName("oknetwork")[0];
@@ -177,7 +206,7 @@ btnCancelOfflineTxnSigning.onclick = function () {
 
 
 window.onclick = function (event) {
-    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalOfflineSignature) {
+    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalOfflineSignature) {
         if (modalOkDialog.style.display !== "none") {
             modalNetwork.style.display = "none";
             modalNetwork.close();
@@ -186,6 +215,12 @@ window.onclick = function (event) {
         if (modalConfirm.style.display !== "none") {
             modalConfirm.style.display = "none";
             modalConfirm.close();
+        }
+
+        if (modalYesNoDialog.style.display !== "none") {
+            modalYesNoDialog.style.display = "none";
+            modalYesNoDialog.close();
+            onYesNoConfirmFunc = null;
         }
 
         if (modalNetwork.style.display !== "none") {
