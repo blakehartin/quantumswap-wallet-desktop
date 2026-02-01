@@ -85,6 +85,7 @@
       "swapEarlyPhaseWarn": "This is a feature still in early phases of testing. Do you want to continue?",
       "swap-from-token": "From token",
       "swap-to-token": "To token",
+      "select-token": "Select token",
       "quantity-to-swap": "Quantity to swap",
       "swap-from-quantity": "From quantity",
       "swap-to-quantity": "To quantity",

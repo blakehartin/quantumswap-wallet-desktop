@@ -1490,17 +1490,23 @@ function getSwapContractAddress(value) {
 function updateSwapContractLabels() {
     var fromValue = document.getElementById("ddlSwapFromToken").value;
     var toValue = document.getElementById("ddlSwapToToken").value;
-    var fromAddr = getSwapContractAddress(fromValue);
-    var toAddr = getSwapContractAddress(toValue);
-    var fromShort = fromAddr.length >= 10 ? fromAddr.substring(0, 5) + "..." + fromAddr.slice(-5) : fromAddr;
-    var toShort = toAddr.length >= 10 ? toAddr.substring(0, 5) + "..." + toAddr.slice(-5) : toAddr;
-    var explorerBase = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork ? currentBlockchainNetwork.blockExplorerDomain : "");
-    document.getElementById("aSwapFromContract").textContent = fromShort;
-    document.getElementById("aSwapFromContract").setAttribute("data-contract-address", fromAddr);
-    document.getElementById("aSwapFromContract").href = explorerBase.replace(ADDRESS_TEMPLATE, fromAddr);
-    document.getElementById("aSwapToContract").textContent = toShort;
-    document.getElementById("aSwapToContract").setAttribute("data-contract-address", toAddr);
-    document.getElementById("aSwapToContract").href = explorerBase.replace(ADDRESS_TEMPLATE, toAddr);
+    var showFromContract = fromValue && fromValue !== "Q";
+    var showToContract = toValue && toValue !== "Q";
+    document.getElementById("divSwapFromContractRow").style.display = showFromContract ? "flex" : "none";
+    document.getElementById("divSwapToContractRow").style.display = showToContract ? "flex" : "none";
+    var explorerBase = currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork.blockExplorerDomain) : "";
+    if (showFromContract) {
+        var fromAddr = fromValue;
+        document.getElementById("aSwapFromContract").textContent = fromAddr;
+        document.getElementById("aSwapFromContract").setAttribute("data-contract-address", fromAddr);
+        document.getElementById("aSwapFromContract").href = explorerBase.replace(ADDRESS_TEMPLATE, fromAddr);
+    }
+    if (showToContract) {
+        var toAddr = toValue;
+        document.getElementById("aSwapToContract").textContent = toAddr;
+        document.getElementById("aSwapToContract").setAttribute("data-contract-address", toAddr);
+        document.getElementById("aSwapToContract").href = explorerBase.replace(ADDRESS_TEMPLATE, toAddr);
+    }
 }
 
 async function openSwapFromContractInExplorer() {
@@ -1580,14 +1586,17 @@ function showSwapScreen() {
 function getSwapDropdownDisplayText(tokenName, tokenSymbol, contractAddress) {
     var namePart = (tokenName || "").substring(0, 25);
     var symbolPart = (tokenSymbol || "").substring(0, 6);
-    var addr = contractAddress || "";
+    if (!contractAddress || contractAddress === zero_address) {
+        return namePart + " (" + symbolPart + ")";
+    }
+    var addr = contractAddress;
     var addrPart = addr.length >= 10 ? addr.substring(0, 5) + "..." + addr.slice(-5) : addr;
     return namePart + " (" + symbolPart + ") " + addrPart;
 }
 
 function getSwapTokenListFromWallet() {
     var list = [];
-    list.push({ value: "Q", displayText: getSwapDropdownDisplayText("Quantum", "Q", zero_address) });
+    list.push({ value: "Q", displayText: QuantumCoin + " (Q)" });
     if (currentWalletTokenList != null && currentWalletTokenList.length > 0) {
         for (var i = 0; i < currentWalletTokenList.length; i++) {
             var t = currentWalletTokenList[i];
@@ -1608,6 +1617,15 @@ function populateSwapTokenDropdowns() {
     var ddlTo = document.getElementById("ddlSwapToToken");
     removeOptions(ddlFrom);
     removeOptions(ddlTo);
+    var selectTokenText = (langJson && langJson.langValues && langJson.langValues["select-token"]) ? langJson.langValues["select-token"] : "Select token";
+    var optFromPlaceholder = document.createElement("option");
+    optFromPlaceholder.value = "";
+    optFromPlaceholder.text = selectTokenText;
+    ddlFrom.add(optFromPlaceholder);
+    var optToPlaceholder = document.createElement("option");
+    optToPlaceholder.value = "";
+    optToPlaceholder.text = selectTokenText;
+    ddlTo.add(optToPlaceholder);
     for (var i = 0; i < swapTokenList.length; i++) {
         var optFrom = document.createElement("option");
         optFrom.text = swapTokenList[i].displayText;
@@ -1618,10 +1636,8 @@ function populateSwapTokenDropdowns() {
         optTo.value = swapTokenList[i].value;
         ddlTo.add(optTo);
     }
-    if (swapTokenList.length > 0) {
-        ddlFrom.selectedIndex = 0;
-        ddlTo.selectedIndex = 1 < swapTokenList.length ? 1 : 0;
-    }
+    ddlFrom.selectedIndex = 0;
+    ddlTo.selectedIndex = 0;
 }
 
 var swapQuantityUpdating = false;

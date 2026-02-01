@@ -337,6 +337,21 @@ button, input[type="submit"], input[type="reset"] {
         background-size: 30px 30px;
     }
 
+.copy-container-small {
+    width: 15px;
+    height: 15px;
+    background-size: 15px 15px;
+}
+
+.copy-container-small:hover,
+.copy-container-small:focus {
+    background-size: 15px 15px;
+}
+
+.copy-container-small:active {
+    background-size: 15px 15px;
+}
+
 .refresh-container {
     width: 30px;
     height: 30px;
