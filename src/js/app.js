@@ -1861,7 +1861,7 @@ function openSwapScreen() {
 }
 
 var SWAP_GAS_FEE_RATE = 1000 / 21000;
-var SWAP_GAS_HIGH_THRESHOLD = 250000;
+var SWAP_GAS_HIGH_THRESHOLD = 210000;
 
 function setSwapConfirmPanelLoading(show) {
     var loadingEl = document.getElementById("divSwapConfirmLoading");
@@ -1880,13 +1880,12 @@ function setSwapConfirmPanelLoading(show) {
 }
 
 async function setSwapApprovalQuantityToMax() {
-    var fromBalanceStr = (document.getElementById("spanSwapFromBalance").textContent || "").trim();
-    document.getElementById("txtSwapApprovalQuantity").value = normalizeAmountForNumberInput(fromBalanceStr);
+    document.getElementById("txtSwapApprovalQuantity").value = "999999999999999999";
     onSwapApprovalQuantityInput();
     return false;
 }
 
-function onSwapApprovalQuantityInput() {
+async function onSwapApprovalQuantityInput() {
     if (!swapNeedsApproval || !currentBlockchainNetwork) {
         updateSwapGasFeeLabel();
         return;
@@ -1923,7 +1922,7 @@ function updateSwapGasFeeLabel() {
     if (isNaN(gasLimit) || gasLimit < 0) gasLimit = 0;
     var fee = (gasLimit / 21000) * 1000;
     feeEl.textContent = fee.toFixed(4);
-    warnEl.style.display = gasLimit > SWAP_GAS_HIGH_THRESHOLD ? "block" : "none";
+    warnEl.style.display = gasLimit >= SWAP_GAS_HIGH_THRESHOLD ? "block" : "none";
     if (warnEl.style.display === "block" && langJson && langJson.langValues && langJson.langValues["swap-gas-high-warning"]) {
         warnEl.textContent = langJson.langValues["swap-gas-high-warning"];
     } else if (warnEl.style.display === "block") {
@@ -2029,10 +2028,11 @@ async function onSwapNextClick() {
             swapNeedsApproval = true;
             slippageRow.style.display = "none";
             approvalRow.style.display = "block";
-            var fromBalanceStr = (document.getElementById("spanSwapFromBalance").textContent || "").trim();
-            document.getElementById("txtSwapApprovalQuantity").value = normalizeAmountForNumberInput(fromBalanceStr || fromQty);
+            var fromQtyNum = parseFloat(normalizeAmountForNumberInput(fromQty)) || 0;
+            var defaultApprovalQty = Math.ceil(fromQtyNum);
+            document.getElementById("txtSwapApprovalQuantity").value = defaultApprovalQty.toString();
             btnConfirmNext.textContent = (langJson && langJson.langValues && langJson.langValues["approve"]) ? langJson.langValues["approve"] : "Approve";
-            var approvalAmount = (document.getElementById("txtSwapApprovalQuantity").value || "").trim() || fromBalanceStr || fromQty;
+            var approvalAmount = (document.getElementById("txtSwapApprovalQuantity").value || "").trim();
             var approveGasPayload = {
                 rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
                 chainId: parseInt(currentBlockchainNetwork.networkId, 10),

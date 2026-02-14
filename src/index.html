@@ -1443,20 +1443,20 @@
                         <div id="divSwapApprovalQuantityRow" class="input_container" style="margin-top: 8px; display: none;">
                             <div class="heading medium" data-lang-key="approval-quantity">Approval Quantity</div>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <input class="tab-name" type="number" id="txtSwapApprovalQuantity" min="0" step="any" style="text-align: left; width: 50%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="336" oninput="onSwapApprovalQuantityInput();">
-                                <a href="#" data-lang-key="max" onclick="return setSwapApprovalQuantityToMax();" style="color: #0066cc; cursor: pointer;">Max</a>
+                                <input class="tab-name" type="number" id="txtSwapApprovalQuantity" min="0" step="any" style="text-align: left; width: 50%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="334" oninput="onSwapApprovalQuantityInput();">
+                                <a href="#" data-lang-key="max" onclick="return setSwapApprovalQuantityToMax();" style="color: #0066cc; cursor: pointer;" tabindex="335" >Max</a>
                             </div>
                         </div>
-                        <div class="input_container" style="margin-top: 8px;">
-                            <div class="heading medium" data-lang-key="gas-limit">Gas limit</div>
-                            <input class="tab-name" type="number" id="txtSwapGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="334" oninput="updateSwapGasFeeLabel();">
+                        <div class="input_container" style="margin-top: 10px;">
+                            <div class="heading medium" data-lang-key="gas-limit" style="margin-top: 10px;">Gas limit (gas-units)</div>
+                            <input class="tab-name" type="number" id="txtSwapGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="336" oninput="updateSwapGasFeeLabel();">
                         </div>
-                        <div class="input_container" style="margin-top: 8px;">
-                            <span class="heading medium" data-lang-key="gas-fee">Gas fee</span> <span id="spanSwapGasFee">0</span>
+                        <div class="input_container" style="margin-top: 10px;">
+                            <span class="heading medium" data-lang-key="gas-fee" style="margin-top: 10px;">Estimate gas fee (coins)</span> <span id="spanSwapGasFee">0</span>
                         </div>
                         <div id="divSwapGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
                         <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
-                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="335" id="btnSwapConfirmNext">
+                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="337" id="btnSwapConfirmNext">
                                 Next
                             </div>
                         </div>
