@@ -86,6 +86,7 @@
       "swap-from-token": "From token",
       "swap-to-token": "To token",
       "select-token": "Select token",
+      "swap-no-pair": "No pair has been created for these two tokens",
       "quantity-to-swap": "Quantity to swap",
       "swap-from-quantity": "From quantity",
       "swap-to-quantity": "To quantity",

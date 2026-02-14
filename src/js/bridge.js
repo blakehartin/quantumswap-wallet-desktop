@@ -135,3 +135,15 @@ async function compareEther(val1, val2) {
     let ret = await FormatApi.send('FormatApiCompareEther', compareRequest);
     return ret;
 }
+
+async function getSwapQuoteAmountsOut(payload) {
+    return await SwapQuoteApi.send('SwapQuoteGetAmountsOut', payload);
+}
+
+async function getSwapQuoteAmountsIn(payload) {
+    return await SwapQuoteApi.send('SwapQuoteGetAmountsIn', payload);
+}
+
+async function getSwapCheckPairExists(payload) {
+    return await SwapQuoteApi.send('SwapQuoteCheckPairExists', payload);
+}

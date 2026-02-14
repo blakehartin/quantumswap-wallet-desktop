@@ -1641,6 +1641,21 @@ function populateSwapTokenDropdowns() {
 }
 
 var swapQuantityUpdating = false;
+var swapQuoteFromDebounceId = null;
+var swapQuoteToDebounceId = null;
+var SWAP_QUOTE_DEBOUNCE_MS = 400;
+
+function getSwapTokenDecimals(value) {
+    if (!value || value === "Q") return 18;
+    if (currentWalletTokenList != null) {
+        for (var i = 0; i < currentWalletTokenList.length; i++) {
+            if (currentWalletTokenList[i].contractAddress === value && currentWalletTokenList[i].decimals != null) {
+                return currentWalletTokenList[i].decimals;
+            }
+        }
+    }
+    return 18;
+}
 
 function getSwapRate(fromValue, toValue) {
     var fromSymbol = getSwapSymbolFromValue(fromValue);
@@ -1660,39 +1675,153 @@ function getSwapRate(fromValue, toValue) {
     return 1;
 }
 
-function updateToQuantityFromFrom() {
+function showSwapQuoteLoading(show) {
+    var el = document.getElementById("divSwapQuoteLoading");
+    if (el) el.style.display = show ? "block" : "none";
+}
+
+async function updateToQuantityFromFrom() {
     if (swapQuantityUpdating) return;
-    var fromQty = parseFloat(document.getElementById("txtSwapFromQuantity").value);
-    if (isNaN(fromQty) || fromQty < 0) {
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var fromQtyStr = (document.getElementById("txtSwapFromQuantity").value || "").trim();
+    var fromQty = parseFloat(fromQtyStr);
+
+    if (!fromQtyStr || isNaN(fromQty) || fromQty < 0) {
         document.getElementById("txtSwapToQuantity").value = "";
         return;
     }
-    var fromValue = document.getElementById("ddlSwapFromToken").value;
-    var toValue = document.getElementById("ddlSwapToToken").value;
-    var rate = getSwapRate(fromValue, toValue);
+    if (!fromValue || !toValue || fromValue === toValue) {
+        document.getElementById("txtSwapToQuantity").value = "";
+        return;
+    }
+    if (!currentBlockchainNetwork) return;
+
     swapQuantityUpdating = true;
-    document.getElementById("txtSwapToQuantity").value = (fromQty * rate).toFixed(8).replace(/\.?0+$/, "") || (fromQty * rate);
-    swapQuantityUpdating = false;
+    showSwapQuoteLoading(true);
+    try {
+        var payload = {
+            rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(currentBlockchainNetwork.networkId, 10) || 123123,
+            amountIn: fromQtyStr,
+            fromTokenValue: fromValue,
+            toTokenValue: toValue,
+            fromDecimals: getSwapTokenDecimals(fromValue),
+            toDecimals: getSwapTokenDecimals(toValue)
+        };
+        var result = await getSwapQuoteAmountsOut(payload);
+        if (result && result.success && result.amountOut != null) {
+            var outStr = String(result.amountOut).replace(/\.?0+$/, "") || result.amountOut;
+            document.getElementById("txtSwapToQuantity").value = outStr;
+        } else {
+            document.getElementById("txtSwapToQuantity").value = "";
+            if (result && !result.success && result.error) {
+                showWarnAlert(result.error);
+            }
+        }
+    } catch (e) {
+        document.getElementById("txtSwapToQuantity").value = "";
+        showWarnAlert((e && e.message) ? e.message : String(e));
+    } finally {
+        showSwapQuoteLoading(false);
+        swapQuantityUpdating = false;
+    }
 }
 
-function updateFromQuantityFromTo() {
+function debouncedUpdateToQuantityFromFrom() {
+    if (swapQuoteFromDebounceId != null) clearTimeout(swapQuoteFromDebounceId);
+    swapQuoteFromDebounceId = setTimeout(function () {
+        swapQuoteFromDebounceId = null;
+        updateToQuantityFromFrom();
+    }, SWAP_QUOTE_DEBOUNCE_MS);
+}
+
+async function updateFromQuantityFromTo() {
     if (swapQuantityUpdating) return;
-    var toQty = parseFloat(document.getElementById("txtSwapToQuantity").value);
-    if (isNaN(toQty) || toQty < 0) {
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var toQtyStr = (document.getElementById("txtSwapToQuantity").value || "").trim();
+    var toQty = parseFloat(toQtyStr);
+
+    if (!toQtyStr || isNaN(toQty) || toQty < 0) {
         document.getElementById("txtSwapFromQuantity").value = "";
         return;
     }
-    var fromValue = document.getElementById("ddlSwapFromToken").value;
-    var toValue = document.getElementById("ddlSwapToToken").value;
-    var rate = getSwapRate(fromValue, toValue);
-    if (rate === 0) return;
+    if (!fromValue || !toValue || fromValue === toValue) {
+        document.getElementById("txtSwapFromQuantity").value = "";
+        return;
+    }
+    if (!currentBlockchainNetwork) return;
+
     swapQuantityUpdating = true;
-    document.getElementById("txtSwapFromQuantity").value = (toQty / rate).toFixed(8).replace(/\.?0+$/, "") || (toQty / rate);
-    swapQuantityUpdating = false;
+    showSwapQuoteLoading(true);
+    try {
+        var payload = {
+            rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(currentBlockchainNetwork.networkId, 10),
+            amountOut: toQtyStr,
+            fromTokenValue: fromValue,
+            toTokenValue: toValue,
+            fromDecimals: getSwapTokenDecimals(fromValue),
+            toDecimals: getSwapTokenDecimals(toValue)
+        };
+        var result = await getSwapQuoteAmountsIn(payload);
+        if (result && result.success && result.amountIn != null) {
+            var inStr = String(result.amountIn).replace(/\.?0+$/, "") || result.amountIn;
+            document.getElementById("txtSwapFromQuantity").value = inStr;
+        } else {
+            document.getElementById("txtSwapFromQuantity").value = "";
+            if (result && !result.success && result.error) {
+                showWarnAlert(result.error);
+            }
+        }
+    } catch (e) {
+        document.getElementById("txtSwapFromQuantity").value = "";
+        showWarnAlert((e && e.message) ? e.message : String(e));
+    } finally {
+        showSwapQuoteLoading(false);
+        swapQuantityUpdating = false;
+    }
+}
+
+function debouncedUpdateFromQuantityFromTo() {
+    if (swapQuoteToDebounceId != null) clearTimeout(swapQuoteToDebounceId);
+    swapQuoteToDebounceId = setTimeout(function () {
+        swapQuoteToDebounceId = null;
+        updateFromQuantityFromTo();
+    }, SWAP_QUOTE_DEBOUNCE_MS);
+}
+
+function checkSwapPairExistsAndNotify() {
+    (async function () {
+        var fromValue = document.getElementById("ddlSwapFromToken").value;
+        var toValue = document.getElementById("ddlSwapToToken").value;
+        if (!fromValue || !toValue || fromValue === toValue) return;
+        if (!currentBlockchainNetwork) return;
+        try {
+            var payload = {
+                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
+                fromTokenValue: fromValue,
+                toTokenValue: toValue
+            };
+            var result = await getSwapCheckPairExists(payload);
+            if (result && result.exists === false) {
+                if (result.error) {
+                    showWarnAlert(result.error);
+                } else {
+                    showWarnAlert(langJson.langValues.swap-no-pair);
+                }
+            }
+        } catch (e) {
+            showWarnAlert((e && e.message) ? e.message : String(e));
+        }
+    })();
 }
 
 function updateSwapScreenInfo() {
     updateSwapBalanceLabels();
+    checkSwapPairExistsAndNotify();
     updateToQuantityFromFrom();
     return false;
 }

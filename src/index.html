@@ -1395,7 +1395,7 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
                                    type="number" autocomplete="off" id="txtSwapFromQuantity" name="swap_from_quantity" data-placeholder-key="quantity"
-                                   placeholder="Quantity" tabindex="325" min="0" step="any" oninput="updateToQuantityFromFrom();">
+                                   placeholder="Quantity" tabindex="325" min="0" step="any" oninput="debouncedUpdateToQuantityFromFrom();">
                             <div class="divider"></div>
                         </div>
                         <div class="input_container">
@@ -1415,10 +1415,13 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
                                    type="number" autocomplete="off" id="txtSwapToQuantity" name="swap_to_quantity" data-placeholder-key="quantity"
-                                   placeholder="Quantity" tabindex="330" min="0" step="any" oninput="updateFromQuantityFromTo();">
+                                   placeholder="Quantity" tabindex="330" min="0" step="any" oninput="debouncedUpdateFromQuantityFromTo();">
                             <div class="divider"></div>
                         </div>
-                        <div style="display: flex; justify-content: flex-end;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+                            <div id="divSwapQuoteLoading" style="display: none;">
+                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
+                            </div>
                             <div class="large_button_container heading large" onclick="return executeSwap();" data-lang-key="swap" role="button" tabindex="331" id="btnExecuteSwap">
                                 Swap
                             </div>
