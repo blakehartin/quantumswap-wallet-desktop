@@ -147,3 +147,15 @@ async function getSwapQuoteAmountsIn(payload) {
 async function getSwapCheckPairExists(payload) {
     return await SwapQuoteApi.send('SwapQuoteCheckPairExists', payload);
 }
+
+async function getSwapEstimateGas(payload) {
+    return await SwapQuoteApi.send('SwapQuoteEstimateGas', payload);
+}
+
+async function getSwapCheckAllowance(payload) {
+    return await SwapQuoteApi.send('SwapQuoteCheckAllowance', payload);
+}
+
+async function getSwapEstimateApproveGas(payload) {
+    return await SwapQuoteApi.send('SwapQuoteEstimateApproveGas', payload);
+}

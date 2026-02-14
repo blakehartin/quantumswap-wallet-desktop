@@ -1374,7 +1374,7 @@
 
             <div class="center-content home-content" id="SwapScreen" style="margin-top:110px;">
                 <div class="center-content-rounded-container">
-                    <div class="back-container" role="button" onclick="showWalletScreen();" tabindex="320" id="divBackSwapScreen"></div>
+                    <div class="back-container" role="button" onclick="onSwapScreenBackClick();" tabindex="320" id="divBackSwapScreen"></div>
                     <div id="divSwapScreenInner" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto;max-height:590px;">
                         <div class="heading bold" data-lang-key="swap">Swap</div>
                         <div class="divider"></div>
@@ -1418,12 +1418,46 @@
                                    placeholder="Quantity" tabindex="330" min="0" step="any" oninput="debouncedUpdateFromQuantityFromTo();">
                             <div class="divider"></div>
                         </div>
-                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;margin-top:10px;">
                             <div id="divSwapQuoteLoading" style="display: none;">
                                 <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
                             </div>
-                            <div class="large_button_container heading large" onclick="return executeSwap();" data-lang-key="swap" role="button" tabindex="331" id="btnExecuteSwap">
-                                Swap
+                            <div class="large_button_container heading large" onclick="return onSwapNextClick();" data-lang-key="next" role="button" tabindex="331" id="btnSwapNext">
+                                Next
+                            </div>
+                        </div>
+                    </div>
+                    <div id="divSwapConfirmPanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
+                        <div class="heading bold" data-lang-key="swap">Swap</div>
+                        <div class="divider"></div>
+                        <div id="divSwapConfirmLoading" style="display: none; margin-top: 8px; margin-bottom: 8px;">
+                            <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
+                        </div>
+                        <div id="divSwapSlippageRow" class="input_container" style="margin-top: 8px; display: none;">
+                            <div class="heading medium" data-lang-key="slippage">Slippage</div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input class="tab-name" type="number" id="txtSwapSlippage" min="0" max="100" step="0.1" value="1" style="text-align: left; width: 60px; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="333">
+                                <span>%</span>
+                            </div>
+                        </div>
+                        <div id="divSwapApprovalQuantityRow" class="input_container" style="margin-top: 8px; display: none;">
+                            <div class="heading medium" data-lang-key="approval-quantity">Approval Quantity</div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input class="tab-name" type="number" id="txtSwapApprovalQuantity" min="0" step="any" style="text-align: left; width: 50%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="336" oninput="onSwapApprovalQuantityInput();">
+                                <a href="#" data-lang-key="max" onclick="return setSwapApprovalQuantityToMax();" style="color: #0066cc; cursor: pointer;">Max</a>
+                            </div>
+                        </div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="gas-limit">Gas limit</div>
+                            <input class="tab-name" type="number" id="txtSwapGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="334" oninput="updateSwapGasFeeLabel();">
+                        </div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <span class="heading medium" data-lang-key="gas-fee">Gas fee</span> <span id="spanSwapGasFee">0</span>
+                        </div>
+                        <div id="divSwapGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="335" id="btnSwapConfirmNext">
+                                Next
                             </div>
                         </div>
                     </div>
