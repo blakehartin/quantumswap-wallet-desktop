@@ -329,7 +329,6 @@ ipcMain.handle('SwapQuoteGetAmountsOut', async (event, data) => {
 
 ipcMain.handle('SwapQuoteCheckPairExists', async (event, data) => {
     try {
-        console.log("rpcEndpoint", data.rpcEndpoint);
         const { Initialize, Config } = require("quantumcoin/config");
         const { JsonRpcProvider, getAddress, ZeroAddress } = require("quantumcoin");
         const { QuantumSwapV2Factory } = require("quantumswap");
@@ -341,9 +340,6 @@ ipcMain.handle('SwapQuoteCheckPairExists', async (event, data) => {
 
         await Initialize(new Config(chainId, rpcUrl));
         const provider = new JsonRpcProvider(rpcUrl, chainId);
-        console.log("rpcUrl", rpcUrl);
-        console.log("SWAP_FACTORY_CONTRACT_ADDRESS", SWAP_FACTORY_CONTRACT_ADDRESS);
-        console.log("chainId", chainId);
         const factory = QuantumSwapV2Factory.connect(SWAP_FACTORY_CONTRACT_ADDRESS, provider);
 
         const tokenA = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;

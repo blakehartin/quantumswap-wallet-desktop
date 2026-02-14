@@ -1792,37 +1792,42 @@ function debouncedUpdateFromQuantityFromTo() {
     }, SWAP_QUOTE_DEBOUNCE_MS);
 }
 
-function checkSwapPairExistsAndNotify() {
-    (async function () {
-        var fromValue = document.getElementById("ddlSwapFromToken").value;
-        var toValue = document.getElementById("ddlSwapToToken").value;
-        if (!fromValue || !toValue || fromValue === toValue) return;
-        if (!currentBlockchainNetwork) return;
-        try {
-            var payload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                toTokenValue: toValue
-            };
-            var result = await getSwapCheckPairExists(payload);
-            if (result && result.exists === false) {
-                if (result.error) {
-                    showWarnAlert(result.error);
-                } else {
-                    showWarnAlert(langJson.langValues.swap-no-pair);
-                }
-            }
-        } catch (e) {
-            showWarnAlert((e && e.message) ? e.message : String(e));
-        }
-    })();
-}
-
-function updateSwapScreenInfo() {
+async function updateSwapScreenInfo() {
+    // Runs when either "from" or "to" token dropdown is changed. Check pair and show same error if pair doesn't exist.
+    document.getElementById("txtSwapFromQuantity").value = "";
+    document.getElementById("txtSwapToQuantity").value = "";
     updateSwapBalanceLabels();
-    checkSwapPairExistsAndNotify();
-    updateToQuantityFromFrom();
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    if (!fromValue || !toValue || fromValue === toValue) {
+        return false;
+    }
+    if (!currentBlockchainNetwork) return false;
+    var pairExists = false;
+    try {
+        var payload = {
+            rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(currentBlockchainNetwork.networkId, 10) || 123123,
+            fromTokenValue: fromValue,
+            toTokenValue: toValue
+        };
+        var result = await getSwapCheckPairExists(payload);
+        pairExists = result && result.exists === true;
+        if (!pairExists) {
+            if (result && result.error) {
+                showWarnAlert(result.error);
+            } else {
+                showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]) || "No pair has been created for these two tokens");
+            }
+            document.getElementById("txtSwapToQuantity").value = "";
+        }
+    } catch (e) {
+        showWarnAlert((e && e.message) ? e.message : String(e));
+        document.getElementById("txtSwapToQuantity").value = "";
+    }
+    if (pairExists) {
+        updateToQuantityFromFrom();
+    }
     return false;
 }
 
