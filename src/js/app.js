@@ -2643,8 +2643,20 @@ function showAllowanceConfirmDialog(message, mode) {
     document.getElementById("pSwapApprovalConfirmMessage").textContent = message;
     document.getElementById("txtSwapApprovalIAgree").value = "";
     document.getElementById("txtSwapApprovalPassword").value = "";
-    document.getElementById("modalSwapApprovalConfirm").style.display = "block";
-    document.getElementById("modalSwapApprovalConfirm").showModal();
+    var dialog = document.getElementById("modalSwapApprovalConfirm");
+    var content = dialog ? dialog.querySelector(".modal-content") : null;
+    var inner = content ? content.querySelector("div:first-child") : null;
+    if (content) {
+        if (mode === "swapExecute") {
+            content.style.width = "calc(80% + 50px)";
+            if (inner) inner.style.minHeight = "190px"; // 160 + 30
+        } else {
+            content.style.width = "";
+            if (inner) inner.style.minHeight = "";
+        }
+    }
+    dialog.style.display = "block";
+    dialog.showModal();
     setTimeout(function () {
         var el = document.getElementById("txtSwapApprovalIAgree");
         if (el) el.focus();
