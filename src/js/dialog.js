@@ -205,8 +205,11 @@ btnCancelOfflineTxnSigning.onclick = function () {
 }
 
 
+var modalSwapApprovalConfirm = document.getElementById("modalSwapApprovalConfirm");
+var modalSwapApprovalSubmit = document.getElementById("modalSwapApprovalSubmit");
+
 window.onclick = function (event) {
-    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalOfflineSignature) {
+    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalConfirm || event.target == modalSwapApprovalSubmit) {
         if (modalOkDialog.style.display !== "none") {
             modalNetwork.style.display = "none";
             modalNetwork.close();
@@ -231,6 +234,15 @@ window.onclick = function (event) {
         if (modaOfflineTxnSigning.style.display !== "none") {
             modaOfflineTxnSigning.style.display = "none";
             modaOfflineTxnSigning.close();
+        }
+
+        if (modalSwapApprovalConfirm && modalSwapApprovalConfirm.style.display !== "none") {
+            modalSwapApprovalConfirm.style.display = "none";
+            modalSwapApprovalConfirm.close();
+        }
+        if (modalSwapApprovalSubmit && modalSwapApprovalSubmit.style.display !== "none") {
+            modalSwapApprovalSubmit.style.display = "none";
+            modalSwapApprovalSubmit.close();
         }
     }
 }

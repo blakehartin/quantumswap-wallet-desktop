@@ -173,6 +173,41 @@
         </div>
     </dialog>
 
+    <dialog id="modalSwapApprovalConfirm" class="modal" tabindex="-1" role="dialog">
+        <div class="modal-content">
+            <div style="margin-bottom:20px;min-height:160px;">
+                <p id="pSwapApprovalConfirmMessage" style="font-weight:bold;overflow:auto;" class="scrollbar" tabindex="1"></p>
+                <div style="margin-top:12px;">
+                    <label data-lang-key="type-the-words">Type the words</label> <span style="color:blue">i agree</span>
+                    <input type="text" style="width:63px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;" id="txtSwapApprovalIAgree" tabindex="2" />
+                </div>
+                <div style="margin-top:12px;display:flex;align-items:center;gap:6px;">
+                    <label data-lang-key="enter-wallet-password">Password</label>
+                    <input type="password" style="width:100%;max-width:200px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;" id="txtSwapApprovalPassword" tabindex="3" autocomplete="off" />
+                    <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;flex-shrink:0;" onclick="togglePasswordBox(this, 'txtSwapApprovalPassword');" data-alt-key="show-password" role="button" tabindex="4" title="Show/Hide password" />
+                </div>
+                <div style="margin-top:35px;display:flex;gap:15px;float:right;">
+                    <button class="proceed" data-lang-key="submit" role="button" tabindex="5" id="btnSwapApprovalConfirmSubmit" onclick="return onSwapApprovalConfirmSubmitClick();">Submit</button>
+                    <button class="cancel" data-lang-key="cancel" role="button" tabindex="6" id="btnSwapApprovalConfirmCancel" onclick="return onSwapApprovalConfirmCancelClick();">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="modalSwapApprovalSubmit" class="modal" tabindex="-1" role="dialog">
+        <div class="modal-content">
+            <div style="margin-bottom:20px;">
+                <div style="float:left;margin-right:12px;"><img src="assets/icons/loading.gif" style="width:50px;height:50px;" alt="Loading" /></div>
+                <p id="pSwapApprovalSubmitStatus" style="margin-bottom:8px;" tabindex="1">Please wait, checking</p>
+                <p id="pSwapApprovalSubmitCloseHint" style="font-size:0.9em;color:#555;margin-top:12px;" data-lang-key="swap-approval-may-close"></p>
+                <div id="divSwapApprovalSubmitError" style="display:none;margin-top:12px;color:#c00;"></div>
+                <div style="margin-top:20px;">
+                    <button class="proceed" data-lang-key="close" role="button" tabindex="2" id="btnSwapApprovalSubmitClose" onclick="return onSwapApprovalSubmitCloseClick();">Close</button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
     <div style="margin: -10px;">
         <div class="dropdown" onclick="return showNetworkDialog();" id="divNetworkDropdown" role="button" tabindex="1000" style="display:none;">
             <div style="width:fit-content;margin-top:4px;float:left;"><span class="networkbox" id="spnNetwork">MAINNET&#x25BC;</span></div>
@@ -1379,13 +1414,17 @@
                         <div class="heading bold" data-lang-key="swap">Swap</div>
                         <div class="divider"></div>
                         <div class="input_container">
-                            <div class="heading medium" data-lang-key="swap-from-token">From token</div>
+                            <div class="heading medium" data-lang-key="swap-from-token" style="margin-top: 10px;">From token</div>
                             <div class="selectwrapper">
                                 <select id="ddlSwapFromToken" class="selectbox" tabindex="321" onchange="updateSwapScreenInfo();"></select>
                             </div>
                             <div class="input_container" style="margin-top:6px;">
                                 <div style="font-size: 0.85em; color: #372339;">
                                     <span data-lang-key="balance">Balance</span>: <span id="spanSwapFromBalance" role="button" tabindex="322" class="swap-balance-label" onclick="return setSwapFromQuantityToBalance();" style="cursor:pointer;text-decoration:underline;">0</span>
+                                </div>
+                                <div id="divSwapFromAllowanceRow" style="display: none; font-size: 0.85em; color: #372339; margin-top:4px;">
+                                    <span data-lang-key="allowance">Allowance</span>: <span id="spanSwapFromAllowance">0</span>
+                                    <a href="#" id="aSwapRemoveAllowance" data-lang-key="remove-allowance" onclick="return onRemoveSwapAllowanceClick();" style="margin-left:8px;color:#0066cc;cursor:pointer;text-decoration:underline;">Remove allowance</a>
                                 </div>
                                 <div id="divSwapFromContractRow" style="font-size: 0.85em; color: #372339; margin-top:4px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;">
                                     <a href="#" id="aSwapFromContract" tabindex="323" onclick="openSwapFromContractInExplorer(); return false;" style="color: inherit; text-decoration: underline; word-break: break-all;">...</a>
@@ -1399,7 +1438,7 @@
                             <div class="divider"></div>
                         </div>
                         <div class="input_container">
-                            <div class="heading medium" data-lang-key="swap-to-token">To token</div>
+                            <div class="heading medium" data-lang-key="swap-to-token" style="margin-top: 10px;">To token</div>
                             <div class="selectwrapper">
                                 <select id="ddlSwapToToken" class="selectbox" tabindex="326" onchange="updateSwapScreenInfo();"></select>
                             </div>
@@ -1455,9 +1494,72 @@
                             <span class="heading medium" data-lang-key="gas-fee" style="margin-top: 10px;">Estimate gas fee (coins)</span> <span id="spanSwapGasFee">0</span>
                         </div>
                         <div id="divSwapGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
-                        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                        <div id="divSwapConfirmApprovalTxError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                            <div id="divSwapConfirmApprovalTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
+                                <span id="spanSwapConfirmApprovalStatus" style="font-size: 0.9em;"></span>
+                            </div>
                             <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="337" id="btnSwapConfirmNext">
                                 Next
+                            </div>
+                        </div>
+                    </div>
+                    <div id="divSwapRemoveAllowancePanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
+                        <div class="heading bold" data-lang-key="remove-allowance-title">Remove allowance</div>
+                        <div class="divider"></div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="contract">Contract</div>
+                            <a href="#" id="aRemoveAllowanceContract" style="font-size: 0.9em; color: #0066cc; word-break: break-all; text-decoration: underline;" onclick="openRemoveAllowanceContractInExplorer(); return false;">...</a>
+                        </div>
+                        <div class="input_container" style="margin-top: 10px;">
+                            <div class="heading medium" data-lang-key="gas-limit">Gas limit (gas-units)</div>
+                            <input class="tab-name" type="number" id="txtRemoveAllowanceGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="updateRemoveAllowanceGasFeeLabel();">
+                        </div>
+                        <div class="input_container" style="margin-top: 10px;">
+                            <span class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</span> <span id="spanRemoveAllowanceGasFee">0</span>
+                        </div>
+                        <div id="divRemoveAllowanceGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
+                        <div id="divRemoveAllowanceError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                            <div id="divRemoveAllowanceTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
+                                <span id="spanRemoveAllowanceStatus" style="font-size: 0.9em;"></span>
+                            </div>
+                            <div class="large_button_container heading large" onclick="return onRemoveAllowanceRemoveClick();" role="button" tabindex="340" id="btnRemoveAllowanceRemove">
+                                <span data-lang-key="remove">Remove</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="divSwapAddAllowancePanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
+                        <div class="heading bold" data-lang-key="add-allowance-title">Add allowance</div>
+                        <div class="divider"></div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="contract">Contract</div>
+                            <a href="#" id="aAddAllowanceContract" style="font-size: 0.9em; color: #0066cc; word-break: break-all; text-decoration: underline;" onclick="openAddAllowanceContractInExplorer(); return false;">...</a>
+                        </div>
+                        <div id="divAddAllowanceQuantityRow" class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="approval-quantity">Approval Quantity</div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input class="tab-name" type="number" id="txtAddAllowanceQuantity" min="0" step="any" style="text-align: left; width: 50%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="onAddAllowanceQuantityInput();">
+                                <a href="#" data-lang-key="max" onclick="return setAddAllowanceQuantityToMax();" style="color: #0066cc; cursor: pointer;">Max</a>
+                            </div>
+                        </div>
+                        <div class="input_container" style="margin-top: 10px;">
+                            <div class="heading medium" data-lang-key="gas-limit">Gas limit (gas-units)</div>
+                            <input class="tab-name" type="number" id="txtAddAllowanceGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="updateAddAllowanceGasFeeLabel();">
+                        </div>
+                        <div class="input_container" style="margin-top: 10px;">
+                            <span class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</span> <span id="spanAddAllowanceGasFee">0</span>
+                        </div>
+                        <div id="divAddAllowanceError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                            <div id="divAddAllowanceTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
+                                <span id="spanAddAllowanceStatus" style="font-size: 0.9em;"></span>
+                            </div>
+                            <div class="large_button_container heading large" onclick="return onAddAllowanceAddClick();" role="button" tabindex="341" id="btnAddAllowanceAdd" style="margin-left: auto;">
+                                <span data-lang-key="add">Add</span>
                             </div>
                         </div>
                     </div>

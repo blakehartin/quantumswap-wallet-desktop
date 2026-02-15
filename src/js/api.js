@@ -172,6 +172,28 @@ async function getTransactionDetails(scanApiDomain, address, pageIndex, isPendin
     return transactionListDetails;
 }
 
+async function getTransactionStatusByHash(scanApiDomain, address, txHash) {
+    if (!txHash || !address) return { status: 'unknown' };
+    try {
+        const pending = await getTransactionDetails(scanApiDomain, address, 0, true);
+        if (pending && pending.transactionList) {
+            for (let i = 0; i < pending.transactionList.length; i++) {
+                if (pending.transactionList[i].hash === txHash) return { status: 'pending' };
+            }
+        }
+        const completed = await getTransactionDetails(scanApiDomain, address, 0, false);
+        if (completed && completed.transactionList) {
+            for (let i = 0; i < completed.transactionList.length; i++) {
+                const t = completed.transactionList[i];
+                if (t.hash === txHash) return { status: t.status ? 'succeeded' : 'failed' };
+            }
+        }
+    } catch (e) {
+        return { status: 'unknown', error: (e && e.message) ? e.message : String(e) };
+    }
+    return { status: 'unknown' };
+}
+
 async function postTransaction(txnApiDomain, txnData) {
     let url = HTTPS;
     if(isHttpAllowedDomain(txnApiDomain)) {

@@ -159,3 +159,7 @@ async function getSwapCheckAllowance(payload) {
 async function getSwapEstimateApproveGas(payload) {
     return await SwapQuoteApi.send('SwapQuoteEstimateApproveGas', payload);
 }
+
+async function getSwapApproveContractData(payload) {
+    return await SwapQuoteApi.send('SwapQuoteGetApproveContractData', payload);
+}
