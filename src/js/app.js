@@ -1693,6 +1693,22 @@ function populateSwapTokenDropdowns() {
     }
     ddlFrom.selectedIndex = 0;
     ddlTo.selectedIndex = 0;
+    updateSwapTokenSymbolCache();
+}
+
+function updateSwapTokenSymbolCache() {
+    swapTokenSymbolCache = { "Q": "Q" };
+    if (currentWalletTokenList != null) {
+        for (var i = 0; i < currentWalletTokenList.length; i++) {
+            var t = currentWalletTokenList[i];
+            if (t.contractAddress && t.symbol) swapTokenSymbolCache[t.contractAddress] = t.symbol;
+        }
+    }
+}
+
+function getSwapCachedSymbol(value) {
+    if (!value || value === "Q") return "Q";
+    return swapTokenSymbolCache[value] != null ? swapTokenSymbolCache[value] : getSwapSymbolFromValue(value);
 }
 
 var swapQuantityUpdating = false;
@@ -2041,6 +2057,10 @@ async function onSwapNextClick() {
             return false;
         }
         if (allowanceResult.sufficient) {
+            swapSuccessFromToken = fromValue;
+            swapSuccessToToken = toValue;
+            swapSuccessFromBefore = await getSwapBalanceForSymbol(fromValue);
+            swapSuccessToBefore = await getSwapBalanceForSymbol(toValue);
             document.getElementById("divSwapConfirmPanel").style.display = "block";
             document.getElementById("divSwapRemoveAllowancePanel").style.display = "none";
             document.getElementById("divSwapAddAllowancePanel").style.display = "none";
@@ -2130,7 +2150,7 @@ function showSwapMainPanel() {
 }
 
 function onSwapScreenBackClick() {
-    if (document.getElementById("divSwapRemoveAllowancePanel").style.display !== "none" || document.getElementById("divSwapAddAllowancePanel").style.display !== "none") {
+    if (document.getElementById("divSwapRemoveAllowancePanel").style.display !== "none" || document.getElementById("divSwapAddAllowancePanel").style.display !== "none" || document.getElementById("divSwapSuccessPanel").style.display !== "none") {
         goToFirstSwapScreen();
         return false;
     }
@@ -2144,7 +2164,8 @@ function onSwapScreenBackClick() {
 
 var swapApprovalPollingId = null;
 var swapApprovalStatusRotateId = null;
-var SWAP_APPROVAL_STATUS_MESSAGES = ["swap-approval-status-wait", "swap-approval-status-pending", "swap-approval-status-minute"];
+var swapApprovalStatusStartTime = 0;
+var SWAP_APPROVAL_STATUS_MESSAGES = ["swap-approval-status-close-panel", "swap-approval-status-wait", "swap-approval-status-pending", "swap-approval-status-minute"];
 
 function hexToBytes(hexStr) {
     var s = (hexStr || "").replace(/^0x/i, "");
@@ -2185,6 +2206,7 @@ function showSwapApprovalSubmitDialog() {
     document.getElementById("modalSwapApprovalSubmit").style.display = "block";
     document.getElementById("modalSwapApprovalSubmit").showModal();
     if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
+    swapApprovalStatusStartTime = Date.now();
     swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
 }
 
@@ -2210,6 +2232,7 @@ function setSwapConfirmPanelWaitingForApprovalTx(waiting) {
     if (btnNext) { btnNext.disabled = disabled; btnNext.style.pointerEvents = disabled ? "none" : ""; btnNext.style.opacity = disabled ? "0.6" : ""; }
     if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
     if (waiting) {
+        swapApprovalStatusStartTime = Date.now();
         updateSwapApprovalSubmitStatusText();
         if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
         swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
@@ -2400,6 +2423,7 @@ async function submitSwapTransaction(quantumWallet) {
             if (errPanel) { errPanel.textContent = htmlEncode(langJson.errors.unexpectedError || "Unexpected error"); errPanel.style.display = "block"; }
             return;
         }
+        swapSuccessGasLimit = gas;
         var result = await postTransaction(currentBlockchainNetwork.txnApiDomain, txData);
         if (result !== true) {
             setSwapConfirmPanelWaitingForApprovalTx(false);
@@ -2411,6 +2435,7 @@ async function submitSwapTransaction(quantumWallet) {
         swapConfirmTxMode = "swap";
         swapApprovalPollingId = setInterval(pollSwapApprovalTransactionStatus, 9000);
         if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
+        swapApprovalStatusStartTime = Date.now();
         swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
     } catch (err) {
         setSwapConfirmPanelWaitingForApprovalTx(false);
@@ -2510,17 +2535,76 @@ var swapApprovalLastTxHash = null;
 var allowanceConfirmMode = null;
 var allowancePanelMode = null;
 var swapConfirmTxMode = null;
+var swapSuccessFromToken = null;
+var swapSuccessToToken = null;
+var swapSuccessFromBefore = null;
+var swapSuccessToBefore = null;
+var swapSuccessGasLimit = null;
+var swapTokenSymbolCache = {};
 
 function goToFirstSwapScreen() {
     document.getElementById("divSwapConfirmPanel").style.display = "none";
     document.getElementById("divSwapRemoveAllowancePanel").style.display = "none";
     document.getElementById("divSwapAddAllowancePanel").style.display = "none";
+    document.getElementById("divSwapSuccessPanel").style.display = "none";
     document.getElementById("divSwapScreenInner").style.display = "block";
     updateSwapFromAllowanceDisplay();
 }
 
+function setSwapSuccessSymbolAndLink(container, symbol, explorerUrl, shortAddr) {
+    if (!container) return;
+    container.textContent = "";
+    if (!explorerUrl || !shortAddr) {
+        container.textContent = symbol || "Q";
+        return;
+    }
+    container.appendChild(document.createTextNode(symbol + " ("));
+    var a = document.createElement("a");
+    a.href = "#";
+    a.textContent = shortAddr;
+    a.style.color = "#0066cc";
+    a.style.textDecoration = "underline";
+    a.onclick = function () { OpenUrl(explorerUrl); return false; };
+    container.appendChild(a);
+    container.appendChild(document.createTextNode(")"));
+}
+
+function showSwapSuccessPanel(fromToken, toToken, fromBefore, toBefore, fromAfter, toAfter, gasFeeCoins) {
+    document.getElementById("divSwapScreenInner").style.display = "none";
+    document.getElementById("divSwapConfirmPanel").style.display = "none";
+    document.getElementById("divSwapRemoveAllowancePanel").style.display = "none";
+    document.getElementById("divSwapAddAllowancePanel").style.display = "none";
+    document.getElementById("divSwapSuccessPanel").style.display = "block";
+
+    var explorerBase = currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, currentBlockchainNetwork.blockExplorerDomain) : "";
+    var fromAddr = getSwapContractAddress(fromToken);
+    var toAddr = getSwapContractAddress(toToken);
+    var fromSymbol = getSwapCachedSymbol(fromToken);
+    var toSymbol = getSwapCachedSymbol(toToken);
+    function shortAddr(addr) { return (!addr || addr === zero_address) ? "" : (String(addr).length > 10 ? String(addr).slice(0, 6) + "..." + String(addr).slice(-4) : addr); }
+    var fromUrl = (fromAddr && fromAddr !== zero_address && explorerBase) ? explorerBase.replace(ADDRESS_TEMPLATE, fromAddr) : "";
+    var toUrl = (toAddr && toAddr !== zero_address && explorerBase) ? explorerBase.replace(ADDRESS_TEMPLATE, toAddr) : "";
+
+    setSwapSuccessSymbolAndLink(document.getElementById("spanSwapSuccessFromTokenDisplay"), fromSymbol, fromUrl, shortAddr(fromAddr));
+    setSwapSuccessSymbolAndLink(document.getElementById("spanSwapSuccessToTokenDisplay"), toSymbol, toUrl, shortAddr(toAddr));
+    setSwapSuccessSymbolAndLink(document.getElementById("tdSwapSuccessFromName"), fromSymbol, fromUrl, shortAddr(fromAddr));
+    setSwapSuccessSymbolAndLink(document.getElementById("tdSwapSuccessToName"), toSymbol, toUrl, shortAddr(toAddr));
+
+    document.getElementById("tdSwapSuccessFromBefore").textContent = fromBefore != null ? String(fromBefore) : "0";
+    document.getElementById("tdSwapSuccessFromAfter").textContent = fromAfter != null ? String(fromAfter) : "0";
+    document.getElementById("tdSwapSuccessToBefore").textContent = toBefore != null ? String(toBefore) : "0";
+    document.getElementById("tdSwapSuccessToAfter").textContent = toAfter != null ? String(toAfter) : "0";
+    document.getElementById("spanSwapSuccessGasFee").textContent = gasFeeCoins != null ? String(gasFeeCoins) : "0";
+}
+
+function onSwapSuccessOkClick() {
+    goToFirstSwapScreen();
+    updateSwapBalanceLabels();
+    return false;
+}
+
 function updateSwapApprovalSubmitStatusText() {
-    var idx = Math.floor(Date.now() / 3000) % 3;
+    var idx = Math.floor((Date.now() - swapApprovalStatusStartTime) / 3000) % SWAP_APPROVAL_STATUS_MESSAGES.length;
     var key = SWAP_APPROVAL_STATUS_MESSAGES[idx];
     var text = (langJson && langJson.langValues && langJson.langValues[key]) ? langJson.langValues[key] : key;
     var panelEl = document.getElementById("spanSwapConfirmApprovalStatus");
@@ -2570,6 +2654,7 @@ function setAddAllowancePanelWaiting(waiting) {
     if (btn) { btn.disabled = disabled; btn.style.pointerEvents = disabled ? "none" : ""; btn.style.opacity = disabled ? "0.6" : ""; }
     if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
     if (waiting) {
+        swapApprovalStatusStartTime = Date.now();
         updateSwapApprovalSubmitStatusText();
         if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
         swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
@@ -2703,12 +2788,18 @@ async function pollSwapApprovalTransactionStatus() {
                 swapApprovalLastTxHash = null;
                 swapConfirmTxMode = null;
                 setSwapConfirmPanelWaitingForApprovalTx(false);
-                var swapSucceededMsg = (langJson && langJson.langValues && langJson.langValues["swap-succeeded"]) ? langJson.langValues["swap-succeeded"] : "Swap succeeded.";
-                showAlertAndExecuteOnClose(swapSucceededMsg, async function () {
-                    goToFirstSwapScreen();
+                (async function () {
                     await refreshAccountBalance();
-                    updateSwapBalanceLabels();
-                });
+                    var fromAfter = await getSwapBalanceForSymbol(swapSuccessFromToken);
+                    var toAfter = await getSwapBalanceForSymbol(swapSuccessToToken);
+                    var gasFeeCoins = swapSuccessGasLimit != null ? (swapSuccessGasLimit * SWAP_GAS_FEE_RATE).toFixed(6) : "0";
+                    showSwapSuccessPanel(swapSuccessFromToken, swapSuccessToToken, swapSuccessFromBefore, swapSuccessToBefore, fromAfter, toAfter, gasFeeCoins);
+                    swapSuccessFromToken = null;
+                    swapSuccessToToken = null;
+                    swapSuccessFromBefore = null;
+                    swapSuccessToBefore = null;
+                    swapSuccessGasLimit = null;
+                })();
             } else if (res.status === "failed") {
                 if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
                 swapApprovalPollingId = null;

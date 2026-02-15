@@ -1564,6 +1564,50 @@
                             </div>
                         </div>
                     </div>
+                    <div id="divSwapSuccessPanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
+                        <div class="heading bold" data-lang-key="swap-succeeded" style="color: green;">Swap transaction succeeded.</div>
+                        <div class="divider"></div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="swap-from-token">From token</div>
+                            <span id="spanSwapSuccessFromTokenDisplay" style="font-size: 0.9em;"></span>
+                        </div>
+                        <div class="input_container" style="margin-top: 8px;">
+                            <div class="heading medium" data-lang-key="swap-to-token">To token</div>
+                            <span id="spanSwapSuccessToTokenDisplay" style="font-size: 0.9em;"></span>
+                        </div>
+                        <div class="input_container" style="margin-top: 12px;">
+                            <table class="styled-table" style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th data-lang-key="token">Token</th>
+                                        <th data-lang-key="before">Before</th>
+                                        <th data-lang-key="after">After</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td id="tdSwapSuccessFromName"></td>
+                                        <td id="tdSwapSuccessFromBefore"></td>
+                                        <td id="tdSwapSuccessFromAfter"></td>
+                                    </tr>
+                                    <tr>
+                                        <td id="tdSwapSuccessToName"></td>
+                                        <td id="tdSwapSuccessToBefore"></td>
+                                        <td id="tdSwapSuccessToAfter"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="input_container" style="margin-top: 12px;">
+                            <span class="heading medium" data-lang-key="gas-fee-spent">Gas fee spent (coins)</span>
+                            <span id="spanSwapSuccessGasFee">0</span>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                            <div class="large_button_container heading large" onclick="return onSwapSuccessOkClick();" role="button" tabindex="342" id="btnSwapSuccessOk" style="margin-left: auto;">
+                                <span data-lang-key="ok">OK</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
