@@ -414,33 +414,28 @@ ipcMain.handle('SwapQuoteEstimateGas', async (event, data) => {
         const lastChanged = data.lastChanged === "to" ? "to" : "from";
         const slippagePercent = Math.max(0, Math.min(100, Number(data.slippagePercent) || 1));
 
-        let tx;
+        let amountInWei;
+        let amountOutMinWei;
         if (lastChanged === "to") {
             const amountOutWei = parseUnits(String(data.amountOut), toDecimals);
             const amountsIn = await router.getAmountsIn(amountOutWei, path);
-            const expectedAmountInWei = Array.isArray(amountsIn) ? amountsIn[0] : amountsIn;
-            const amountInMaxWei = (expectedAmountInWei * BigInt(100 + slippagePercent)) / 100n;
-            tx = await router.populateTransaction.swapTokensForExactTokens(
-                amountOutWei,
-                amountInMaxWei,
-                path,
-                getAddress(toAddress),
-                deadline
-            );
+            amountInWei = Array.isArray(amountsIn) ? amountsIn[0] : amountsIn;
+            amountOutMinWei = (amountOutWei * BigInt(100 - slippagePercent)) / 100n;
         } else {
-            const amountInWei = parseUnits(String(data.amountIn), fromDecimals);
+            amountInWei = parseUnits(String(data.amountIn), fromDecimals);
             const amountsOut = await router.getAmountsOut(amountInWei, path);
             const expectedAmountOutWei = Array.isArray(amountsOut) ? amountsOut[amountsOut.length - 1] : amountsOut;
-            const amountOutMinWei = (expectedAmountOutWei * BigInt(100 - slippagePercent)) / 100n;
-            tx = await router.populateTransaction.swapExactTokensForTokens(
-                amountInWei,
-                amountOutMinWei,
-                path,
-                getAddress(toAddress),
-                deadline
-            );
+            amountOutMinWei = (expectedAmountOutWei * BigInt(100 - slippagePercent)) / 100n;
         }
-        const gasLimit = await provider.estimateGas(tx);
+        const tx = await router.populateTransaction.swapExactTokensForTokens(
+            amountInWei,
+            amountOutMinWei,
+            path,
+            getAddress(toAddress),
+            deadline
+        );
+        const txWithFrom = { ...tx, from: getAddress(toAddress) };
+        const gasLimit = await provider.estimateGas(txWithFrom);
         const gasLimitStr = typeof gasLimit === "bigint" ? gasLimit.toString() : String(gasLimit);
         return { success: true, gasLimit: gasLimitStr, error: null };
     } catch (err) {
@@ -518,6 +513,65 @@ ipcMain.handle('SwapQuoteEstimateApproveGas', async (event, data) => {
         return { success: true, gasLimit: gasLimitStr, error: null };
     } catch (err) {
         return { success: false, gasLimit: null, error: (err && err.message) ? err.message : String(err) };
+    }
+});
+
+ipcMain.handle('SwapQuoteGetRouterAddress', async () => {
+    return { success: true, routerAddress: SWAP_ROUTER_V2_CONTRACT_ADDRESS, error: null };
+});
+
+ipcMain.handle('SwapQuoteGetSwapContractData', async (event, data) => {
+    try {
+        const { Initialize, Config } = require("quantumcoin/config");
+        const { JsonRpcProvider, parseUnits, getAddress } = require("quantumcoin");
+        const { QuantumSwapV2Router02 } = require("quantumswap");
+
+        const rpcUrl = buildSwapRpcUrl(data.rpcEndpoint);
+        if (!rpcUrl) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "Invalid RPC endpoint" };
+        const chainId = Number(data.chainId);
+        if (!Number.isInteger(chainId)) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "Invalid chain ID" };
+        const toAddress = data.recipientAddress || data.toAddress;
+        if (!toAddress) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "Recipient address required" };
+
+        await Initialize(new Config(chainId, rpcUrl));
+        const provider = new JsonRpcProvider(rpcUrl, chainId);
+        const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
+
+        const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
+        const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
+        const path = [getAddress(fromAddr), getAddress(toAddr)];
+        const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
+        const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+        const lastChanged = data.lastChanged === "to" ? "to" : "from";
+        const slippagePercent = Math.max(0, Math.min(100, Number(data.slippagePercent) || 1));
+
+        let amountInWei;
+        let amountOutMinWei;
+        if (lastChanged === "to") {
+            const amountOutWei = parseUnits(String(data.amountOut), toDecimals);
+            const amountsIn = await router.getAmountsIn(amountOutWei, path);
+            amountInWei = Array.isArray(amountsIn) ? amountsIn[0] : amountsIn;
+            amountOutMinWei = (amountOutWei * BigInt(100 - slippagePercent)) / 100n;
+        } else {
+            amountInWei = parseUnits(String(data.amountIn), fromDecimals);
+            const amountsOut = await router.getAmountsOut(amountInWei, path);
+            const expectedAmountOutWei = Array.isArray(amountsOut) ? amountsOut[amountsOut.length - 1] : amountsOut;
+            amountOutMinWei = (expectedAmountOutWei * BigInt(100 - slippagePercent)) / 100n;
+        }
+        const tx = await router.populateTransaction.swapExactTokensForTokens(
+            amountInWei,
+            amountOutMinWei,
+            path,
+            getAddress(toAddress),
+            deadline
+        );
+        const dataHex = tx && tx.data ? (typeof tx.data === "string" ? tx.data : String(tx.data)) : null;
+        if (!dataHex) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "No contract data" };
+        const valueHex = tx.value != null && tx.value !== 0n ? "0x" + tx.value.toString(16) : "0x0";
+        return { success: true, dataHex, toAddress: SWAP_ROUTER_V2_CONTRACT_ADDRESS, valueHex, error: null };
+    } catch (err) {
+        return { success: false, dataHex: null, toAddress: null, valueHex: null, error: (err && err.message) ? err.message : String(err) };
     }
 });
 

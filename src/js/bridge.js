@@ -163,3 +163,11 @@ async function getSwapEstimateApproveGas(payload) {
 async function getSwapApproveContractData(payload) {
     return await SwapQuoteApi.send('SwapQuoteGetApproveContractData', payload);
 }
+
+async function getSwapRouterAddress() {
+    return await SwapQuoteApi.send('SwapQuoteGetRouterAddress', {});
+}
+
+async function getSwapSwapContractData(payload) {
+    return await SwapQuoteApi.send('SwapQuoteGetSwapContractData', payload);
+}

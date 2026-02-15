@@ -121,6 +121,8 @@
       "add-allowance-confirm-message": "You are adding allowance for contract [CONTRACT_ID]",
       "remove-allowance-succeeded": "Remove allowance succeeded.",
       "add-allowance-succeeded": "Add allowance succeeded.",
+      "swap-execute-confirm-message": "You are swapping [FROM_AMOUNT] [FROM_SYMBOL] for at least [TO_AMOUNT] [TO_SYMBOL].",
+      "swap-succeeded": "Swap succeeded.",
       "refresh": "Refresh",
       "completed-transactions": "Completed Transactions",
       "pending-transactions": "Pending Transactions",
@@ -307,6 +309,11 @@
       "enterCurrentNonce": "Please enter the current nonce to send correctly.",
       "lowGasError": "An error occurred. Ensure your account has enough coins for gas fee.",
       "validatorDepositorAddress": "Validator address cannot be the same as depositor address",
-      "genericError": "An error occurred."
+      "genericError": "An error occurred.",
+      "failedToBuildApprovalTransaction": "Failed to build approval transaction.",
+      "signatureVerificationFailed": "Signature verification failed.",
+      "transactionSubmissionFailed": "Transaction submission failed.",
+      "transactionFailed": "Transaction failed.",
+      "approvalQuantityRequired": "Approval quantity is required."
     }
 }

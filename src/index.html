@@ -1414,7 +1414,7 @@
                         <div class="heading bold" data-lang-key="swap">Swap</div>
                         <div class="divider"></div>
                         <div class="input_container">
-                            <div class="heading medium" data-lang-key="swap-from-token" style="margin-top: 10px;">From token</div>
+                            <div class="heading medium" data-lang-key="swap-from-token" style="margin-top: 5px;">From token</div>
                             <div class="selectwrapper">
                                 <select id="ddlSwapFromToken" class="selectbox" tabindex="321" onchange="updateSwapScreenInfo();"></select>
                             </div>
@@ -1438,7 +1438,7 @@
                             <div class="divider"></div>
                         </div>
                         <div class="input_container">
-                            <div class="heading medium" data-lang-key="swap-to-token" style="margin-top: 10px;">To token</div>
+                            <div class="heading medium" data-lang-key="swap-to-token" style="margin-top: 5px;">To token</div>
                             <div class="selectwrapper">
                                 <select id="ddlSwapToToken" class="selectbox" tabindex="326" onchange="updateSwapScreenInfo();"></select>
                             </div>
@@ -1500,7 +1500,7 @@
                                 <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
                                 <span id="spanSwapConfirmApprovalStatus" style="font-size: 0.9em;"></span>
                             </div>
-                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="337" id="btnSwapConfirmNext">
+                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="337" id="btnSwapConfirmNext" style="margin-left: auto;">
                                 Next
                             </div>
                         </div>
@@ -1541,7 +1541,7 @@
                         <div id="divAddAllowanceQuantityRow" class="input_container" style="margin-top: 8px;">
                             <div class="heading medium" data-lang-key="approval-quantity">Approval Quantity</div>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <input class="tab-name" type="number" id="txtAddAllowanceQuantity" min="0" step="any" style="text-align: left; width: 50%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="onAddAllowanceQuantityInput();">
+                                <input class="tab-name" type="number" id="txtAddAllowanceQuantity" min="0" step="any" style="text-align: left; width: 200px; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="onAddAllowanceQuantityInput();">
                                 <a href="#" data-lang-key="max" onclick="return setAddAllowanceQuantityToMax();" style="color: #0066cc; cursor: pointer;">Max</a>
                             </div>
                         </div>
@@ -1552,6 +1552,7 @@
                         <div class="input_container" style="margin-top: 10px;">
                             <span class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</span> <span id="spanAddAllowanceGasFee">0</span>
                         </div>
+                        <div id="divAddAllowanceGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
                         <div id="divAddAllowanceError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
                             <div id="divAddAllowanceTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
