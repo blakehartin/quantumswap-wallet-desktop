@@ -50,7 +50,7 @@ const createWindow = () => {
     mainWindow.loadFile(path.join(__dirname, startFilename));
 
   // Open the DevTools.
-    mainWindow.webContents.openDevTools();
+    //mainWindow.webContents.openDevTools();
 
     if (process.platform === 'win32') {
         app.setAppUserModelId('Quantum Coin Wallet');
@@ -281,9 +281,9 @@ ipcMain.handle('FormatApiCompareEther', async (event, data) => {
 })
 
 // Swap quote: QuantumCoin + QuantumSwap SDKs (Test Release Dec 2025 addresses)
-const SWAP_WQ_CONTRACT_ADDRESS = "0x80d5866b054028aef6b8519b451bec113c07077c67aa01496e91d3d21161af50";
-const SWAP_FACTORY_CONTRACT_ADDRESS = "0x6202be3cb1646a4f9ffda104aad4cb901a7ab414a89ade12ce2151b46ad241cf";
-const SWAP_ROUTER_V2_CONTRACT_ADDRESS = "0xd62870a65193504674ac9bbbc001b7d333f91e477193b7f88bfbccd8e3eea182";
+const SWAP_WQ_CONTRACT_ADDRESS = "0x0E49c26cd1ca19bF8ddA2C8985B96783288458754757F4C9E00a5439A7291628";
+const SWAP_FACTORY_CONTRACT_ADDRESS = "0xbbF45a1B60044669793B444eD01Eb33e03Bb8cf3c5b6ae7887B218D05C5Cbf1d";
+const SWAP_ROUTER_V2_CONTRACT_ADDRESS = "0x41323EF72662185f44a03ea0ad8094a0C9e925aB1102679D8e957e838054aac5";
 
 function buildSwapRpcUrl(rpcEndpoint) {
     if (!rpcEndpoint || typeof rpcEndpoint !== "string") return null;
@@ -719,6 +719,70 @@ ipcMain.handle('SwapSubmitAddAllowance', async (event, data) => {
 
         const token = IERC20.connect(getAddress(tokenAddr), wallet);
         const tx = await token.approve(getAddress(SWAP_ROUTER_V2_CONTRACT_ADDRESS), amountWei, { gasLimit });
+        return { success: true, txHash: tx.hash, error: null };
+    } catch (err) {
+        return { success: false, txHash: null, error: (err && err.message) ? err.message : String(err) };
+    }
+});
+
+ipcMain.handle('SendCoinsSubmit', async (event, data) => {
+    try {
+        const { Initialize, Config } = require("quantumcoin/config");
+        const { JsonRpcProvider, Wallet, parseUnits, getAddress } = require("quantumcoin");
+
+        const rpcUrl = buildSwapRpcUrl(data.rpcEndpoint);
+        if (!rpcUrl) return { success: false, txHash: null, error: "Invalid RPC endpoint" };
+        const chainId = Number(data.chainId);
+        if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
+        if (!data.privateKey || !data.publicKey) return { success: false, txHash: null, error: "Wallet keys required" };
+        if (!data.toAddress) return { success: false, txHash: null, error: "Recipient address required" };
+
+        await Initialize(new Config(chainId, rpcUrl));
+        const provider = new JsonRpcProvider(rpcUrl, chainId);
+        const privBytes = Buffer.from(data.privateKey, "base64");
+        const pubBytes = Buffer.from(data.publicKey, "base64");
+        const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
+
+        const valueWei = parseUnits(normalizeAmountString(data.amount), 18);
+        const gasLimit = Number(data.gasLimit) || 21000;
+
+        const tx = await wallet.sendTransaction({
+            to: getAddress(data.toAddress),
+            value: valueWei,
+            gasLimit: gasLimit
+        });
+        return { success: true, txHash: tx.hash, error: null };
+    } catch (err) {
+        return { success: false, txHash: null, error: (err && err.message) ? err.message : String(err) };
+    }
+});
+
+ipcMain.handle('SendTokensSubmit', async (event, data) => {
+    try {
+        const { Initialize, Config } = require("quantumcoin/config");
+        const { JsonRpcProvider, Wallet, parseUnits, getAddress } = require("quantumcoin");
+        const { IERC20 } = require("quantumswap");
+
+        const rpcUrl = buildSwapRpcUrl(data.rpcEndpoint);
+        if (!rpcUrl) return { success: false, txHash: null, error: "Invalid RPC endpoint" };
+        const chainId = Number(data.chainId);
+        if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
+        if (!data.privateKey || !data.publicKey) return { success: false, txHash: null, error: "Wallet keys required" };
+        if (!data.toAddress) return { success: false, txHash: null, error: "Recipient address required" };
+        if (!data.contractAddress) return { success: false, txHash: null, error: "Token contract address required" };
+
+        await Initialize(new Config(chainId, rpcUrl));
+        const provider = new JsonRpcProvider(rpcUrl, chainId);
+        const privBytes = Buffer.from(data.privateKey, "base64");
+        const pubBytes = Buffer.from(data.publicKey, "base64");
+        const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
+
+        const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
+        const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
+        const gasLimit = Number(data.gasLimit) || 84000;
+
+        const token = IERC20.connect(getAddress(data.contractAddress), wallet);
+        const tx = await token.transfer(getAddress(data.toAddress), amountWei, { gasLimit });
         return { success: true, txHash: tx.hash, error: null };
     } catch (err) {
         return { success: false, txHash: null, error: (err && err.message) ? err.message : String(err) };
