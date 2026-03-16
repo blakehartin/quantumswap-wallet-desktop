@@ -187,3 +187,11 @@ async function submitSwapRemoveAllowance(payload) {
 async function submitSwapAddAllowance(payload) {
     return await SwapQuoteApi.send('SwapSubmitAddAllowance', payload);
 }
+
+async function submitSendCoins(payload) {
+    return await SwapQuoteApi.send('SendCoinsSubmit', payload);
+}
+
+async function submitSendTokens(payload) {
+    return await SwapQuoteApi.send('SendTokensSubmit', payload);
+}
