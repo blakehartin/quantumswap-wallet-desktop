@@ -195,3 +195,11 @@ async function submitSendCoins(payload) {
 async function submitSendTokens(payload) {
     return await SwapQuoteApi.send('SendTokensSubmit', payload);
 }
+
+async function offlineSignCoinTransaction(payload) {
+    return await SwapQuoteApi.send('OfflineSignCoinTransaction', payload);
+}
+
+async function offlineSignTokenTransaction(payload) {
+    return await SwapQuoteApi.send('OfflineSignTokenTransaction', payload);
+}

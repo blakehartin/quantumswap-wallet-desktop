@@ -725,6 +725,76 @@ ipcMain.handle('SwapSubmitAddAllowance', async (event, data) => {
     }
 });
 
+ipcMain.handle('OfflineSignCoinTransaction', async (event, data) => {
+    try {
+        const { Initialize } = require("quantumcoin/config");
+        const { Wallet, parseUnits, getAddress } = require("quantumcoin");
+
+        if (!data.privateKey || !data.publicKey) return { success: false, txData: null, error: "Wallet keys required" };
+        if (!data.toAddress) return { success: false, txData: null, error: "Recipient address required" };
+        const chainId = Number(data.chainId);
+        if (!Number.isInteger(chainId)) return { success: false, txData: null, error: "Invalid chain ID" };
+        const nonce = Number(data.nonce);
+        if (!Number.isInteger(nonce) || nonce < 0) return { success: false, txData: null, error: "Invalid nonce" };
+
+        await Initialize(null);
+        const privBytes = Buffer.from(data.privateKey, "base64");
+        const pubBytes = Buffer.from(data.publicKey, "base64");
+        const wallet = Wallet.fromKeys(privBytes, pubBytes);
+
+        const valueWei = parseUnits(normalizeAmountString(data.amount), 18);
+        const gasLimit = Number(data.gasLimit) || 21000;
+
+        const txData = await wallet.signTransaction({
+            to: getAddress(data.toAddress),
+            value: valueWei,
+            nonce: nonce,
+            chainId: chainId,
+            gasLimit: gasLimit
+        });
+        return { success: true, txData: txData, error: null };
+    } catch (err) {
+        return { success: false, txData: null, error: (err && err.message) ? err.message : String(err) };
+    }
+});
+
+ipcMain.handle('OfflineSignTokenTransaction', async (event, data) => {
+    try {
+        const { Initialize } = require("quantumcoin/config");
+        const { Wallet, parseUnits, getAddress } = require("quantumcoin");
+        const { IERC20 } = require("quantumswap");
+
+        if (!data.privateKey || !data.publicKey) return { success: false, txData: null, error: "Wallet keys required" };
+        if (!data.toAddress) return { success: false, txData: null, error: "Recipient address required" };
+        if (!data.contractAddress) return { success: false, txData: null, error: "Token contract address required" };
+        const chainId = Number(data.chainId);
+        if (!Number.isInteger(chainId)) return { success: false, txData: null, error: "Invalid chain ID" };
+        const nonce = Number(data.nonce);
+        if (!Number.isInteger(nonce) || nonce < 0) return { success: false, txData: null, error: "Invalid nonce" };
+
+        await Initialize(null);
+        const privBytes = Buffer.from(data.privateKey, "base64");
+        const pubBytes = Buffer.from(data.publicKey, "base64");
+        const wallet = Wallet.fromKeys(privBytes, pubBytes);
+
+        const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
+        const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
+        const gasLimit = Number(data.gasLimit) || 84000;
+
+        const token = IERC20.connect(getAddress(data.contractAddress), wallet);
+        const txReq = await token.populateTransaction.transfer(getAddress(data.toAddress), amountWei, { gasLimit });
+
+        const txData = await wallet.signTransaction({
+            ...txReq,
+            nonce: nonce,
+            chainId: chainId
+        });
+        return { success: true, txData: txData, error: null };
+    } catch (err) {
+        return { success: false, txData: null, error: (err && err.message) ? err.message : String(err) };
+    }
+});
+
 ipcMain.handle('SendCoinsSubmit', async (event, data) => {
     try {
         const { Initialize, Config } = require("quantumcoin/config");
