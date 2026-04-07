@@ -96,6 +96,7 @@
       "swap-gas-high-warning": "Gas limit is high. Consider reviewing before proceeding.",
       "swap-approval-confirm-message": "You are approving [QUANTITY] tokens for use in QuantumSwap.",
       "swap-approval-may-close": "You may close this dialog, the transaction for approval has already been submitted.",
+      "swap-approval-completed": "Token approval completed. You can continue with Swap.",
       "swap-approval-status-wait": "Please wait, checking...",
       "swap-approval-status-pending": "Transaction is still pending...",
       "swap-approval-status-minute": "This can take up to a minute...",

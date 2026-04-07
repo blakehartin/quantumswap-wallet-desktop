@@ -17,22 +17,34 @@ function isWindowsNamedPipeRpcPath(s) {
     return /^\\\\\.\\pipe\\/i.test(t);
 }
 
-/** Unix domain socket path, typically …/geth.ipc */
+/** Unix domain socket path, …/geth.ipc, ~/…/geth.ipc, or Windows-style ~\…\geth.ipc */
 function isUnixIpcSocketRpcPath(s) {
     const t = String(s).trim();
     if (t.length < 2 || t.length > 512) {
         return false;
     }
-    if (!t.startsWith("/") || t.startsWith("//")) {
+    if (!/\.ipc$/i.test(t)) {
         return false;
     }
-    return /\.ipc$/i.test(t);
+    if (t.startsWith("/") && !t.startsWith("//")) {
+        return true;
+    }
+    if (t.startsWith("~/") || t.startsWith("~\\")) {
+        return true;
+    }
+    if (/^~[^/\\]+[/\\]/.test(t)) {
+        return true;
+    }
+    return false;
 }
 
 function normalizeIpcRpcPath(s) {
     let t = String(s).trim();
     if (/^\\\\\.\\pipe\\/i.test(t)) {
         return "//./pipe/" + t.replace(/^\\\\\.\\pipe\\/i, "").replace(/\\/g, "/");
+    }
+    if (/\.ipc$/i.test(t) && t.startsWith("~")) {
+        return t.replace(/\\/g, "/");
     }
     return t;
 }
@@ -207,9 +219,33 @@ async function blockchainNetworkSaveDefaults() {
     }
 }
 
+/**
+ * Re-encode the rpcEndpoint string literal so Windows IPC paths (e.g. \\.\pipe\geth.ipc) work when pasted
+ * without JSON-escaping each backslash. Only the quoted value after "rpcEndpoint" is rewritten.
+ */
+function repairRpcEndpointQuotedValue(jsonString) {
+    return jsonString.replace(
+        /"rpcEndpoint"\s*:\s*"([^"]*)"/,
+        function (_m, inner) {
+            return '"rpcEndpoint": ' + JSON.stringify(inner);
+        }
+    );
+}
+
+/** Parse Add Network JSON; on failure, retry after fixing common rpcEndpoint backslash mistakes. */
+function parseNetworkJsonForAdd(jsonRaw) {
+    let s = typeof jsonRaw === "string" ? jsonRaw.replace(/^\uFEFF/, "").trim() : String(jsonRaw);
+    try {
+        return JSON.parse(s);
+    } catch (e) {
+        const repaired = repairRpcEndpointQuotedValue(s);
+        return JSON.parse(repaired);
+    }
+}
+
 async function blockchainNetworkAddNew(networkJson) {
     let jsonRaw = typeof networkJson === "string" ? networkJson.replace(/^\uFEFF/, "").trim() : String(networkJson);
-    let networkItem = JSON.parse(jsonRaw);
+    let networkItem = parseNetworkJsonForAdd(jsonRaw);
     let maxIndex = await blockchainNetworkGetMaxIndex();
     maxIndex = maxIndex + 1;
     let blockchainNetwork = new BlockchainNetwork(networkItem.scanApiDomain, networkItem.blockExplorerDomain, networkItem.networkId, networkItem.blockchainName, networkItem.rpcEndpoint, maxIndex);
@@ -217,7 +253,6 @@ async function blockchainNetworkAddNew(networkJson) {
 
     const stored = {
         scanApiDomain: networkItem.scanApiDomain,
-        txnApiDomain: networkItem.txnApiDomain,
         blockExplorerDomain: networkItem.blockExplorerDomain,
         networkId: networkItem.networkId,
         blockchainName: String(networkItem.blockchainName),
@@ -250,7 +285,7 @@ async function blockchainNetworksList() {
         if (networkItem.rpcEndpoint === undefined || networkItem.rpcEndpoint === null || networkItem.rpcEndpoint === "") {
             delete networkItem.rpcEndpoint;
         }
-        let blockchainNetwork = new BlockchainNetwork(networkItem.scanApiDomain, networkItem.txnApiDomain, networkItem.blockExplorerDomain, networkItem.networkId, networkItem.blockchainName, networkItem.rpcEndpoint, i);
+        let blockchainNetwork = new BlockchainNetwork(networkItem.scanApiDomain, networkItem.blockExplorerDomain, networkItem.networkId, networkItem.blockchainName, networkItem.rpcEndpoint, i);
         blockchainIndexToNetworkMap.set(i, blockchainNetwork);
     }
 

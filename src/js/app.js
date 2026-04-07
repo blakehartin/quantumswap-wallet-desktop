@@ -315,7 +315,6 @@ async function showBlockchainNetworksTable() {
         networkString = replaceTemplateTokenOnce(networkString, BLOCKCHAIN_NETWORK_NAME_TEMPLATE, htmlEncode(String(networkItem.blockchainName)));
         networkString = replaceTemplateTokenOnce(networkString, BLOCKCHAIN_NETWORK_ID_TEMPLATE, htmlEncode(String(networkItem.networkId)));
         networkString = replaceTemplateTokenOnce(networkString, BLOCKCHAIN_SCAN_API_DOMAIN_TEMPLATE, htmlEncode(String(networkItem.scanApiDomain)));
-        networkString = replaceTemplateTokenOnce(networkString, BLOCKCHAIN_TXN_API_DOMAIN_TEMPLATE, htmlEncode(String(networkItem.txnApiDomain)));
         networkString = replaceTemplateTokenOnce(networkString, BLOCKCHAIN_EXPLORER_API_DOMAIN_TEMPLATE, htmlEncode(String(networkItem.blockExplorerDomain)));
         let rpcDisplay = networkItem.rpcEndpoint;
         if (rpcDisplay == null || String(rpcDisplay).trim() === "") {
@@ -1366,7 +1365,7 @@ function buildAddNetworkConfirmDetails() {
         return "\n\n" + lv.addNetworkCheckEmpty;
     }
     try {
-        let obj = JSON.parse(jsonString);
+        let obj = parseNetworkJsonForAdd(jsonString);
         let name = obj && obj.blockchainName != null ? String(obj.blockchainName) : "";
         if (name === "") {
             return "\n\n" + lv.addNetworkCheckMissingName;
@@ -2875,6 +2874,8 @@ async function pollSwapApprovalTransactionStatus() {
             swapApprovalLastTxHash = null;
             setSwapConfirmPanelWaitingForApprovalTx(false);
             await reloadSwapApprovalContext();
+            var approvalDoneMsg = (langJson && langJson.langValues && langJson.langValues["swap-approval-completed"]) ? langJson.langValues["swap-approval-completed"] : "Token approval completed. You can continue with Swap.";
+            showAlert(approvalDoneMsg);
         } else if (res.status === "failed") {
             if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
             swapApprovalPollingId = null;
