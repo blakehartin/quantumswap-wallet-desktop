@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
         
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,7 +23,7 @@ jobs:
           python-version: '3.11' 
           
       - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: 21.7.1
 
