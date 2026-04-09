@@ -3,7 +3,7 @@ name: Build/release
 on:
   push:
     tags:
-    - '*'    
+      - '*'    
 
 jobs:
   release:
@@ -22,19 +22,33 @@ jobs:
         with:
           python-version: '3.11' 
           
-      - name: Install Node.js, NPM and Yarn
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 21.7.1
+          node-version: '20'   # ✅ LTS version
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      # macOS only: install appdmg for DMG maker
+      - name: Install DMG dependencies
+        if: matrix.os == 'macos-latest'
+        run: npm install --no-save appdmg
+
+      # Ubuntu only: install fakeroot/dpkg/rpm for DEB/RPM makers
+      - name: Install Linux packaging dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg rpm
 
       - name: Publish
         run: npm run publish
-  
+
       - name: Release
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: "out/make/squirrel.windows/x64/*.exe,out/make/*.dmg,out/make/**/*.deb,out/make/**/*.rpm"
+          artifacts: |
+            out/make/squirrel.windows/x64/*.exe,
+            out/make/*.dmg,
+            out/make/**/*.deb,
+            out/make/**/*.rpm
