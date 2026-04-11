@@ -31,12 +31,10 @@ jobs:
           node-version: '20'
           cache: npm
 
-      # Lockfile is generated with npm 10; npm 11 can produce trees npm 10's `npm ci` rejects ("Missing: glob@…").
-      - name: Use npm 10 for install
-        run: npm install -g npm@10.9.2
-
+      # `npm ci` is strict and often fails on macOS vs Windows with overrides + optional/git deps ("Missing: glob@…").
+      # `npm install` still honors package-lock.json but can reconcile a valid tree on the runner OS.
       - name: Install Dependencies
-        run: npm ci --legacy-peer-deps --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Install DMG dependencies
         if: matrix.os == 'macos-latest'
