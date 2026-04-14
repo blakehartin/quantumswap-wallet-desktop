@@ -8,10 +8,12 @@ on:
 jobs:
   release:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest]
 
     steps:
       - name: Check out Git repository
@@ -25,20 +27,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # ✅ LTS version
+          # Node 20 LTS: appdmg (native addon for DMG) often fails to build on Node 21+ / newer Xcode.
+          node-version: '20'
+          cache: npm
 
+      # `npm ci` is strict and often fails on macOS vs Windows with overrides + optional/git deps ("Missing: glob@…").
+      # `npm install` still honors package-lock.json but can reconcile a valid tree on the runner OS.
       - name: Install Dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
-      # macOS only: install appdmg for DMG maker
       - name: Install DMG dependencies
         if: matrix.os == 'macos-latest'
-        run: npm install --no-save appdmg
-
-      # Ubuntu only: install fakeroot/dpkg/rpm for DEB/RPM makers
-      - name: Install Linux packaging dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg rpm
+        env:
+          PYTHON: python3
+          npm_config_python: python3
+        run: npm install --no-save appdmg@0.6.6 --foreground-scripts
 
       - name: Publish
         run: npm run publish
@@ -49,6 +52,4 @@ jobs:
           allowUpdates: true
           artifacts: |
             out/make/squirrel.windows/x64/*.exe,
-            out/make/*.dmg,
-            out/make/**/*.deb,
-            out/make/**/*.rpm
+            out/make/*.dmg

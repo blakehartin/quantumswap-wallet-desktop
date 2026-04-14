@@ -1,7 +1,7 @@
 {
   "name": "quantumswapwallet",
   "productName": "quantumswapwallet",
-  "version": "0.0.1",
+  "version": "0.1.8",
   "description": "QuantumSwap",
   "main": "src/index.js",
   "scripts": {
@@ -48,16 +48,12 @@
     "@electron-forge/cli": "^6.4.2",
     "@electron-forge/maker-squirrel": "^6.0.5",
     "@electron-forge/maker-dmg": "^6.1.1",
-    "@electron-forge/maker-zip": "^6.0.5",
-    "@electron-forge/maker-deb": "^6.0.5",
-    "@electron-forge/maker-rpm": "^6.0.5"
+    "@electron-forge/maker-zip": "^6.0.5"
   },
   "overrides": {
     "tar": "^7.5.11",
     "yauzl": "^3.2.1",
-    "@tootallnate/once": "^3.0.1",
-    "rimraf": "^5.0.0",
-    "glob": "^13.0.0"
+    "@tootallnate/once": "^3.0.1"
   },
   "config": {
     "forge": {
@@ -85,7 +81,7 @@
             "darwin"
           ],
           "config": {
-            "name": "quantumwallet",
+            "name": "quantumwswapallet",
             "icon": "src/assets/icons/app/icon.icns"
           }
         },
@@ -94,24 +90,6 @@
           "platforms": [
             "darwin"
           ],
-          "config": {
-            "options": {
-              "icon": "src/assets/icons/app/icon.png"
-            }
-          }
-        },
-        {
-          "name": "@electron-forge/maker-deb",
-          "platforms": ["linux"],
-          "config": {
-            "options": {
-              "icon": "src/assets/icons/app/icon.png"
-            }
-          }
-        },
-        {
-          "name": "@electron-forge/maker-rpm",
-          "platforms": ["linux"],
           "config": {
             "options": {
               "icon": "src/assets/icons/app/icon.png"
