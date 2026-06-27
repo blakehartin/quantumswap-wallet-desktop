@@ -135,7 +135,7 @@ async function initApp() {
     let appVersion = await GetAppVersion();
     document.title = langJson.langValues.title + " " + appVersion;
 
-    let seedInit = await initializeSeedWordsFromUrl("lib/seedwords/seedwords.txt");
+    let seedInit = await initializeSeedWords();
     if (seedInit == false) {
         throw new Error(langJson.errors.seedInitError);
     }
@@ -575,7 +575,7 @@ async function showNewSeedScreen() {
     document.getElementById("divNewSeedButtons").style.display = "none";
 
     var wordCount = tempSeedArray.length / 2;
-    var wordList = getWordListFromSeedArray(tempSeedArray);
+    var wordList = await getWordListFromSeedArrayAsync(tempSeedArray);
     for (let i = 0; i < wordCount; i++) {
         document.getElementById("divNewSeed" + i).textContent = wordList[i].toUpperCase();
     }
@@ -640,7 +640,11 @@ function showRestoreSeedScreen() {
         document.getElementById("txtRestoreSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent = "";
     }
 
-    let seedWordList = getAllSeedWords();
+    populateRestoreSeedAutoComplete(wordCount);
+}
+
+async function populateRestoreSeedAutoComplete(wordCount) {
+    let seedWordList = await getAllSeedWordsAsync();
     if (autoCompleteInitializedRestore == false) {
         for (var i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
             let box = document.getElementById("txtRestoreSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase());
@@ -665,7 +669,7 @@ function showRestoreSeedScreen() {
 
 async function copyNewSeed() {
     var wordCount = tempSeedArray.length / 2;
-    var wordList = getWordListFromSeedArray(tempSeedArray);
+    var wordList = await getWordListFromSeedArrayAsync(tempSeedArray);
     var copyText = SEED_FRIENDLY_INDEX_ARRAY[0].toUpperCase() + " = " + wordList[0].toUpperCase() + "\r\n";
     for (let i = 1; i < wordCount; i++) {
         copyText = copyText + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase() + " = " + wordList[i].toUpperCase() + "\r\n";
@@ -675,7 +679,7 @@ async function copyNewSeed() {
 
 async function copyRevealSeed() {
     var wordCount = revealSeedArray.length / 2;
-    var wordList = getWordListFromSeedArray(revealSeedArray);
+    var wordList = await getWordListFromSeedArrayAsync(revealSeedArray);
     var copyText = SEED_FRIENDLY_INDEX_ARRAY[0].toUpperCase() + " = " + wordList[0].toUpperCase() + "\r\n";
     for (let i = 1; i < wordCount; i++) {
         copyText = copyText + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase() + " = " + wordList[i].toUpperCase() + "\r\n";
@@ -697,10 +701,14 @@ function showVerifySeedPanel() {
         document.getElementById("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent = "";
     }
 
-    document.getElementById('seedVerifyScreen').style.display = 'block';    
+    document.getElementById('seedVerifyScreen').style.display = 'block';
     document.getElementById('newSeedScreen').style.display = 'none';
 
-    let seedWordList = getAllSeedWords();
+    populateVerifySeedAutoComplete(wordCount);
+}
+
+async function populateVerifySeedAutoComplete(wordCount) {
+    let seedWordList = await getAllSeedWordsAsync();
     if (autoCompleteInitialized == false) {
         for (var i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
             let box = document.getElementById("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase());
@@ -724,23 +732,23 @@ function showVerifySeedPanel() {
     return false;
 }
 
-function verifySeedWords() {
+async function verifySeedWords() {
     var wordCount = tempSeedArray.length / 2;
     var seedWords = new Array(wordCount);
     for (i = 0; i < wordCount; i++) {
         var seedWord = document.getElementById("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent;
-        var seedIndexFriedly = getFriendlySeedIndex(i).toUpperCase();
+        var seedIndexFriedly = SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase();
 
         if (seedWord === null || seedWord.length < 2) {
             return showWarnAlert(langJson.errors.seedEmpty + seedIndexFriedly);
         }
 
         seedWord = seedWord.toLowerCase();
-        if (doesSeedWordExist(seedWord) === false) {
+        if (await doesSeedWordExistAsync(seedWord) === false) {
             return showWarnAlert(langJson.errors.seedDoesNotExist + seedIndexFriedly);
         }
 
-        if (verifySeedWord(i, seedWord, tempSeedArray) === false) {
+        if (await verifySeedWordAsync(i, seedWord, tempSeedArray) === false) {
             return showWarnAlert(langJson.errors.seedMismatch + seedIndexFriedly + " " + seedWord.toUpperCase());
         }
     }
@@ -919,26 +927,26 @@ async function encryptAndBackupCurrentWallet() {
     document.getElementById("nextButtonBackupWalletScreen").style.display = "block";
 }
 
-function restoreSeed() {
+async function restoreSeed() {
     var wordCount = currentSeedBytes / 2;
     var seedWords = new Array(wordCount);
     for (i = 0; i < wordCount; i++) {
         var seedWord = document.getElementById("txtRestoreSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent;
-        var seedIndexFriedly = getFriendlySeedIndex(i).toUpperCase();
+        var seedIndexFriedly = SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase();
 
         if (seedWord === null || seedWord.length < 2) {
             return showWarnAlert(langJson.errors.seedEmpty + seedIndexFriedly);
         }
 
         seedWord = seedWord.toLowerCase();
-        if (doesSeedWordExist(seedWord) === false) {
+        if (await doesSeedWordExistAsync(seedWord) === false) {
             return showWarnAlert(langJson.errors.seedDoesNotExist + seedIndexFriedly);
         }
 
         seedWords[i] = seedWord;
     }
 
-    tempSeedArray = getSeedArrayFromSeedWordList(seedWords);
+    tempSeedArray = await getSeedArrayFromWordListAsync(seedWords);
     if (tempSeedArray == null) {
         return showToastBox(langJson.errors.wordToSeed);
     }
@@ -1045,7 +1053,14 @@ function showWalletListScreen() {
 
 async function setWalletAddressAndShowWalletScreen(address) {
     currentWalletAddress = address;
-    document.getElementById("spnAccountBalance").value = "";
+    currentBalance = "";
+    currentAccountDetails = null;
+    document.getElementById("spnAccountBalance").textContent = "";
+    document.getElementById("tbodyAccountTokens").innerHTML = "";
+    document.getElementById("divAccountTokens").style.display = "none";
+    document.getElementById("divTokenTabs").style.display = "none";
+    document.getElementById("divRefreshBalance").style.display = "none";
+    document.getElementById("divLoadingBalance").style.display = "block";
     await showWalletScreen();
     await refreshAccountBalance();
 }
@@ -1105,7 +1120,7 @@ async function encryptAndBackupSpecificWallet() {
 }
 
 function showRevealSeedScreen(addr) {
-    for (let i = 0; i < SEED_LENGTH / 2; i++) {
+    for (let i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
         document.getElementById("divRevealSeed" + i).textContent = "";
     }    
     document.getElementById("pwdRevealSeedScreenPassword").value = "";
@@ -1167,7 +1182,7 @@ async function revealSeedWallet() {
         return;
     }
 
-    let wordList = getWordListFromSeedArray(revealSeedArray);
+    let wordList = await getWordListFromSeedArrayAsync(revealSeedArray);
     if (wordList == null) {
         hideWaitingBox();
         showWarnAlert(getGenericError(""));

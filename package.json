@@ -1,7 +1,7 @@
 {
   "name": "quantumswapwallet",
   "productName": "QuantumSwapWallet",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "QuantumSwapWallet",
   "main": "src/index.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "electron-squirrel-startup": "^1.0.0",
     "quantumcoin": "^7.0.13",
     "quantumswap": "^0.0.8",
+    "seed-words": "^1.0.2",
     "sjcl": "^1.0.8"
   },
   "devDependencies": {
@@ -44,7 +45,10 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         }
       ],
       "icon": "src/assets/icons/app/icon.ico"
@@ -60,7 +64,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64","arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "hardenedRuntime": true,

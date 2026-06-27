@@ -51,3 +51,7 @@ contextBridge.exposeInMainWorld('AppApi', {
 contextBridge.exposeInMainWorld('SwapQuoteApi', {
     send: (channel, data) => ipcRenderer.invoke(channel, data)
 })
+
+contextBridge.exposeInMainWorld('SeedWordsApi', {
+    send: (channel, data) => ipcRenderer.invoke(channel, data)
+})

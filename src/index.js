@@ -126,6 +126,31 @@ ipcMain.handle('AppApiGetVersion', async (event, data) => {
     return app.getVersion();
 })
 
+ipcMain.handle('SeedWordsInitialize', async () => {
+    const seedwords = require('seed-words');
+    return await seedwords.initialize();
+})
+
+ipcMain.handle('SeedWordsGetAllWords', async () => {
+    const seedwords = require('seed-words');
+    return seedwords.getAllSeedWords();
+})
+
+ipcMain.handle('SeedWordsGetWordList', async (event, data) => {
+    const seedwords = require('seed-words');
+    return seedwords.getWordListFromSeedArray(data);
+})
+
+ipcMain.handle('SeedWordsGetSeedArray', async (event, data) => {
+    const seedwords = require('seed-words');
+    return seedwords.getSeedArrayFromWordList(data);
+})
+
+ipcMain.handle('SeedWordsDoesWordExist', async (event, data) => {
+    const seedwords = require('seed-words');
+    return seedwords.doesSeedWordExist(data);
+})
+
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
