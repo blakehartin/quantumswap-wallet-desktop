@@ -1272,6 +1272,55 @@
             </div>
         </div>
 
+        <div class="content" id="confirmWalletScreen" style="display: none;">
+            <div class="center-content">
+                <div class="center-content-rounded-container">
+                    <div class="roundex-box" style="padding-top: 15px; padding-bottom: 15px;">
+                        <div class="back-container" role="button" onclick="backFromConfirmWalletScreen()" tabindex="50">
+
+                        </div>
+                        <div class="heading large" data-lang-key="confirm-wallet">Confirm Wallet</div>
+                        <div class="divider"></div>
+                        <div class="input_container">
+                            <div class="tab-name" style="color:black;" data-lang-key="confirm-wallet-description">
+                                Check your wallet address. If this is not the correct address, you may press back to review and edit the seed words.
+                            </div>
+                            <div class="divider"></div>
+                            <div style="width:100%;">
+                                <div class="tab-name" style="color:black;" data-lang-key="address">Address</div>
+                                <div id="confirmWalletAddress" class="tab-name text-wallet-address" style="color: #000000; word-break: break-all;">
+
+                                </div>
+                            </div>
+                            <div class="divider"></div>
+                        </div>
+                        <div style="display: flex; flex-direction: row; height: 40px; justify-content: center;">
+                            <div class="copy-container" role="button" onclick="return copyConfirmWalletAddress();" tabindex="1">
+
+                            </div>
+                            <div class="scan-container" role="button" style="margin-left:15px;margin-top:-2px;" onclick="return openBlockExplorerAccount();" tabindex="2">
+
+                            </div>
+                            <div style="float: left; width: 30px; height: 30px; margin-left:15px; display: none;" id="divConfirmWalletLoadingBalance">
+                                <img src="assets/icons/loading.gif" style="width:30px;height:30px" alt="Loading" />
+                            </div>
+                        </div>
+                        <div class="balance-container" style="display: flex;flex-direction: row;height: 40px;justify-content: center;margin-top:15px;">
+                            <div class="heading bold" style="height: 30px;font-size: 20px;margin-top: -15px;color: #35980e;width:fit-content;">
+                                <span style="color:black;" data-lang-key="balance">Balance</span> : <span style="color:green;" id="spnConfirmWalletBalance">-</span>
+                            </div>
+                        </div>
+                        <div class="divider" style="margin-top: -25px;">
+
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div class="large_button_container heading large" onclick="nextFromConfirmWalletScreen()" data-lang-key="next" role="button" tabindex="3">Next</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="content" id="verifyWalletPasswordScreen" style="display: none;">
             <div class="center-content">
                 <div class="center-content-rounded-container">

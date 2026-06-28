@@ -14,6 +14,7 @@ var specificWalletAddress = "";
 var additionalWalletMode = false; //this means first wallet has alredy been created and user is trying to create additional wallet
 var revealSeedArray;
 var currentSeedBytes = 96;
+var isRefreshingConfirmBalance = false;
 
 const ADDRESS_TEMPLATE = "[ADDRESS]";
 const SHORT_ADDRESS_TEMPLATE = "[SHORT_ADDRESS]";
@@ -761,6 +762,7 @@ function showVerifyWalletPasswordScreen() {
     document.getElementById('restoreSeedScreen').style.display = 'none';
     document.getElementById('seedVerifyScreen').style.display = 'none';
     document.getElementById('restoreWalletScreen').style.display = 'none';
+    document.getElementById('confirmWalletScreen').style.display = 'none';
     document.getElementById('verifyWalletPasswordScreen').style.display = 'block';
     document.getElementById('pwdVerifyWalletPassword').focus();
 }
@@ -951,7 +953,69 @@ async function restoreSeed() {
         return showToastBox(langJson.errors.wordToSeed);
     }
 
+    await showConfirmWalletScreen();
+}
+
+async function showConfirmWalletScreen() {
+    document.getElementById('restoreSeedScreen').style.display = 'none';
+    document.getElementById('restoreWalletScreen').style.display = 'none';
+    document.getElementById('seedVerifyScreen').style.display = 'none';
+    document.getElementById('verifyWalletPasswordScreen').style.display = 'none';
+    document.getElementById('confirmWalletScreen').style.display = 'block';
+
+    currentWallet = await walletCreateNewWalletFromSeed(tempSeedArray);
+    currentWalletAddress = currentWallet.address;
+    document.getElementById("confirmWalletAddress").textContent = currentWalletAddress;
+
+    document.getElementById("spnConfirmWalletBalance").textContent = "-";
+    await refreshConfirmWalletBalance();
+}
+
+async function refreshConfirmWalletBalance() {
+    if (isRefreshingConfirmBalance == true) {
+        return;
+    }
+    isRefreshingConfirmBalance = true;
+
+    try {
+        document.getElementById("divConfirmWalletLoadingBalance").style.display = "block";
+        document.getElementById("spnConfirmWalletBalance").textContent = "-";
+
+        if (currentBlockchainNetwork != null) {
+            let accountDetails = await getAccountDetails(currentBlockchainNetwork.scanApiDomain, currentWalletAddress);
+            if (accountDetails != null) {
+                let balance = await weiToEtherFormatted(accountDetails.balance);
+                document.getElementById("spnConfirmWalletBalance").textContent = balance;
+            }
+        }
+    }
+    catch (error) {
+        document.getElementById("spnConfirmWalletBalance").textContent = "-";
+    }
+    finally {
+        document.getElementById("divConfirmWalletLoadingBalance").style.display = "none";
+        isRefreshingConfirmBalance = false;
+    }
+}
+
+function backFromConfirmWalletScreen() {
+    isRefreshingConfirmBalance = false;
+    document.getElementById("divConfirmWalletLoadingBalance").style.display = "none";
+    document.getElementById('confirmWalletScreen').style.display = 'none';
+    document.getElementById('restoreSeedScreen').style.display = 'block';
+    return false;
+}
+
+function nextFromConfirmWalletScreen() {
+    isRefreshingConfirmBalance = false;
+    document.getElementById("divConfirmWalletLoadingBalance").style.display = "none";
     showVerifyWalletPasswordScreen();
+    return false;
+}
+
+async function copyConfirmWalletAddress() {
+    await WriteTextToClipboard(currentWalletAddress);
+    return false;
 }
 
 function restoreWalletFromFile() {
