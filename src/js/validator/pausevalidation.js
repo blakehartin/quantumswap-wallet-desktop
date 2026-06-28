@@ -2,6 +2,7 @@ const PAUSE_VALIDATION_GAS = 100000;
 
 async function pauseValidation() {
     offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    let nonceValue = null;
     if (offlineSignEnabled === true) {
         let currentNonce = document.getElementById("txtCurrentNonceValidator").value;
         if (currentNonce == null || currentNonce.length < 1) {
@@ -14,17 +15,25 @@ async function pauseValidation() {
             showWarnAlert(langJson.errors.enterCurrentNonce);
             return false;
         }
+        nonceValue = String(tempNonce);
     }
 
     var password = document.getElementById("pwdValidator").value;
-
     if (password == null || password.length < 2) {
         showWarnAlert(langJson.errors.enterQuantumPassword);
         return false;
     }
 
-    let msg = langJson.langValues.validatorPauseValidationConfirm;
-    showConfirmAndExecuteOnConfirm(msg, onPauseValidation);
+    var review = {
+        asset: langJson.langValues["validator-pause-validation"],
+        toAddress: STAKING_CONTRACT_ADDRESS,
+        quantityLabelKey: "send-quantity",
+        quantityValue: "-",
+        gasLimit: String(PAUSE_VALIDATION_GAS),
+        gasFee: (PAUSE_VALIDATION_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        nonce: nonceValue
+    };
+    showValidatorTransactionReview(review, onPauseValidation);
 }
 
 async function onPauseValidation() {
@@ -79,7 +88,7 @@ async function pauseValidationSubmit(quantumWallet) {
 
             setTimeout(() => {
                 hideWaitingBox();
-                showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+                showSendCompletedDialog(result.txHash, showWalletScreen);
             }, 1000);
         } else {
             hideWaitingBox();

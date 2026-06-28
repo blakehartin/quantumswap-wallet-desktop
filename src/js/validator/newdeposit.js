@@ -3,7 +3,6 @@ const NEW_DEPOSIT_GAS = 250000;
 async function newDeposit() {
     let validatorAddress = document.getElementById("txtValidatorAddress").value;
     let validatorDepositCoins = document.getElementById("txtValidatorDepositCoins").value;
-    var password = document.getElementById("pwdValidator").value;
 
     if (validatorAddress == null || validatorAddress.length < ADDRESS_LENGTH_CHECK || await IsValidAddress(validatorAddress) == false) {
         showWarnAlert(langJson.errors.quantumAddr);
@@ -27,6 +26,7 @@ async function newDeposit() {
     }
 
     offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    let nonceValue = null;
     if (offlineSignEnabled === true) {
         let currentNonce = document.getElementById("txtCurrentNonceValidator").value;
         if (currentNonce == null || currentNonce.length < 1) {
@@ -39,16 +39,25 @@ async function newDeposit() {
             showWarnAlert(langJson.errors.enterCurrentNonce);
             return false;
         }
+        nonceValue = String(tempNonce);
     }
 
+    var password = document.getElementById("pwdValidator").value;
     if (password == null || password.length < 2) {
         showWarnAlert(langJson.errors.enterQuantumPassword);
         return false;
     }
 
-    let msg = langJson.langValues.validatorNewDepositConfirm;
-    msg = msg.replace("[QUANTITY]", validatorDepositCoins);
-    showConfirmAndExecuteOnConfirm(msg, onNewDepositConfirm);
+    var review = {
+        asset: langJson.langValues["validator-new-deposit"],
+        toAddress: validatorAddress,
+        quantityLabelKey: "coins-to-deposit",
+        quantityValue: validatorDepositCoins,
+        gasLimit: String(NEW_DEPOSIT_GAS),
+        gasFee: (NEW_DEPOSIT_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        nonce: nonceValue
+    };
+    showValidatorTransactionReview(review, onNewDepositConfirm);
 }
 
 async function onNewDepositConfirm() {
@@ -105,7 +114,7 @@ async function newDepositSubmit(quantumWallet) {
 
             setTimeout(() => {
                 hideWaitingBox();
-                showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+                showSendCompletedDialog(result.txHash, showWalletScreen);
             }, 1000);
         } else {
             hideWaitingBox();

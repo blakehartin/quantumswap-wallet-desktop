@@ -38,7 +38,7 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
-/** DevTools default off (including npm start). Set OPEN_DEVTOOLS=1 or OPEN_DEVTOOLS=true to open. */
+/** DevTools default off (including npm start). Set OPEN_DEVTOOLS=1 or OPEN_DEVTOOLS=true to open. PowerShell: $env:OPEN_DEVTOOLS=1 */
 function shouldOpenDevTools() {
     const v = process.env.OPEN_DEVTOOLS;
     if (v === '1' || v === 'true') {

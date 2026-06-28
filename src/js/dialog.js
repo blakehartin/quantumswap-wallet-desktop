@@ -247,11 +247,18 @@ btnCancelAdvancedSigning.onclick = function () {
 }
 
 
-var modalSwapApprovalConfirm = document.getElementById("modalSwapApprovalConfirm");
 var modalSwapApprovalSubmit = document.getElementById("modalSwapApprovalSubmit");
 
+var modalTransactionReview = document.getElementById("modalTransactionReview");
+var btnTxReviewSubmit = document.getElementById("btnTxReviewSubmit");
+var btnTxReviewCancel = document.getElementById("btnTxReviewCancel");
+var txReviewOnSubmit = null;
+var txReviewRequirePassword = false;
+
+var modalSendCompleted = document.getElementById("modalSendCompleted");
+
 window.onclick = function (event) {
-    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalConfirm || event.target == modalSwapApprovalSubmit) {
+    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalSubmit || event.target == modalTransactionReview || event.target == modalSendCompleted) {
         if (modalOkDialog.style.display !== "none") {
             modalNetwork.style.display = "none";
             modalNetwork.close();
@@ -283,13 +290,17 @@ window.onclick = function (event) {
             modalAdvancedSigning.close();
         }
 
-        if (modalSwapApprovalConfirm && modalSwapApprovalConfirm.style.display !== "none") {
-            modalSwapApprovalConfirm.style.display = "none";
-            modalSwapApprovalConfirm.close();
-        }
         if (modalSwapApprovalSubmit && modalSwapApprovalSubmit.style.display !== "none") {
             modalSwapApprovalSubmit.style.display = "none";
             modalSwapApprovalSubmit.close();
+        }
+        if (modalTransactionReview && modalTransactionReview.style.display !== "none") {
+            modalTransactionReview.style.display = "none";
+            modalTransactionReview.close();
+            txReviewOnSubmit = null;
+        }
+        if (modalSendCompleted && modalSendCompleted.style.display !== "none") {
+            closeSendCompletedDialog();
         }
     }
 }
@@ -367,4 +378,121 @@ btnOkOfflineSignature.onclick = function () {
         onCloseFuncOfflineSignature();
         onCloseFuncOfflineSignature = null;
     }
+}
+
+function closeTransactionReviewDialog() {
+    if (modalTransactionReview) {
+        modalTransactionReview.style.display = "none";
+        modalTransactionReview.close();
+    }
+    txReviewOnSubmit = null;
+}
+
+function txReviewNetworkText() {
+    if (typeof currentBlockchainNetwork === "undefined" || currentBlockchainNetwork == null) {
+        return "";
+    }
+    var name = currentBlockchainNetwork.blockchainName || "";
+    var chainId = currentBlockchainNetwork.networkId;
+    var chainSuffix = (langJson && langJson.langValues["chain-id-suffix"]) ? langJson.langValues["chain-id-suffix"] : "chain";
+    if (name === "") {
+        return "(" + chainSuffix + " " + chainId + ")";
+    }
+    return name + " (" + chainSuffix + " " + chainId + ")";
+}
+
+function showTransactionReviewDialog(review) {
+    document.getElementById("spanTxReviewAsset").textContent = review.asset || "";
+    document.getElementById("spanTxReviewFrom").textContent = review.fromAddress || "";
+    document.getElementById("spanTxReviewTo").textContent = review.toAddress || "";
+    document.getElementById("spanTxReviewQuantity").textContent = review.quantityValue || "";
+    document.getElementById("spanTxReviewGasLimit").textContent = review.gasLimit || "";
+    document.getElementById("spanTxReviewGasFee").textContent = review.gasFee || "";
+    document.getElementById("spanTxReviewNetwork").textContent = review.networkText || "";
+
+    var lblAsset = document.getElementById("lblTxReviewAsset");
+    if (lblAsset) {
+        var assetKey = review.assetLabelKey || "what-is-being-sent";
+        if (langJson && langJson.langValues[assetKey]) {
+            lblAsset.textContent = langJson.langValues[assetKey];
+        }
+    }
+
+    var lblQty = document.getElementById("lblTxReviewQuantity");
+    if (lblQty && review.quantityLabelKey && langJson && langJson.langValues[review.quantityLabelKey]) {
+        lblQty.textContent = langJson.langValues[review.quantityLabelKey];
+    }
+
+    var contractRow = document.getElementById("rowTxReviewContract");
+    if (review.contractAddress) {
+        document.getElementById("spanTxReviewContract").textContent = review.contractAddress;
+        contractRow.style.display = "block";
+    } else {
+        document.getElementById("spanTxReviewContract").textContent = "";
+        contractRow.style.display = "none";
+    }
+
+    var nonceRow = document.getElementById("rowTxReviewNonce");
+    if (review.nonce != null && review.nonce !== "") {
+        document.getElementById("spanTxReviewNonce").textContent = review.nonce;
+        nonceRow.style.display = "block";
+    } else {
+        document.getElementById("spanTxReviewNonce").textContent = "";
+        nonceRow.style.display = "none";
+    }
+
+    var pwdRow = document.getElementById("rowTxReviewPassword");
+    txReviewRequirePassword = review.requirePassword === true;
+    if (txReviewRequirePassword) {
+        pwdRow.style.display = "flex";
+    } else {
+        pwdRow.style.display = "none";
+    }
+
+    var submitBtn = document.getElementById("btnTxReviewSubmit");
+    if (submitBtn && review.submitLabelKey && langJson && langJson.langValues[review.submitLabelKey]) {
+        submitBtn.textContent = langJson.langValues[review.submitLabelKey];
+    }
+
+    document.getElementById("txtTxReviewIAgree").value = "";
+    var pwdInput = document.getElementById("txtTxReviewPassword");
+    if (pwdInput) { pwdInput.value = ""; }
+
+    txReviewOnSubmit = review.onSubmit || null;
+    modalTransactionReview.style.display = "block";
+    modalTransactionReview.showModal();
+    setTimeout(function () {
+        var el = document.getElementById("txtTxReviewIAgree");
+        if (el) { el.focus(); }
+    }, 100);
+    return false;
+}
+
+btnTxReviewSubmit.onclick = function () {
+    var iagree = (document.getElementById("txtTxReviewIAgree").value || "").trim().toLowerCase();
+    var required = (langJson && langJson.langValues["i-agree-literal"]) ? langJson.langValues["i-agree-literal"].toLowerCase() : "i agree";
+    if (iagree !== required) {
+        showWarnAlert(langJson.langValues["must-agree-to-submit"]);
+        return;
+    }
+    if (txReviewRequirePassword) {
+        var password = (document.getElementById("txtTxReviewPassword").value || "").trim();
+        if (!password) {
+            showWarnAlert(langJson.errors.enterWalletPassord);
+            return;
+        }
+    }
+    var cb = txReviewOnSubmit;
+    modalTransactionReview.style.display = "none";
+    modalTransactionReview.close();
+    txReviewOnSubmit = null;
+    if (cb != null) {
+        cb();
+    }
+}
+
+btnTxReviewCancel.onclick = function () {
+    modalTransactionReview.style.display = "none";
+    modalTransactionReview.close();
+    txReviewOnSubmit = null;
 }

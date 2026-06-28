@@ -32,6 +32,20 @@ function addTokenOptionToSendDropdown(ddlCoinTokenToSend, token) {
     ddlCoinTokenToSend.add(tokenOption);
 }
 
+function getSendAssetSymbol(contractAddress, isCoin) {
+    if (isCoin) return "Q";
+    if (currentWalletTokenList != null) {
+        for (let i = 0; i < currentWalletTokenList.length; i++) {
+            if (currentWalletTokenList[i].contractAddress === contractAddress) {
+                let sym = currentWalletTokenList[i].symbol;
+                if (sym) return sym;
+                return currentWalletTokenList[i].name || langJson.langValues.tokens;
+            }
+        }
+    }
+    return langJson.langValues.tokens;
+}
+
 function populateSendScreen() {
     resetTokenList();
 
@@ -233,12 +247,27 @@ async function signOfflineSend() {
         return false;
     }
 
-    let msg = langJson.langValues.signSendConfirm;
-    msg = msg.replace("[SEND_QUANTITY]", sendQuantity);
-    msg = msg.replace("[TO_ADDRESS]", sendAddress);
-    msg = msg.replace("[NONCE]", tempNonce);
-    msg = msg.replace("[SEND_COINTOKEN]", CoinTokenToSendName); //already htmlEncoded
-    showConfirmAndExecuteOnConfirm(msg, onSignOfflineSendCoinsConfirm);
+    var isCoin = (selectedValue === "Q");
+    var offlineContractAddress = isCoin ? null : document.getElementById("txtTokenContractAddress").value;
+    var gasLimit = isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS;
+    var gasFee = (typeof SWAP_GAS_FEE_RATE !== "undefined" ? (gasLimit * SWAP_GAS_FEE_RATE) : 0).toFixed(6);
+
+    var review = {
+        asset: getSendAssetSymbol(offlineContractAddress, isCoin),
+        contractAddress: offlineContractAddress,
+        fromAddress: currentWalletAddress,
+        toAddress: sendAddress,
+        quantityLabelKey: "send-quantity",
+        quantityValue: sendQuantity,
+        gasLimit: String(gasLimit),
+        gasFee: gasFee,
+        nonce: String(tempNonce),
+        networkText: txReviewNetworkText(),
+        requirePassword: false,
+        submitLabelKey: "ok",
+        onSubmit: onSignOfflineSendCoinsConfirm
+    };
+    showTransactionReviewDialog(review);
 }
 
 async function onSignOfflineSendCoinsConfirm() {
@@ -386,6 +415,15 @@ async function sendCoins() {
     }
 
     if (quantityToSend == null || quantityToSend === "") {
+        await refreshAccountBalance();
+        if (contractAddress === QuantumCoin) {
+            quantityToSend = currentBalance;
+        } else {
+            quantityToSend = getTokenBalance(contractAddress);
+        }
+    }
+
+    if (quantityToSend == null || quantityToSend === "") {
         showWarnAlert(langJson.errors.amountLarge);
         return false;
     }
@@ -401,11 +439,26 @@ async function sendCoins() {
         return false;
     }
 
-    let msg = langJson.langValues.sendConfirm;
-    msg = msg.replace("[SEND_QUANTITY]", sendQuantity);
-    msg = msg.replace("[TO_ADDRESS]", sendAddress);
-    msg = msg.replace("[SEND_COINTOKEN]", CoinTokenToSendName); //already htmlEncoded
-    showConfirmAndExecuteOnConfirm(msg, onSendCoinsConfirm);
+    var isCoin = (contractAddress === QuantumCoin);
+    var gasLimit = isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS;
+    var gasFee = (typeof SWAP_GAS_FEE_RATE !== "undefined" ? (gasLimit * SWAP_GAS_FEE_RATE) : 0).toFixed(6);
+
+    var review = {
+        asset: getSendAssetSymbol(contractAddress, isCoin),
+        contractAddress: isCoin ? null : contractAddress,
+        fromAddress: currentWalletAddress,
+        toAddress: sendAddress,
+        quantityLabelKey: "send-quantity",
+        quantityValue: sendQuantity,
+        gasLimit: String(gasLimit),
+        gasFee: gasFee,
+        nonce: null,
+        networkText: txReviewNetworkText(),
+        requirePassword: false,
+        submitLabelKey: "ok",
+        onSubmit: onSendCoinsConfirm
+    };
+    showTransactionReviewDialog(review);
 }
 
 async function onSendCoinsConfirm() {
@@ -466,7 +519,7 @@ async function sendCoinsSubmit(quantumWallet) {
 
         setTimeout(() => {
             hideWaitingBox();
-            showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+            showSendCompletedDialog(result.txHash, showWalletScreen);
         }, 1000);
     }
     catch (error) {
@@ -513,7 +566,7 @@ async function sendTokensSubmit(quantumWallet) {
 
         setTimeout(() => {
             hideWaitingBox();
-            showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+            showSendCompletedDialog(result.txHash, showWalletScreen);
         }, 1000);
     }
     catch (error) {
@@ -526,3 +579,109 @@ async function sendTokensSubmit(quantumWallet) {
         }
     }
 }
+
+var sendCompletedPollingId = null;
+var sendCompletedStatusRotateId = null;
+var sendCompletedStatusStartTime = 0;
+var sendCompletedOnClose = null;
+var sendCompletedLastTxHash = null;
+var SEND_STATUS_MESSAGES = ["send-status-checking", "send-status-waiting", "send-status-checking-short"];
+var SEND_STATUS_ROTATE_MS = 3600;
+
+function showSendCompletedDialog(txHash, onClose) {
+    sendCompletedLastTxHash = txHash;
+    sendCompletedOnClose = (typeof onClose === "function") ? onClose : null;
+
+    document.getElementById("pSendCompletedMessage").textContent =
+        (langJson && langJson.langValues && langJson.langValues["send-transaction-send-message-description"]) || "Your transaction has been submitted. It can take upto a minute to process the transaction. You may close this dialog now.";
+    document.getElementById("pSendCompletedTxHash").textContent = txHash || "";
+    var copyEl = document.getElementById("divSendCompletedCopy");
+    var explEl = document.getElementById("divSendCompletedExplorer");
+    if (copyEl) copyEl.title = (langJson && langJson.langValues && langJson.langValues["copy"]) || "Copy";
+    if (explEl) explEl.title = (langJson && langJson.langValues && langJson.langValues["block-explorer"]) || "Block Explorer";
+
+    setSendCompletedPending();
+
+    var dlg = document.getElementById("modalSendCompleted");
+    dlg.style.display = "block";
+    dlg.showModal();
+
+    sendCompletedStatusStartTime = Date.now();
+    updateSendCompletedStatusText();
+    if (sendCompletedStatusRotateId) clearInterval(sendCompletedStatusRotateId);
+    sendCompletedStatusRotateId = setInterval(updateSendCompletedStatusText, SEND_STATUS_ROTATE_MS);
+    if (sendCompletedPollingId) clearInterval(sendCompletedPollingId);
+    sendCompletedPollingId = setInterval(pollSendCompletedStatus, 9000);
+    pollSendCompletedStatus();
+}
+
+function setSendCompletedPending() {
+    document.getElementById("imgSendCompletedStatus").src = "assets/icons/loading.gif";
+    document.getElementById("imgSendCompletedStatus").alt = "Loading";
+    updateSendCompletedStatusText();
+}
+
+function setSendCompletedSucceeded() {
+    document.getElementById("imgSendCompletedStatus").src = "assets/svg/checkmark-circle-outline.svg";
+    document.getElementById("imgSendCompletedStatus").alt = "Success";
+    document.getElementById("spanSendCompletedStatus").textContent =
+        (langJson && langJson.langValues && langJson.langValues["send-transaction-succeeded"]) || "Transaction completed successfully.";
+}
+
+function setSendCompletedFailed(errorText) {
+    document.getElementById("imgSendCompletedStatus").src = "assets/svg/alert-outline.svg";
+    document.getElementById("imgSendCompletedStatus").alt = "Failed";
+    var base = (langJson && langJson.langValues && langJson.langValues["send-transaction-failed"]) || "Transaction failed.";
+    document.getElementById("spanSendCompletedStatus").textContent = errorText ? (base + " " + errorText) : base;
+}
+
+function updateSendCompletedStatusText() {
+    if (document.getElementById("imgSendCompletedStatus").alt !== "Loading") return;
+    var idx = Math.floor((Date.now() - sendCompletedStatusStartTime) / SEND_STATUS_ROTATE_MS) % SEND_STATUS_MESSAGES.length;
+    var key = SEND_STATUS_MESSAGES[idx];
+    var text = (langJson && langJson.langValues && langJson.langValues[key]) || key;
+    document.getElementById("spanSendCompletedStatus").textContent = text;
+}
+
+async function pollSendCompletedStatus() {
+    if (!sendCompletedLastTxHash || !currentBlockchainNetwork) return;
+    try {
+        var res = await getTransactionStatusByHash(currentBlockchainNetwork.scanApiDomain, currentWalletAddress, sendCompletedLastTxHash);
+        if (res.status === "succeeded") {
+            stopSendCompletedTimers();
+            setSendCompletedSucceeded();
+            await refreshAccountBalance();
+        } else if (res.status === "failed") {
+            stopSendCompletedTimers();
+            setSendCompletedFailed(res.error || "");
+        }
+    } catch (e) { /* keep polling */ }
+}
+
+function stopSendCompletedTimers() {
+    if (sendCompletedPollingId) { clearInterval(sendCompletedPollingId); sendCompletedPollingId = null; }
+    if (sendCompletedStatusRotateId) { clearInterval(sendCompletedStatusRotateId); sendCompletedStatusRotateId = null; }
+}
+
+function closeSendCompletedDialog() {
+    stopSendCompletedTimers();
+    sendCompletedLastTxHash = null;
+    var dlg = document.getElementById("modalSendCompleted");
+    dlg.style.display = "none";
+    dlg.close();
+    var cb = sendCompletedOnClose;
+    sendCompletedOnClose = null;
+    if (cb) cb();
+}
+
+async function copySendCompletedTxHash() {
+    if (sendCompletedLastTxHash) await WriteTextToClipboard(sendCompletedLastTxHash);
+}
+
+async function openSendCompletedInExplorer() {
+    if (sendCompletedLastTxHash) await OpenScanTxn(sendCompletedLastTxHash);
+}
+
+document.getElementById("btnSendCompletedOk").onclick = function () { closeSendCompletedDialog(); };
+document.getElementById("divSendCompletedCopy").onclick = function () { var el = this; copySendCompletedTxHash().then(function () { el.blur(); }); };
+document.getElementById("divSendCompletedExplorer").onclick = function () { var el = this; openSendCompletedInExplorer().then(function () { el.blur(); }); };
