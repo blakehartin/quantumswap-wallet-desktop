@@ -2,7 +2,6 @@ const INCREASE_DEPOSIT_GAS = 250000;
 
 async function increaseDeposit() {
     let validatorDepositCoins = document.getElementById("txtValidatorDepositCoins").value;
-    var password = document.getElementById("pwdValidator").value;
 
     if (validatorDepositCoins == null || validatorDepositCoins.length < 1) {
         showWarnAlert(langJson.errors.enterAmount);
@@ -16,6 +15,7 @@ async function increaseDeposit() {
     }
 
     offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    let nonceValue = null;
     if (offlineSignEnabled === true) {
         let currentNonce = document.getElementById("txtCurrentNonceValidator").value;
         if (currentNonce == null || currentNonce.length < 1) {
@@ -28,16 +28,25 @@ async function increaseDeposit() {
             showWarnAlert(langJson.errors.enterCurrentNonce);
             return false;
         }
+        nonceValue = String(tempNonce);
     }
 
+    var password = document.getElementById("pwdValidator").value;
     if (password == null || password.length < 2) {
         showWarnAlert(langJson.errors.enterQuantumPassword);
         return false;
     }
 
-    let msg = langJson.langValues.validatorIncreaseDepositConfirm;
-    msg = msg.replace("[QUANTITY]", validatorDepositCoins);
-    showConfirmAndExecuteOnConfirm(msg, onIncreaseDepositConfirm);
+    var review = {
+        asset: langJson.langValues["validator-increase-deposit"],
+        toAddress: STAKING_CONTRACT_ADDRESS,
+        quantityLabelKey: "coins-to-deposit",
+        quantityValue: validatorDepositCoins,
+        gasLimit: String(INCREASE_DEPOSIT_GAS),
+        gasFee: (INCREASE_DEPOSIT_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        nonce: nonceValue
+    };
+    showValidatorTransactionReview(review, onIncreaseDepositConfirm);
 }
 
 async function onIncreaseDepositConfirm() {
@@ -93,7 +102,7 @@ async function increaseDepositSubmit(quantumWallet) {
 
             setTimeout(() => {
                 hideWaitingBox();
-                showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+                showSendCompletedDialog(result.txHash, showWalletScreen);
             }, 1000);
         } else {
             hideWaitingBox();

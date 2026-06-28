@@ -2,6 +2,7 @@ const COMPLETE_PARTIAL_WITHDRAWAL_GAS = 100000;
 
 async function completePartialWithdrawal() {
     offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    let nonceValue = null;
     if (offlineSignEnabled === true) {
         let currentNonce = document.getElementById("txtCurrentNonceValidator").value;
         if (currentNonce == null || currentNonce.length < 1) {
@@ -14,17 +15,25 @@ async function completePartialWithdrawal() {
             showWarnAlert(langJson.errors.enterCurrentNonce);
             return false;
         }
+        nonceValue = String(tempNonce);
     }
 
     var password = document.getElementById("pwdValidator").value;
-
     if (password == null || password.length < 2) {
         showWarnAlert(langJson.errors.enterQuantumPassword);
         return false;
     }
 
-    let msg = langJson.langValues.validatorCompletePartialWithdrawalConfirm;
-    showConfirmAndExecuteOnConfirm(msg, onCompletePartialWithdrawal);
+    var review = {
+        asset: langJson.langValues["validator-complete-partial-withdrawal"],
+        toAddress: STAKING_CONTRACT_ADDRESS,
+        quantityLabelKey: "send-quantity",
+        quantityValue: "-",
+        gasLimit: String(COMPLETE_PARTIAL_WITHDRAWAL_GAS),
+        gasFee: (COMPLETE_PARTIAL_WITHDRAWAL_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        nonce: nonceValue
+    };
+    showValidatorTransactionReview(review, onCompletePartialWithdrawal);
 }
 
 async function onCompletePartialWithdrawal() {
@@ -79,7 +88,7 @@ async function completePartialWithdrawalSubmit(quantumWallet) {
 
             setTimeout(() => {
                 hideWaitingBox();
-                showAlertAndExecuteOnClose(langJson.langValues.sendRequest.replace(TRANSACTION_HASH_TEMPLATE, result.txHash), showWalletScreen);
+                showSendCompletedDialog(result.txHash, showWalletScreen);
             }, 1000);
         } else {
             hideWaitingBox();
