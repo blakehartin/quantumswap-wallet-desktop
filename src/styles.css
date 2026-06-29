@@ -222,6 +222,7 @@ button, input[type="submit"], input[type="reset"] {
     background-color: #372339;
     height: 1.1px;
     opacity: 0.3;
+    flex-shrink: 0;
 }
 
 .small-icon {
@@ -290,6 +291,91 @@ button, input[type="submit"], input[type="reset"] {
         transform: translateY(-2px);
         background-size: 30px 30px;
     }
+
+.gas-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.gas-header-row .heading.bold {
+    text-align: left;
+}
+
+.gas-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 10px;
+}
+
+.gas-fee-label {
+    font-size: 0.85em;
+    color: #372339;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.gas-container {
+    width: 38px;
+    height: 38px;
+    background: url("assets/svg/gas-outline.svg") no-repeat;
+    background-size: 38px 38px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.08s ease, filter 0.08s ease;
+}
+
+    .gas-container:hover,
+    .gas-container:focus {
+        background: url("assets/svg/gas-focus.svg") no-repeat;
+        transform: translateY(-2px);
+        background-size: 38px 38px;
+        filter: drop-shadow(0 2px 3px rgba(102, 16, 242, 0.45));
+    }
+
+    .gas-container:active {
+        background: url("assets/svg/gas-active.svg") no-repeat;
+        transform: translateY(0) scale(0.9);
+        background-size: 38px 38px;
+        filter: brightness(0.82);
+    }
+
+    .gas-container.gas-pulse {
+        background: url("assets/svg/gas-pulse.svg") no-repeat;
+        background-size: 38px 38px;
+        cursor: progress;
+    }
+
+#modalGasConfig .cancel,
+#modalGasConfig .proceed {
+    float: none;
+    margin-top: 0;
+}
+
+.gas-toast {
+    display: none;
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #372339;
+    color: #ffffff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    z-index: 50;
+    box-shadow: rgb(38, 57, 77) 3px 9px 15px -5px;
+    pointer-events: none;
+    max-width: 80%;
+    text-align: center;
+}
+
+.gas-toast.gas-toast-visible {
+    display: block;
+}
 
 .refresh-container {
     width: 30px;

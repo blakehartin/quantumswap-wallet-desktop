@@ -29,6 +29,11 @@
     <link rel="preload" href="assets/svg/chevron-back-outline-focus.svg" as="image">
     <link rel="preload" href="assets/svg/chevron-forward-outline-focus.svg" as="image">
     <link rel="preload" href="assets/svg/open-focus.svg" as="image">
+
+    <link rel="preload" href="assets/svg/gas-outline.svg" as="image">
+    <link rel="preload" href="assets/svg/gas-focus.svg" as="image">
+    <link rel="preload" href="assets/svg/gas-active.svg" as="image">
+    <link rel="preload" href="assets/svg/gas-pulse.svg" as="image">
 </head>
 
 <body>
@@ -263,19 +268,25 @@
         </div>
     </dialog>
 
-    <dialog id="modalSwapApprovalSubmit" class="modal" tabindex="-1" role="dialog">
-        <div class="modal-content">
-            <div style="margin-bottom:20px;min-height:220px;">
-                <div style="float:left;margin-right:12px;"><img src="assets/icons/loading.gif" style="width:50px;height:50px;" alt="Loading" /></div>
-                <p id="pSwapApprovalSubmitStatus" style="margin-bottom:8px;" tabindex="1">Please wait, checking</p>
-                <p id="pSwapApprovalSubmitCloseHint" style="font-size:0.9em;color:#555;margin-top:12px;" data-lang-key="swap-approval-may-close"></p>
-                <div id="divSwapApprovalSubmitError" style="display:none;margin-top:12px;color:#c00;"></div>
-                <div style="margin-top:20px;">
-                    <button class="proceed" data-lang-key="close" role="button" tabindex="2" id="btnSwapApprovalSubmitClose" onclick="return onSwapApprovalSubmitCloseClick();">Close</button>
-                </div>
+    <dialog id="modalGasConfig" class="modal" tabindex="-1" role="dialog">
+        <div class="modal-content" style="margin:10% auto; max-width:460px;">
+            <h3 data-lang-key="gas" style="margin-top:0;">Gas</h3>
+            <div class="input_container" style="margin-top:10px;">
+                <div class="heading medium" data-lang-key="gas-limit">Gas limit (gas-units)</div>
+                <input class="tab-name" type="number" min="0" step="1" id="txtGasLimit" style="text-align: left; width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="1">
+            </div>
+            <div class="input_container" style="margin-top:10px;">
+                <div class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</div>
+                <input class="tab-name" type="text" id="txtGasFee" readonly style="text-align: left; width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="2">
+            </div>
+            <div style="margin-top:20px; display:flex; gap:15px; justify-content:flex-end;">
+                <button class="cancel" data-lang-key="cancel" role="button" tabindex="4" id="btnGasConfigCancel">Cancel</button>
+                <button class="proceed" data-lang-key="ok" role="button" tabindex="3" id="btnGasConfigOk">Ok</button>
             </div>
         </div>
     </dialog>
+
+    <div id="divGasToast" class="gas-toast" role="status" aria-live="polite"></div>
 
     <dialog id="modalSendCompleted" class="modal" tabindex="-1" role="dialog">
         <div class="modal-content" style="margin:10% auto; max-width:520px;">
@@ -1523,15 +1534,21 @@
 
                     </div>
                     <div id="divSendScreenInner" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px;overflow-y: auto;overflow-x: auto;">
-                        <div class="heading bold" data-lang-key="send">Send</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="send">Send</div>
+                            <div class="gas-header-right">
+                                <span id="spanSendGasFee" class="gas-fee-label"></span>
+                                <div id="divSendGasIcon" class="gas-container" role="button" tabindex="301" onclick="return onSendGasIconClick();"></div>
+                            </div>                                                    
+                        </div>                        
                         <div class="divider"></div>
                         <div class="input_container" id="divTokenList">
                             <div id="divSendShowUnrecognized" style="display:none; text-align:left; margin-bottom:8px;">
-                                <input type="checkbox" id="chkSendShowUnrecognized" onchange="onToggleSendUnrecognized();">
-                                <label for="chkSendShowUnrecognized" data-lang-key="show-unrecognized-tokens" style="cursor: pointer; color:black;">Show unrecognized tokens</label>
+                                <input type="checkbox" id="chkSendShowUnrecognized" tabindex="302" onchange="onToggleSendUnrecognized();">
+                                <label for="chkSendShowUnrecognized" tabindex="0" data-lang-key="show-unrecognized-tokens" style="cursor: pointer; color:black;" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); document.getElementById('chkSendShowUnrecognized').click();}">Show unrecognized tokens</label>
                             </div>
                             <div class="selectwrapper">
-                                <select id="ddlCoinTokenToSend" class="selectbox" tabindex="301" onchange="updateInfoSendScreen();">
+                                <select id="ddlCoinTokenToSend" class="selectbox" tabindex="303" onchange="updateInfoSendScreen();">
                                     <option value="Q">Q</option>
                                     <option value="Y2Q">Y2Q</option>
                                     <option value="hei">Heisen</option>
@@ -1540,7 +1557,7 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 400;color:black;"
                                    autocomplete="off" id="txtTokenContractAddress" name="contract_address" data-placeholder-key="token-contract-address"
-                                   placeholder="token contract address" tabindex="302">
+                                   placeholder="token contract address" tabindex="304">
 
                             <div id="divCoinTokenToSend" style="font-size: small">0x0000000000000000000000000000000000000000000000000000000000001000</div>
                             <div class="divider"></div>
@@ -1555,7 +1572,7 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 400;color:black;"
                                    autocomplete="off" id="txtSendAddress" name="send_address" data-placeholder-key="address-to-send"
-                                   placeholder="Address to send to" tabindex="303">
+                                   placeholder="Address to send to" tabindex="305">
                             <div class="divider"></div>
                         </div>
                         <div class="input_container">
@@ -1563,7 +1580,7 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
                                    type="number" autocomplete="off" id="txtSendQuantity" name="send_quantity" data-placeholder-key="quantity-to-send"
-                                   placeholder="Quantity to send" tabindex="304">
+                                   placeholder="Quantity to send" tabindex="306">
                             <div class="divider"></div>
                         </div>
                         <div class="input_container" id="divCurrentNonce">
@@ -1571,7 +1588,7 @@
                             <input class="tab-name"
                                    style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
                                    type="number" autocomplete="off" id="txtCurrentNonce" name="current_nonce" data-placeholder-key="current-nonce"
-                                   placeholder="Current Nonce" tabindex="305" maxlength="6">
+                                   placeholder="Current Nonce" tabindex="307" maxlength="6">
                             <div class="divider"></div>
                         </div>
                         <div class="input_container">
@@ -1580,19 +1597,19 @@
                                     <input class="tab-name"
                                            style="text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"
                                            type="password" autocomplete="off" id="pwdSend" name="password" data-placeholder-key="password"
-                                           placeholder="Enter the password" tabindex="306">
+                                           placeholder="Enter the password" tabindex="308">
                                 </div>
                                 <div style="float:left">
-                                    <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;" onclick="togglePasswordBox(this, 'pwdSend');" data-alt-key="show-password" role="button" tabindex="307" />
+                                    <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;" onclick="togglePasswordBox(this, 'pwdSend');" data-alt-key="show-password" role="button" tabindex="309" />
                                 </div>
                             </div>
                             <div class="divider"></div>
                         </div>
                         <div style="display: flex; justify-content: flex-end;">
-                            <div class="large_button_container heading large" onclick="return sendCoins();" data-lang-key="send" role="button" tabindex="308" id="btnSendCoins">
+                            <div class="large_button_container heading large" onclick="return sendCoins();" data-lang-key="send" role="button" tabindex="310" id="btnSendCoins">
                                 Send
                             </div>
-                            <div class="large_button_container heading large" onclick="return signOfflineSend();" data-lang-key="sign-offline" role="button" tabindex="309" style="margin-left:15px;" id="btnOfflineSign">
+                            <div class="large_button_container heading large" onclick="return signOfflineSend();" data-lang-key="sign-offline" role="button" tabindex="311" style="margin-left:15px;" id="btnOfflineSign">
                                 Offline Sign
                             </div>
                         </div>
@@ -1627,7 +1644,13 @@
                 <div class="center-content-rounded-container" style="width:93%;">
                     <div class="back-container" role="button" onclick="onSwapScreenBackClick();" tabindex="320" id="divBackSwapScreen"></div>
                     <div id="divSwapScreenInner" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto;max-height:590px;">
-                        <div class="heading bold" data-lang-key="swap">Swap</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="swap">Swap</div>
+                            <div class="gas-header-right">
+                                <span id="spanSwapGasFee" class="gas-fee-label"></span>
+                                <div id="divSwapGasIcon" class="gas-container" role="button" tabindex="343" onclick="return onSwapGasIconClick();"></div>
+                            </div>
+                        </div>
                         <div class="divider"></div>
                         <div class="input_container" style="gap:2px;">
                             <div class="heading medium" data-lang-key="swap-from-token" style="margin-top: 3px;">From token</div>
@@ -1683,7 +1706,13 @@
                         </div>
                     </div>
                     <div id="divSwapConfirmPanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
-                        <div class="heading bold" data-lang-key="swap">Swap</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="swap">Swap</div>
+                            <div class="gas-header-right">
+                                <span id="spanSwapConfirmGasFee" class="gas-fee-label"></span>
+                                <div id="divSwapConfirmGasIcon" class="gas-container" role="button" tabindex="344" onclick="return onSwapConfirmGasIconClick();"></div>
+                            </div>
+                        </div>
                         <div class="divider"></div>
                         <div id="divSwapConfirmLoading" style="display: none; margin-top: 8px; margin-bottom: 8px;">
                             <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
@@ -1695,14 +1724,6 @@
                                 <span>%</span>
                             </div>
                         </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <div class="heading medium" data-lang-key="gas-limit" style="margin-top: 10px;">Gas limit (gas-units)</div>
-                            <input class="tab-name" type="number" id="txtSwapGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" tabindex="336" oninput="updateSwapGasFeeLabel();">
-                        </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <span class="heading medium" data-lang-key="gas-fee" style="margin-top: 10px;">Estimate gas fee (coins)</span> <span id="spanSwapGasFee">0</span>
-                        </div>
-                        <div id="divSwapGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
                         <div id="divSwapConfirmApprovalTxError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
                         <div class="input_container" style="margin-top: 10px;">
                             <div class="heading medium" data-lang-key="enter-wallet-password">Enter Wallet Password</div>
@@ -1712,31 +1733,25 @@
                                 <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;" onclick="togglePasswordBox(this, 'pwdSwapConfirm');" data-alt-key="show-password" role="button" tabindex="338" />
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
-                            <div id="divSwapConfirmApprovalTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
-                                <span id="spanSwapConfirmApprovalStatus" style="font-size: 0.9em;"></span>
-                            </div>
-                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="339" id="btnSwapConfirmNext" style="margin-left: auto;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                            <div class="large_button_container heading large" onclick="return onSwapConfirmNextClick();" role="button" tabindex="339" id="btnSwapConfirmNext">
                                 Next
                             </div>
                         </div>
                     </div>
                     <div id="divSwapRemoveAllowancePanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
-                        <div class="heading bold" data-lang-key="remove-allowance-title">Remove allowance</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="remove-allowance-title">Remove allowance</div>
+                            <div class="gas-header-right">
+                                <span id="spanRemoveAllowanceGasFee" class="gas-fee-label"></span>
+                                <div id="divRemoveAllowanceGasIcon" class="gas-container" role="button" tabindex="345" onclick="return onRemoveAllowanceGasIconClick();"></div>
+                            </div>
+                        </div>
                         <div class="divider"></div>
                         <div class="input_container" style="margin-top: 8px;">
                             <div class="heading medium" data-lang-key="contract">Contract</div>
                             <a href="#" id="aRemoveAllowanceContract" style="font-size: 0.9em; color: #0066cc; word-break: break-all; text-decoration: underline;" onclick="openRemoveAllowanceContractInExplorer(); return false;">...</a>
                         </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <div class="heading medium" data-lang-key="gas-limit">Gas limit (gas-units)</div>
-                            <input class="tab-name" type="number" id="txtRemoveAllowanceGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="updateRemoveAllowanceGasFeeLabel();">
-                        </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <span class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</span> <span id="spanRemoveAllowanceGasFee">0</span>
-                        </div>
-                        <div id="divRemoveAllowanceGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
                         <div id="divRemoveAllowanceError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
                         <div class="input_container" style="margin-top: 10px;">
                             <div class="heading medium" data-lang-key="enter-wallet-password">Enter Wallet Password</div>
@@ -1746,18 +1761,20 @@
                                 <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;" onclick="togglePasswordBox(this, 'pwdRemoveAllowance');" data-alt-key="show-password" role="button" tabindex="339" />
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
-                            <div id="divRemoveAllowanceTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
-                                <span id="spanRemoveAllowanceStatus" style="font-size: 0.9em;"></span>
-                            </div>
-                            <div class="large_button_container heading large" onclick="return onRemoveAllowanceRemoveClick();" role="button" tabindex="340" id="btnRemoveAllowanceRemove" style="margin-left: auto;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                            <div class="large_button_container heading large" onclick="return onRemoveAllowanceRemoveClick();" role="button" tabindex="340" id="btnRemoveAllowanceRemove">
                                 <span data-lang-key="remove">Remove</span>
                             </div>
                         </div>
                     </div>
                     <div id="divSwapAddAllowancePanel" class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;">
-                        <div class="heading bold" data-lang-key="add-allowance-title">Add allowance</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="add-allowance-title">Add allowance</div>
+                            <div class="gas-header-right">
+                                <span id="spanAddAllowanceGasFee" class="gas-fee-label"></span>
+                                <div id="divAddAllowanceGasIcon" class="gas-container" role="button" tabindex="346" onclick="return onAddAllowanceGasIconClick();"></div>
+                            </div>
+                        </div>
                         <div class="divider"></div>
                         <div class="input_container" style="margin-top: 8px;">
                             <div class="heading medium" data-lang-key="contract">Contract</div>
@@ -1770,14 +1787,6 @@
                                 <a href="#" data-lang-key="max" onclick="return setAddAllowanceQuantityToMax();" style="color: #0066cc; cursor: pointer;">Max</a>
                             </div>
                         </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <div class="heading medium" data-lang-key="gas-limit">Gas limit (gas-units)</div>
-                            <input class="tab-name" type="number" id="txtAddAllowanceGasLimit" min="0" step="1" value="210000" style="text-align: left; width: 20%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;" oninput="updateAddAllowanceGasFeeLabel();">
-                        </div>
-                        <div class="input_container" style="margin-top: 10px;">
-                            <span class="heading medium" data-lang-key="gas-fee">Estimated gas fee (coins)</span> <span id="spanAddAllowanceGasFee">0</span>
-                        </div>
-                        <div id="divAddAllowanceGasHighWarning" style="display: none; margin-top: 8px; color: #b8860b; font-size: 0.9em;" data-lang-key="swap-gas-high-warning"></div>
                         <div id="divAddAllowanceError" style="display: none; margin-top: 8px; color: #c00; font-size: 0.9em;"></div>
                         <div class="input_container" style="margin-top: 10px;">
                             <div class="heading medium" data-lang-key="enter-wallet-password">Enter Wallet Password</div>
@@ -1787,12 +1796,8 @@
                                 <img src="assets/svg/eye-outline.svg" alt="Show Password" style="cursor:pointer;width:20px;" onclick="togglePasswordBox(this, 'pwdAddAllowance');" data-alt-key="show-password" role="button" tabindex="340" />
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px;">
-                            <div id="divAddAllowanceTxStatus" style="display: none; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <img src="assets/icons/loading.gif" alt="Loading" style="width:30px; height:30px;" />
-                                <span id="spanAddAllowanceStatus" style="font-size: 0.9em;"></span>
-                            </div>
-                            <div class="large_button_container heading large" onclick="return onAddAllowanceAddClick();" role="button" tabindex="341" id="btnAddAllowanceAdd" style="margin-left: auto;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                            <div class="large_button_container heading large" onclick="return onAddAllowanceAddClick();" role="button" tabindex="341" id="btnAddAllowanceAdd">
                                 <span data-lang-key="add">Add</span>
                             </div>
                         </div>
@@ -1985,7 +1990,13 @@
 
                     </div>
                     <div class="roundex-box scrollbar" style="padding-top: 15px; padding-bottom: 15px;overflow-y: auto;overflow-x: auto;">
-                        <div class="heading bold" data-lang-key="validator">Validator</div>
+                        <div class="gas-header-row">
+                            <div class="heading bold" data-lang-key="validator">Validator</div>
+                            <div class="gas-header-right">
+                                <span id="spanValidatorGasFee" class="gas-fee-label"></span>
+                                <div id="divValidatorGasIcon" class="gas-container" role="button" tabindex="2310" onclick="return onValidatorGasIconClick();"></div>
+                            </div>
+                        </div>
                         <div class="tab-name" style="color:black;">
                                 <div class="divider"></div>
                                 <label data-lang-key="validator-help" style="margin-top:5px">Use the following options to manage your validation. Use these options only if you want to run a validator node or if you are already running one.

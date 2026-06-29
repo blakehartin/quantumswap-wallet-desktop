@@ -24,13 +24,14 @@ async function resumeValidation() {
         return false;
     }
 
+    var resolved = resolveGasForTx(RESUME_VALIDATION_GAS);
     var review = {
         asset: langJson.langValues["validator-resume-validation"],
         toAddress: STAKING_CONTRACT_ADDRESS,
         quantityLabelKey: "send-quantity",
         quantityValue: "-",
-        gasLimit: String(RESUME_VALIDATION_GAS),
-        gasFee: (RESUME_VALIDATION_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee,
         nonce: nonceValue
     };
     showValidatorTransactionReview(review, onResumeValidation);
@@ -75,7 +76,7 @@ async function resumeValidationSubmit(quantumWallet) {
             method: "resumeValidation",
             methodArgs: [],
             value: "0",
-            gasLimit: RESUME_VALIDATION_GAS,
+            gasLimit: parseInt(resolveGasForTx(RESUME_VALIDATION_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
@@ -116,7 +117,7 @@ async function resumeValidationOfflineSign(quantumWallet) {
             method: "resumeValidation",
             methodArgs: [],
             value: "0",
-            gasLimit: RESUME_VALIDATION_GAS,
+            gasLimit: parseInt(resolveGasForTx(RESUME_VALIDATION_GAS).gasLimit, 10),
             nonce: parseInt(currentNonce),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),

@@ -93,6 +93,7 @@
       "approve": "Approve",
       "gas-limit": "Gas limit (gas-units)",
       "gas-fee": "Estimated gas fee (coins)",
+      "gas": "Gas",
       "swap-gas-high-warning": "Gas limit is high. Consider reviewing before proceeding.",
       "swap-approval-confirm-message": "You are approving [QUANTITY] tokens for use in QuantumSwap.",
       "swap-approval-may-close": "You may close this dialog, the transaction for approval has already been submitted.",
@@ -330,6 +331,7 @@
       "signatureVerificationFailed": "Signature verification failed.",
       "transactionSubmissionFailed": "Transaction submission failed.",
       "transactionFailed": "Transaction failed.",
-      "approvalQuantityRequired": "Approval quantity is required."
+      "approvalQuantityRequired": "Approval quantity is required.",
+      "gasEstimateError": "Could not fetch the gas fee from the network. Using the default estimate."
     }
 }
