@@ -24,13 +24,14 @@ async function completePartialWithdrawal() {
         return false;
     }
 
+    var resolved = resolveGasForTx(COMPLETE_PARTIAL_WITHDRAWAL_GAS);
     var review = {
         asset: langJson.langValues["validator-complete-partial-withdrawal"],
         toAddress: STAKING_CONTRACT_ADDRESS,
         quantityLabelKey: "send-quantity",
         quantityValue: "-",
-        gasLimit: String(COMPLETE_PARTIAL_WITHDRAWAL_GAS),
-        gasFee: (COMPLETE_PARTIAL_WITHDRAWAL_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee,
         nonce: nonceValue
     };
     showValidatorTransactionReview(review, onCompletePartialWithdrawal);
@@ -75,7 +76,7 @@ async function completePartialWithdrawalSubmit(quantumWallet) {
             method: "completePartialWithdrawal",
             methodArgs: [],
             value: "0",
-            gasLimit: COMPLETE_PARTIAL_WITHDRAWAL_GAS,
+            gasLimit: parseInt(resolveGasForTx(COMPLETE_PARTIAL_WITHDRAWAL_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
@@ -116,7 +117,7 @@ async function completePartialWithdrawalOfflineSign(quantumWallet) {
             method: "completePartialWithdrawal",
             methodArgs: [],
             value: "0",
-            gasLimit: COMPLETE_PARTIAL_WITHDRAWAL_GAS,
+            gasLimit: parseInt(resolveGasForTx(COMPLETE_PARTIAL_WITHDRAWAL_GAS).gasLimit, 10),
             nonce: parseInt(currentNonce),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),

@@ -37,13 +37,14 @@ async function increaseDeposit() {
         return false;
     }
 
+    var resolved = resolveGasForTx(INCREASE_DEPOSIT_GAS);
     var review = {
         asset: langJson.langValues["validator-increase-deposit"],
         toAddress: STAKING_CONTRACT_ADDRESS,
         quantityLabelKey: "coins-to-deposit",
         quantityValue: validatorDepositCoins,
-        gasLimit: String(INCREASE_DEPOSIT_GAS),
-        gasFee: (INCREASE_DEPOSIT_GAS * SWAP_GAS_FEE_RATE).toFixed(6),
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee,
         nonce: nonceValue
     };
     showValidatorTransactionReview(review, onIncreaseDepositConfirm);
@@ -89,7 +90,7 @@ async function increaseDepositSubmit(quantumWallet) {
             method: "increaseDeposit",
             methodArgs: [],
             value: validatorDepositCoins,
-            gasLimit: INCREASE_DEPOSIT_GAS,
+            gasLimit: parseInt(resolveGasForTx(INCREASE_DEPOSIT_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
@@ -131,7 +132,7 @@ async function increaseDepositOfflineSign(quantumWallet) {
             method: "increaseDeposit",
             methodArgs: [],
             value: validatorDepositCoins,
-            gasLimit: INCREASE_DEPOSIT_GAS,
+            gasLimit: parseInt(resolveGasForTx(INCREASE_DEPOSIT_GAS).gasLimit, 10),
             nonce: parseInt(currentNonce),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),

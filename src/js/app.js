@@ -2223,6 +2223,9 @@ async function updateSwapScreenInfo() {
     if (pairExists) {
         updateToQuantityFromFrom();
     }
+    resetCurrentGasConfig();
+    setGasFeeLabel("spanSwapGasFee", "");
+    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
 }
 
@@ -2245,42 +2248,400 @@ function openSwapScreen() {
     document.getElementById("txtSwapToQuantity").value = "";
     document.getElementById("txtSwapFromQuantity").focus();
     updateSwapBalanceLabels();
+    resetCurrentGasConfig();
+    setGasFeeLabel("spanSwapGasFee", "");
+    attachSwapGasListeners();
+    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
+}
+
+function attachSwapGasListeners() {
+    var fromQty = document.getElementById("txtSwapFromQuantity");
+    var toQty = document.getElementById("txtSwapToQuantity");
+    if (fromQty && !fromQty.dataset.gasBound) { fromQty.addEventListener("input", function () { scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee"); }); fromQty.dataset.gasBound = "1"; }
+    if (toQty && !toQty.dataset.gasBound) { toQty.addEventListener("input", function () { scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee"); }); toQty.dataset.gasBound = "1"; }
 }
 
 var SWAP_GAS_FEE_RATE = 1000 / 21000;
 var SWAP_GAS_HIGH_THRESHOLD = 300000;
 var SWAP_SHOW_NATIVE_COIN = false;
 
+// ---- Common gas configuration constants & helpers ----
+var GAS_ESTIMATE_BUFFER_PERCENT = 10;
+var GAS_NO_BUFFER_PERCENT = 0;
+var GAS_ESTIMATE_DEBOUNCE_MS = 2000;
+var GAS_FEE_DECIMALS = 4;
+var GAS_FEE_UNIT_LABEL = "Q";
+// Wallet key type is derived from the public key byte length and drives gas-price
+// selection in provider.getFeeData(keyType, fullSign). 3 = HYBRIDEDMLDSASLHDSA, 5 = HYBRIDEDMLDSASLHDSA5.
+var WALLET_KEY_TYPE_3 = 3;
+var WALLET_KEY_TYPE_5 = 5;
+var PUBLIC_KEY_LENGTH_KEYTYPE3 = 1408;
+var PUBLIC_KEY_LENGTH_KEYTYPE5 = 2688;
+var DEFAULT_WALLET_KEY_TYPE = WALLET_KEY_TYPE_3;
+
+// Derive the current wallet's key type from its public key (base64). The public key
+// is held in memory after login (currentWallet.publicKey), so this needs no password.
+function getWalletKeyType() {
+    try {
+        var pubB64 = (currentWallet && currentWallet.publicKey) ? currentWallet.publicKey : null;
+        if (!pubB64) return DEFAULT_WALLET_KEY_TYPE;
+        var bytes = base64ToBytes(pubB64);
+        var len = (bytes && bytes.length) ? bytes.length : 0;
+        if (len === PUBLIC_KEY_LENGTH_KEYTYPE5) return WALLET_KEY_TYPE_5;
+        if (len === PUBLIC_KEY_LENGTH_KEYTYPE3) return WALLET_KEY_TYPE_3;
+        return DEFAULT_WALLET_KEY_TYPE;
+    } catch (e) {
+        return DEFAULT_WALLET_KEY_TYPE;
+    }
+}
+
+// Per-screen current gas state. Reset on screen open. `overridden` is true once the
+// user edits values via the Gas dialog; the label is then not refetched until the
+// transaction context changes again.
+var currentGasConfig = { gasLimit: null, gasFee: null, overridden: false };
+var gasEstimateTimerId = null;
+var gasEstimateToken = 0;
+
+// Additional gas-state objects for the swap sub-flows (approve/remove/add use their
+// own context so they don't clash with the swap-execute estimate).
+var swapApproveGasState = { gasLimit: null, gasFee: null, overridden: false };
+
+// Format the gas fee as a number string with no trailing zeros (LSB only).
+// Decimals are shown only when present: 110 -> "110", 0.5 -> "0.5", 0.0476 -> "0.0476".
+function formatGasFeeNumber(value) {
+    var n = parseFloat(value);
+    if (isNaN(n)) n = 0;
+    var s = n.toFixed(GAS_FEE_DECIMALS);
+    if (s.indexOf(".") >= 0) {
+        s = s.replace(/0+$/, "");
+        if (s.slice(-1) === ".") s = s.slice(0, -1);
+    }
+    return s;
+}
+
+function formatGasFeeQ(value) {
+    return formatGasFeeNumber(value) + " " + GAS_FEE_UNIT_LABEL;
+}
+
+function setGasFeeLabel(labelId, feeValue) {
+    var el = document.getElementById(labelId);
+    if (!el) return;
+    if (feeValue == null || feeValue === "") {
+        el.textContent = "";
+        return;
+    }
+    el.textContent = formatGasFeeQ(feeValue);
+}
+
+function setGasIconPulse(iconId, pulsing) {
+    var el = document.getElementById(iconId);
+    if (!el) return;
+    if (pulsing) {
+        el.classList.add("gas-pulse");
+    } else {
+        el.classList.remove("gas-pulse");
+    }
+}
+
+function resetCurrentGasConfig(state) {
+    var s = state || currentGasConfig;
+    s.gasLimit = null;
+    s.gasFee = null;
+    s.overridden = false;
+    if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
+    gasEstimateToken++;
+    s._token = gasEstimateToken;
+}
+
+// Compute the offline/default gas config from a hardcoded gas-limit constant.
+function applyOfflineGasConfig(defaultGasLimit, labelId, state) {
+    var s = state || currentGasConfig;
+    var gasLimit = defaultGasLimit;
+    var gasFee = (gasLimit * SWAP_GAS_FEE_RATE);
+    s.gasLimit = String(gasLimit);
+    s.gasFee = String(gasFee);
+    s.overridden = false;
+    if (labelId) setGasFeeLabel(labelId, gasFee);
+}
+
+// Build the estimateGas IPC payload for a given tx context.
+// `ctx` is provided by the calling screen and must include txKind + the relevant fields.
+function buildEstimateGasPayload(ctx) {
+    if (!currentBlockchainNetwork) return null;
+    var payload = {
+        rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+        chainId: parseInt(currentBlockchainNetwork.networkId, 10),
+        txKind: ctx.txKind,
+        fromAddress: currentWalletAddress
+    };
+    if (ctx.toAddress) payload.toAddress = ctx.toAddress;
+    if (ctx.amount != null) payload.amount = ctx.amount;
+    if (ctx.contractAddress) payload.contractAddress = ctx.contractAddress;
+    if (ctx.fromDecimals != null) payload.fromDecimals = ctx.fromDecimals;
+    if (ctx.fromTokenValue) payload.fromTokenValue = ctx.fromTokenValue;
+    if (ctx.toTokenValue) payload.toTokenValue = ctx.toTokenValue;
+    if (ctx.amountIn != null) payload.amountIn = ctx.amountIn;
+    if (ctx.amountOut != null) payload.amountOut = ctx.amountOut;
+    if (ctx.lastChanged) payload.lastChanged = ctx.lastChanged;
+    if (ctx.slippagePercent != null) payload.slippagePercent = ctx.slippagePercent;
+    if (ctx.recipientAddress) payload.recipientAddress = ctx.recipientAddress;
+    if (ctx.methodArgs) payload.methodArgs = ctx.methodArgs;
+    if (ctx.value != null) payload.value = ctx.value;
+    if (ctx.bufferPercent != null) payload.bufferPercent = ctx.bufferPercent;
+    return payload;
+}
+
+// Schedule a debounced gas estimation. `ctxProvider` returns the tx context (or null to skip),
+// `iconId`/`labelId` identify the UI elements. `state` is the gas-state object to update
+// (defaults to the global currentGasConfig). Respects offline mode (no network lookup).
+// `onRpcError` (optional) is invoked once if the network gas-price lookup fails (RPC error).
+function scheduleGasEstimation(ctxProvider, iconId, labelId, state, onRpcError) {
+    var s = state || currentGasConfig;
+    if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
+    gasEstimateToken++;
+    s._token = gasEstimateToken;
+    if (!s.overridden) {
+        setGasIconPulse(iconId, true);
+        if (labelId) setGasFeeLabel(labelId, "");
+    }
+    gasEstimateTimerId = setTimeout(function () {
+        gasEstimateTimerId = null;
+        runGasEstimation(ctxProvider, iconId, labelId, state, onRpcError);
+    }, GAS_ESTIMATE_DEBOUNCE_MS);
+}
+
+async function runGasEstimation(ctxProvider, iconId, labelId, state, onRpcError) {
+    var s = state || currentGasConfig;
+    var myToken = s._token;
+    var ctx = (typeof ctxProvider === "function") ? ctxProvider() : ctxProvider;
+    if (!ctx || !ctx.txKind || !currentBlockchainNetwork) {
+        if (labelId) setGasFeeLabel(labelId, "");
+        setGasIconPulse(iconId, false);
+        s.gasLimit = null;
+        s.gasFee = null;
+        s.overridden = false;
+        return;
+    }
+
+    var offline = await offlineTxnSigningGetDefaultValue();
+    if (offline === true) {
+        // Offline: no network lookup. Use the hardcoded default for this tx kind.
+        if (ctx.defaultGasLimit) {
+            applyOfflineGasConfig(ctx.defaultGasLimit, labelId, state);
+        } else {
+            setGasIconPulse(iconId, false);
+        }
+        return;
+    }
+
+    if (s.overridden) {
+        // User has manually overridden; keep their values until context actually changes.
+        if (labelId) setGasFeeLabel(labelId, s.gasFee);
+        setGasIconPulse(iconId, false);
+        return;
+    }
+
+    var payload = buildEstimateGasPayload(ctx);
+    if (!payload) return;
+
+    setGasIconPulse(iconId, true);
+    if (labelId) setGasFeeLabel(labelId, "");
+
+    // Track whether any RPC call failed and the (sanitized at render time) error detail,
+    // so the caller can surface a transient toast.
+    var rpcError = false;
+    var rpcErrorMessage = null;
+
+    var gasLimit = null;
+    try {
+        var est = await estimateGas(payload);
+        if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
+        if (est && est.success && est.gasLimit) {
+            gasLimit = est.gasLimit;
+        } else {
+            rpcError = true;
+            if (est && est.error) rpcErrorMessage = est.error;
+        }
+    } catch (e) {
+        rpcError = true;
+        rpcErrorMessage = (e && e.message) ? e.message : String(e);
+    }
+
+    if (gasLimit == null) {
+        // estimateGas failed: fall back to the hardcoded default gas limit.
+        gasLimit = ctx.defaultGasLimit ? String(ctx.defaultGasLimit) : null;
+        if (gasLimit == null) {
+            setGasIconPulse(iconId, false);
+            if (rpcError && typeof onRpcError === "function") { onRpcError(rpcErrorMessage); }
+            return;
+        }
+    }
+
+    // Now compute the fee separately via getFeeData(keyType, fullSign).
+    var fullSign = await advancedSigningGetDefaultValue();
+    var keyType = getWalletKeyType();
+    var gasFee = null;
+    try {
+        var feeRes = await estimateGasFee({
+            rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(currentBlockchainNetwork.networkId, 10),
+            gasLimit: gasLimit,
+            keyType: keyType,
+            fullSign: fullSign === true
+        });
+        if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
+        if (feeRes && feeRes.success && feeRes.gasFeeEth != null) {
+            gasFee = feeRes.gasFeeEth;
+            if (feeRes.usedFallback === true) {
+                rpcError = true;
+                if (feeRes.error) rpcErrorMessage = feeRes.error;
+            }
+        } else {
+            rpcError = true;
+            if (feeRes && feeRes.error) rpcErrorMessage = feeRes.error;
+        }
+    } catch (e) {
+        rpcError = true;
+        rpcErrorMessage = (e && e.message) ? e.message : String(e);
+    }
+
+    if (gasFee == null) {
+        // Network fee lookup failed: use the current default rate.
+        gasFee = (Number(gasLimit) * SWAP_GAS_FEE_RATE);
+        rpcError = true;
+    }
+
+    if (myToken === s._token && !s.overridden) {
+        s.gasLimit = String(gasLimit);
+        s.gasFee = String(gasFee);
+        s.overridden = false;
+        if (labelId) setGasFeeLabel(labelId, s.gasFee);
+        setGasIconPulse(iconId, false);
+        if (rpcError && typeof onRpcError === "function") {
+            onRpcError(rpcErrorMessage);
+        }
+    }
+}
+
+// Open the Gas config dialog prefilled with the current values; on OK, override.
+// `ctxProvider` (optional) is used to gate the offline-default pre-apply: the default
+// fee is only applied when the tx context is valid (inputs present), so no fee is
+// shown before the required quantity/inputs have been entered.
+function onGasIconClick(labelId, state, ctxProvider) {
+    var s = state || currentGasConfig;
+    if (s.gasLimit == null && typeof ctxProvider === "function") {
+        var ctx = ctxProvider();
+        if (ctx && ctx.txKind && ctx.defaultGasLimit) {
+            applyOfflineGasConfig(ctx.defaultGasLimit, labelId, state);
+        }
+    }
+    showGasConfigDialog({
+        gasLimit: s.gasLimit != null ? s.gasLimit : "",
+        gasFee: s.gasFee != null ? formatGasFeeNumber(s.gasFee) : "",
+        onOk: function (result) {
+            // Invalidate any pending/in-flight estimation so its async result can't
+            // overwrite this manual override (which would silently reset overridden
+            // to false and submit the auto-estimated gas instead of the user's value).
+            if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
+            gasEstimateToken++;
+            s._token = gasEstimateToken;
+            s.gasLimit = String(result.gasLimit);
+            s.gasFee = String(result.gasFee);
+            s.overridden = true;
+            if (labelId) setGasFeeLabel(labelId, s.gasFee);
+        }
+    });
+    return false;
+}
+
+// Resolve the gas limit + fee to use for submission/review, falling back to defaults.
+function resolveGasForTx(defaultGasLimit, state) {
+    var s = state || currentGasConfig;
+    if (s.gasLimit != null && s.gasLimit !== "") {
+        var gl = parseInt(s.gasLimit, 10);
+        if (!isNaN(gl) && gl > 0) {
+            var fee = s.gasFee != null ? s.gasFee : (gl * SWAP_GAS_FEE_RATE);
+            return { gasLimit: String(gl), gasFee: formatGasFeeQ(fee) };
+        }
+    }
+    return {
+        gasLimit: String(defaultGasLimit),
+        gasFee: formatGasFeeQ(defaultGasLimit * SWAP_GAS_FEE_RATE)
+    };
+}
+
+// Swap gas defaults (offline / network-failure fallbacks).
+var SWAP_DEFAULT_GAS = 200000;
+var APPROVE_DEFAULT_GAS = 84000;
+
+function getSwapExecuteTxContext() {
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    var toValue = document.getElementById("ddlSwapToToken").value;
+    var fromQty = (document.getElementById("txtSwapFromQuantity").value || "").trim();
+    var toQty = (document.getElementById("txtSwapToQuantity").value || "").trim();
+    if (!fromValue || !toValue || !fromQty || !toQty) return null;
+    return {
+        txKind: "swap",
+        fromTokenValue: fromValue,
+        toTokenValue: toValue,
+        amountIn: fromQty,
+        amountOut: toQty,
+        lastChanged: (typeof swapLastChanged !== "undefined" ? swapLastChanged : null) || "from",
+        slippagePercent: parseFloat(document.getElementById("txtSwapSlippage").value) || 1,
+        fromDecimals: getSwapTokenDecimals(fromValue),
+        toDecimals: getSwapTokenDecimals(toValue),
+        recipientAddress: currentWalletAddress,
+        defaultGasLimit: SWAP_DEFAULT_GAS
+    };
+}
+
+function getSwapApproveTxContext(amount) {
+    var fromValue = document.getElementById("ddlSwapFromToken").value;
+    if (!fromValue) return null;
+    return {
+        txKind: "approve",
+        fromTokenValue: fromValue,
+        amount: amount,
+        fromDecimals: getSwapTokenDecimals(fromValue),
+        defaultGasLimit: APPROVE_DEFAULT_GAS
+    };
+}
+
+function onSwapGasIconClick() {
+    return onGasIconClick("spanSwapGasFee", null, getSwapExecuteTxContext);
+}
+
+function onSwapConfirmGasIconClick() {
+    return onGasIconClick("spanSwapConfirmGasFee", null, getSwapExecuteTxContext);
+}
+
+function onRemoveAllowanceGasIconClick() {
+    return onGasIconClick("spanRemoveAllowanceGasFee", swapApproveGasState, function () { return getSwapApproveTxContext("0"); });
+}
+
+function onAddAllowanceGasIconClick() {
+    return onGasIconClick("spanAddAllowanceGasFee", swapApproveGasState, function () {
+        var amt = (document.getElementById("txtAddAllowanceQuantity").value || "").trim();
+        if (!amt) return null;
+        return getSwapApproveTxContext(amt);
+    });
+}
+
+function scheduleSwapExecuteGasEstimation(iconId, labelId) {
+    scheduleGasEstimation(getSwapExecuteTxContext, iconId, labelId);
+}
+
 function setSwapConfirmPanelLoading(show) {
     var loadingEl = document.getElementById("divSwapConfirmLoading");
     var backEl = document.getElementById("divBackSwapScreen");
     var slippageInput = document.getElementById("txtSwapSlippage");
-    var gasLimitInput = document.getElementById("txtSwapGasLimit");
     var btnNext = document.getElementById("btnSwapConfirmNext");
     if (loadingEl) loadingEl.style.display = show ? "block" : "none";
     var disabled = !!show;
     if (backEl) { backEl.style.pointerEvents = disabled ? "none" : ""; backEl.setAttribute("aria-disabled", disabled ? "true" : "false"); }
     if (slippageInput) slippageInput.disabled = disabled;
-    if (gasLimitInput) gasLimitInput.disabled = disabled;
     if (btnNext) { btnNext.disabled = disabled; btnNext.style.pointerEvents = disabled ? "none" : ""; }
-}
-
-function updateSwapGasFeeLabel() {
-    var gasLimitEl = document.getElementById("txtSwapGasLimit");
-    var feeEl = document.getElementById("spanSwapGasFee");
-    var warnEl = document.getElementById("divSwapGasHighWarning");
-    if (!gasLimitEl || !feeEl || !warnEl) return;
-    var gasLimit = parseInt(gasLimitEl.value, 10);
-    if (isNaN(gasLimit) || gasLimit < 0) gasLimit = 0;
-    var fee = (gasLimit / 21000) * 1000;
-    feeEl.textContent = fee.toFixed(4);
-    warnEl.style.display = gasLimit > SWAP_GAS_HIGH_THRESHOLD ? "block" : "none";
-    if (warnEl.style.display === "block" && langJson && langJson.langValues && langJson.langValues["swap-gas-high-warning"]) {
-        warnEl.textContent = langJson.langValues["swap-gas-high-warning"];
-    } else if (warnEl.style.display === "block") {
-        warnEl.textContent = "Gas limit is high. Consider reviewing before proceeding.";
-    }
 }
 
 async function onSwapNextClick() {
@@ -2350,36 +2711,14 @@ async function onSwapNextClick() {
             document.getElementById("divSwapRemoveAllowancePanel").style.display = "none";
             document.getElementById("divSwapAddAllowancePanel").style.display = "none";
             document.getElementById("txtSwapSlippage").value = "1";
-            var gasLimitEl = document.getElementById("txtSwapGasLimit");
-            gasLimitEl.value = "210000";
             var slippageRow = document.getElementById("divSwapSlippageRow");
             var btnConfirmNext = document.getElementById("btnSwapConfirmNext");
             slippageRow.style.display = "block";
             btnConfirmNext.textContent = (langJson && langJson.langValues && langJson.langValues["swap"]) ? langJson.langValues["swap"] : "Swap";
-            var slippagePercent = parseFloat(document.getElementById("txtSwapSlippage").value) || 1;
-            var estimatePayload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                toTokenValue: toValue,
-                amountIn: fromQty,
-                amountOut: toQty,
-                lastChanged: swapLastChanged || "from",
-                slippagePercent: slippagePercent,
-                fromDecimals: getSwapTokenDecimals(fromValue),
-                toDecimals: getSwapTokenDecimals(toValue),
-                recipientAddress: currentWalletAddress
-            };
-            var est = await getSwapEstimateGas(estimatePayload);
-            if (est && est.success && est.gasLimit) {
-                gasLimitEl.value = est.gasLimit;
-            } else {
-                gasLimitEl.value = "210000";
-                if (est && !est.success && est.error) {
-                    showWarnAlert(est.error);
-                }
-            }
-            updateSwapGasFeeLabel();
+            // Refresh the gas estimate for the confirm panel using the common gas flow.
+            resetCurrentGasConfig();
+            setGasFeeLabel("spanSwapConfirmGasFee", "");
+            scheduleSwapExecuteGasEstimation("divSwapConfirmGasIcon", "spanSwapConfirmGasFee");
         } else {
             showAddAllowancePanel(fromValue, fromQty, toValue, toQty);
         }
@@ -2401,25 +2740,16 @@ function showAddAllowancePanel(fromValue, fromQty, toValue, toQty) {
     var fromQtyNum = parseFloat(normalizeAmountForNumberInput(fromQty)) || 0;
     var defaultApprovalQty = Math.ceil(fromQtyNum) || 1;
     document.getElementById("txtAddAllowanceQuantity").value = defaultApprovalQty.toString();
-    document.getElementById("txtAddAllowanceGasLimit").value = "210000";
     document.getElementById("divAddAllowanceError").style.display = "none";
     document.getElementById("divAddAllowanceError").textContent = "";
     setAddAllowancePanelWaiting(false);
-    (async function () {
-        try {
-            var approveGasPayload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                fromAddress: currentWalletAddress,
-                amount: document.getElementById("txtAddAllowanceQuantity").value,
-                fromDecimals: getSwapTokenDecimals(fromValue)
-            };
-            var res = await getSwapEstimateApproveGas(approveGasPayload);
-            if (res && res.success && res.gasLimit) document.getElementById("txtAddAllowanceGasLimit").value = res.gasLimit;
-        } catch (e) { /* keep default */ }
-        updateAddAllowanceGasFeeLabel();
-    })();
+    resetCurrentGasConfig(swapApproveGasState);
+    setGasFeeLabel("spanAddAllowanceGasFee", "");
+    scheduleGasEstimation(function () {
+        var amount = (document.getElementById("txtAddAllowanceQuantity").value || "").trim();
+        if (!amount || parseFloat(amount) <= 0) return null;
+        return getSwapApproveTxContext(amount);
+    }, "divAddAllowanceGasIcon", "spanAddAllowanceGasFee", swapApproveGasState);
 }
 
 function showSwapMainPanel() {
@@ -2428,6 +2758,8 @@ function showSwapMainPanel() {
     document.getElementById("divSwapAddAllowancePanel").style.display = "none";
     document.getElementById("divSwapScreenInner").style.display = "block";
     updateSwapFromAllowanceDisplay();
+    setGasFeeLabel("spanSwapGasFee", "");
+    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
 }
 
@@ -2458,47 +2790,16 @@ function hexToBytes(hexStr) {
     return bytes;
 }
 
-function showSwapApprovalSubmitDialog() {
-    var hint = (langJson && langJson.langValues && langJson.langValues["swap-approval-may-close"]) ? langJson.langValues["swap-approval-may-close"] : "You may close this dialog, the transaction for approval has already been submitted.";
-    document.getElementById("pSwapApprovalSubmitCloseHint").textContent = hint;
-    updateSwapApprovalSubmitStatusText();
-    document.getElementById("divSwapApprovalSubmitError").style.display = "none";
-    document.getElementById("divSwapApprovalSubmitError").textContent = "";
-    document.getElementById("modalSwapApprovalSubmit").style.display = "block";
-    document.getElementById("modalSwapApprovalSubmit").showModal();
-    if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-    swapApprovalStatusStartTime = Date.now();
-    swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
-}
-
-function closeSwapApprovalSubmitDialog() {
-    document.getElementById("modalSwapApprovalSubmit").style.display = "none";
-    document.getElementById("modalSwapApprovalSubmit").close();
-}
-
 function setSwapConfirmPanelWaitingForApprovalTx(waiting) {
-    var statusDiv = document.getElementById("divSwapConfirmApprovalTxStatus");
     var slippageInput = document.getElementById("txtSwapSlippage");
-    var gasLimitInput = document.getElementById("txtSwapGasLimit");
     var btnNext = document.getElementById("btnSwapConfirmNext");
     var errDiv = document.getElementById("divSwapConfirmApprovalTxError");
-    if (statusDiv) statusDiv.style.display = waiting ? "flex" : "none";
     var disabled = !!waiting;
     if (slippageInput) { slippageInput.disabled = disabled; slippageInput.style.opacity = disabled ? "0.6" : ""; }
-    if (gasLimitInput) { gasLimitInput.disabled = disabled; gasLimitInput.style.opacity = disabled ? "0.6" : ""; }
     var pwdInput = document.getElementById("pwdSwapConfirm");
     if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
     if (btnNext) { btnNext.disabled = disabled; btnNext.style.pointerEvents = disabled ? "none" : ""; btnNext.style.opacity = disabled ? "0.6" : ""; }
     if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-    if (waiting) {
-        swapApprovalStatusStartTime = Date.now();
-        updateSwapApprovalSubmitStatusText();
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
-    } else {
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = null;
-    }
 }
 
 async function reloadSwapApprovalContext() {
@@ -2519,28 +2820,34 @@ async function reloadSwapApprovalContext() {
             document.getElementById("divSwapSlippageRow").style.display = "block";
             var btnConfirmNext = document.getElementById("btnSwapConfirmNext");
             btnConfirmNext.textContent = (langJson && langJson.langValues && langJson.langValues["swap"]) ? langJson.langValues["swap"] : "Swap";
-            var toQty = (document.getElementById("txtSwapToQuantity").value || "").trim();
-            var slippagePercent = parseFloat(document.getElementById("txtSwapSlippage").value) || 1;
-            var estimatePayload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                toTokenValue: document.getElementById("ddlSwapToToken").value,
-                amountIn: fromQty,
-                amountOut: toQty,
-                lastChanged: swapLastChanged || "from",
-                slippagePercent: slippagePercent,
-                fromDecimals: getSwapTokenDecimals(fromValue),
-                toDecimals: getSwapTokenDecimals(document.getElementById("ddlSwapToToken").value),
-                recipientAddress: currentWalletAddress
-            };
-            var est = await getSwapEstimateGas(estimatePayload);
-            if (est && est.success && est.gasLimit) {
-                document.getElementById("txtSwapGasLimit").value = est.gasLimit;
-            }
-            updateSwapGasFeeLabel();
+            resetCurrentGasConfig();
+            setGasFeeLabel("spanSwapConfirmGasFee", "");
+            scheduleSwapExecuteGasEstimation("divSwapConfirmGasIcon", "spanSwapConfirmGasFee");
         }
     } catch (e) { /* ignore */ }
+}
+
+// On swap-execute success: show the before/after success panel. On failure: re-enable
+// the confirm panel so the user stays on the transaction dialog (closes the status via OK).
+function onSwapSubmitCompletedDialogClose() {
+    var alt = document.getElementById("imgSendCompletedStatus");
+    var status = alt ? alt.alt : "";
+    if (status === "Success") {
+        (async function () {
+            await refreshAccountBalance();
+            var fromAfter = await getSwapBalanceForSymbol(swapSuccessFromToken);
+            var toAfter = await getSwapBalanceForSymbol(swapSuccessToToken);
+            var gasFeeCoins = swapSuccessGasLimit != null ? formatGasFeeQ(swapSuccessGasLimit * SWAP_GAS_FEE_RATE) : "0";
+            showSwapSuccessPanel(swapSuccessFromToken, swapSuccessToToken, swapSuccessFromBefore, swapSuccessToBefore, fromAfter, toAfter, gasFeeCoins);
+            swapSuccessFromToken = null;
+            swapSuccessToToken = null;
+            swapSuccessFromBefore = null;
+            swapSuccessToBefore = null;
+            swapSuccessGasLimit = null;
+        })();
+    } else {
+        setSwapConfirmPanelWaitingForApprovalTx(false);
+    }
 }
 
 async function submitSwapTransaction(quantumWallet) {
@@ -2549,7 +2856,7 @@ async function submitSwapTransaction(quantumWallet) {
     var fromQty = (document.getElementById("txtSwapFromQuantity").value || "").trim();
     var toQty = (document.getElementById("txtSwapToQuantity").value || "").trim();
     var slippagePercent = parseFloat(document.getElementById("txtSwapSlippage").value) || 1;
-    var gas = parseInt(document.getElementById("txtSwapGasLimit").value, 10) || 200000;
+    var gas = parseInt(resolveGasForTx(SWAP_DEFAULT_GAS).gasLimit, 10);
     try {
         var result = await submitSwapSwap({
             rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
@@ -2570,27 +2877,20 @@ async function submitSwapTransaction(quantumWallet) {
         });
         if (!result || !result.success || !result.txHash) {
             setSwapConfirmPanelWaitingForApprovalTx(false);
-            var errPanel = document.getElementById("divSwapConfirmApprovalTxError");
-            if (errPanel) { errPanel.textContent = htmlEncode((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed.")); errPanel.style.display = "block"; }
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
             return;
         }
         swapSuccessGasLimit = gas;
-        swapApprovalLastTxHash = result.txHash;
-        swapConfirmTxMode = "swap";
-        swapApprovalPollingId = setInterval(pollSwapApprovalTransactionStatus, 9000);
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusStartTime = Date.now();
-        swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
+        showSendCompletedDialog(result.txHash, onSwapSubmitCompletedDialogClose);
     } catch (err) {
         setSwapConfirmPanelWaitingForApprovalTx(false);
-        var errPanel = document.getElementById("divSwapConfirmApprovalTxError");
-        if (errPanel) { errPanel.textContent = htmlEncode((err && err.message) ? String(err.message) : String(err)); errPanel.style.display = "block"; }
+        showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
 }
 
 async function submitRemoveAllowanceTransaction(quantumWallet) {
     var fromValue = document.getElementById("ddlSwapFromToken").value;
-    var gas = parseInt(document.getElementById("txtRemoveAllowanceGasLimit").value, 10) || 84000;
+    var gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
     try {
         var result = await submitSwapRemoveAllowance({
             rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
@@ -2603,28 +2903,31 @@ async function submitRemoveAllowanceTransaction(quantumWallet) {
         });
         if (!result || !result.success || !result.txHash) {
             setRemoveAllowancePanelWaiting(false);
-            var errPanel = document.getElementById("divRemoveAllowanceError");
-            if (errPanel) { errPanel.textContent = htmlEncode((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed.")); errPanel.style.display = "block"; }
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
             return;
         }
-        swapApprovalLastTxHash = result.txHash;
-        allowancePanelMode = "remove";
-        swapApprovalPollingId = setInterval(pollSwapApprovalTransactionStatus, 9000);
+        showSendCompletedDialog(result.txHash, function () {
+            var alt = document.getElementById("imgSendCompletedStatus");
+            if (alt && alt.alt === "Success") {
+                var msg = (langJson && langJson.langValues && langJson.langValues["remove-allowance-succeeded"]) ? langJson.langValues["remove-allowance-succeeded"] : "Remove allowance succeeded.";
+                showAlertAndExecuteOnClose(msg, goToFirstSwapScreen);
+            } else {
+                setRemoveAllowancePanelWaiting(false);
+            }
+        });
     } catch (err) {
         setRemoveAllowancePanelWaiting(false);
-        var errPanel = document.getElementById("divRemoveAllowanceError");
-        if (errPanel) { errPanel.textContent = htmlEncode((err && err.message) ? String(err.message) : String(err)); errPanel.style.display = "block"; }
+        showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
 }
 
 async function submitAddAllowanceTransaction(quantumWallet) {
     var fromValue = document.getElementById("ddlSwapFromToken").value;
     var approvalAmount = (document.getElementById("txtAddAllowanceQuantity").value || "").trim();
-    var gas = parseInt(document.getElementById("txtAddAllowanceGasLimit").value, 10) || 84000;
+    var gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
     if (!approvalAmount || parseFloat(approvalAmount) <= 0) {
         setAddAllowancePanelWaiting(false);
-        var errPanel = document.getElementById("divAddAllowanceError");
-        if (errPanel) { errPanel.textContent = htmlEncode(langJson.errors.approvalQuantityRequired || "Approval quantity is required."); errPanel.style.display = "block"; }
+        showWarnAlert(langJson.errors.approvalQuantityRequired || "Approval quantity is required.");
         return;
     }
     try {
@@ -2641,17 +2944,21 @@ async function submitAddAllowanceTransaction(quantumWallet) {
         });
         if (!result || !result.success || !result.txHash) {
             setAddAllowancePanelWaiting(false);
-            var errPanel = document.getElementById("divAddAllowanceError");
-            if (errPanel) { errPanel.textContent = htmlEncode((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed.")); errPanel.style.display = "block"; }
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
             return;
         }
-        swapApprovalLastTxHash = result.txHash;
-        allowancePanelMode = "add";
-        swapApprovalPollingId = setInterval(pollSwapApprovalTransactionStatus, 9000);
+        showSendCompletedDialog(result.txHash, function () {
+            var alt = document.getElementById("imgSendCompletedStatus");
+            if (alt && alt.alt === "Success") {
+                var msg = (langJson && langJson.langValues && langJson.langValues["add-allowance-succeeded"]) ? langJson.langValues["add-allowance-succeeded"] : "Add allowance succeeded.";
+                showAlertAndExecuteOnClose(msg, goToFirstSwapScreen);
+            } else {
+                setAddAllowancePanelWaiting(false);
+            }
+        });
     } catch (err) {
         setAddAllowancePanelWaiting(false);
-        var errPanel = document.getElementById("divAddAllowanceError");
-        if (errPanel) { errPanel.textContent = htmlEncode((err && err.message) ? String(err.message) : String(err)); errPanel.style.display = "block"; }
+        showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
 }
 
@@ -2673,6 +2980,8 @@ function goToFirstSwapScreen() {
     document.getElementById("divSwapSuccessPanel").style.display = "none";
     document.getElementById("divSwapScreenInner").style.display = "block";
     updateSwapFromAllowanceDisplay();
+    setGasFeeLabel("spanSwapGasFee", "");
+    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
 }
 
 function setSwapSuccessSymbolAndLink(container, symbol, explorerUrl, shortAddr) {
@@ -2744,89 +3053,34 @@ function updateSwapApprovalSubmitStatusText() {
 }
 
 function setRemoveAllowancePanelWaiting(waiting) {
-    var statusDiv = document.getElementById("divRemoveAllowanceTxStatus");
-    var gasInput = document.getElementById("txtRemoveAllowanceGasLimit");
     var btn = document.getElementById("btnRemoveAllowanceRemove");
     var errDiv = document.getElementById("divRemoveAllowanceError");
-    if (statusDiv) statusDiv.style.display = waiting ? "flex" : "none";
     var disabled = !!waiting;
-    if (gasInput) { gasInput.disabled = disabled; gasInput.style.opacity = disabled ? "0.6" : ""; }
     var pwdInput = document.getElementById("pwdRemoveAllowance");
     if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
     if (btn) { btn.disabled = disabled; btn.style.pointerEvents = disabled ? "none" : ""; btn.style.opacity = disabled ? "0.6" : ""; }
     if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-    if (waiting) {
-        updateSwapApprovalSubmitStatusText();
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
-    } else {
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = null;
-    }
 }
 
 function setAddAllowancePanelWaiting(waiting) {
-    var statusDiv = document.getElementById("divAddAllowanceTxStatus");
-    var gasInput = document.getElementById("txtAddAllowanceGasLimit");
     var qtyInput = document.getElementById("txtAddAllowanceQuantity");
     var maxLink = document.querySelector("#divAddAllowanceQuantityRow a[onclick*='setAddAllowanceQuantityToMax']");
     var btn = document.getElementById("btnAddAllowanceAdd");
     var errDiv = document.getElementById("divAddAllowanceError");
-    if (statusDiv) statusDiv.style.display = waiting ? "flex" : "none";
     var disabled = !!waiting;
-    if (gasInput) { gasInput.disabled = disabled; gasInput.style.opacity = disabled ? "0.6" : ""; }
     if (qtyInput) { qtyInput.disabled = disabled; qtyInput.style.opacity = disabled ? "0.6" : ""; }
     var pwdInput = document.getElementById("pwdAddAllowance");
     if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
     if (maxLink) { maxLink.style.pointerEvents = disabled ? "none" : ""; maxLink.style.opacity = disabled ? "0.6" : ""; }
     if (btn) { btn.disabled = disabled; btn.style.pointerEvents = disabled ? "none" : ""; btn.style.opacity = disabled ? "0.6" : ""; }
     if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-    if (waiting) {
-        swapApprovalStatusStartTime = Date.now();
-        updateSwapApprovalSubmitStatusText();
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = setInterval(updateSwapApprovalSubmitStatusText, 3000);
-    } else {
-        if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-        swapApprovalStatusRotateId = null;
-    }
 }
 
-function updateRemoveAllowanceGasFeeLabel() {
-    var gasLimitEl = document.getElementById("txtRemoveAllowanceGasLimit");
-    var feeEl = document.getElementById("spanRemoveAllowanceGasFee");
-    var warnEl = document.getElementById("divRemoveAllowanceGasHighWarning");
-    if (!gasLimitEl || !feeEl) return;
-    var gas = parseInt(gasLimitEl.value, 10) || 210000;
-    var fee = (gas * SWAP_GAS_FEE_RATE).toFixed(6);
-    feeEl.textContent = fee;
-    if (warnEl) {
-        warnEl.style.display = gas > SWAP_GAS_HIGH_THRESHOLD ? "block" : "none";
-        if (warnEl.style.display === "block" && langJson && langJson.langValues && langJson.langValues["swap-gas-high-warning"]) {
-            warnEl.textContent = langJson.langValues["swap-gas-high-warning"];
-        } else if (warnEl.style.display === "block") {
-            warnEl.textContent = "Gas limit is high. Consider reviewing before proceeding.";
-        }
-    }
-}
-
-function updateAddAllowanceGasFeeLabel() {
-    var gasLimitEl = document.getElementById("txtAddAllowanceGasLimit");
-    var feeEl = document.getElementById("spanAddAllowanceGasFee");
-    var warnEl = document.getElementById("divAddAllowanceGasHighWarning");
-    if (!gasLimitEl || !feeEl) return;
-    var gas = parseInt(gasLimitEl.value, 10) || 210000;
-    var fee = (gas * SWAP_GAS_FEE_RATE).toFixed(6);
-    feeEl.textContent = fee;
-    if (warnEl) {
-        warnEl.style.display = gas > SWAP_GAS_HIGH_THRESHOLD ? "block" : "none";
-        if (warnEl.style.display === "block" && langJson && langJson.langValues && langJson.langValues["swap-gas-high-warning"]) {
-            warnEl.textContent = langJson.langValues["swap-gas-high-warning"];
-        } else if (warnEl.style.display === "block") {
-            warnEl.textContent = "Gas limit is high. Consider reviewing before proceeding.";
-        }
-    }
-}
+// Gas fee labels for the allowance panels are now driven by the common gas-estimation
+// flow (spanRemoveAllowanceGasFee / spanAddAllowanceGasFee). These are retained as
+// no-ops for any legacy callers.
+function updateRemoveAllowanceGasFeeLabel() { return; }
+function updateAddAllowanceGasFeeLabel() { return; }
 
 async function openRemoveAllowanceContractInExplorer() {
     var addr = getSwapContractAddress(document.getElementById("ddlSwapFromToken").value);
@@ -2870,101 +3124,17 @@ function showSwapExecuteConfirmDialog() {
     var fromAmt = (document.getElementById("txtSwapFromQuantity").value || "").trim();
     var toAmt = (document.getElementById("txtSwapToQuantity").value || "").trim();
     function sym(v) { return v === "Q" ? "Q" : (String(v).length > 10 ? String(v).slice(0, 6) + "..." + String(v).slice(-4) : v); }
-    var gasLimit = (document.getElementById("txtSwapGasLimit").value || "").trim();
-    var gasFee = (document.getElementById("spanSwapGasFee").textContent || "").trim();
+    var resolved = resolveGasForTx(SWAP_DEFAULT_GAS);
     var review = {
         asset: sym(fromValue) + " -> " + sym(toValue),
         contractAddress: getSwapContractAddress(fromValue),
         toAddress: currentWalletAddress,
         quantityLabelKey: "send-quantity",
         quantityValue: fromAmt + " " + sym(fromValue) + " for " + toAmt + " " + sym(toValue),
-        gasLimit: gasLimit,
-        gasFee: gasFee
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee
     };
     showSwapApprovalTransactionReview(review, "swapExecute");
-}
-
-async function pollSwapApprovalTransactionStatus() {
-    if (!swapApprovalLastTxHash || !currentBlockchainNetwork) return;
-    try {
-        var res = await getTransactionStatusByHash(currentBlockchainNetwork.scanApiDomain, currentWalletAddress, swapApprovalLastTxHash);
-        if (allowancePanelMode === "remove" || allowancePanelMode === "add") {
-            if (res.status === "succeeded") {
-                if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-                swapApprovalPollingId = null;
-                if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-                swapApprovalStatusRotateId = null;
-                swapApprovalLastTxHash = null;
-                var mode = allowancePanelMode;
-                allowancePanelMode = null;
-                setRemoveAllowancePanelWaiting(false);
-                setAddAllowancePanelWaiting(false);
-                var msg = (mode === "remove") ? ((langJson && langJson.langValues && langJson.langValues["remove-allowance-succeeded"]) ? langJson.langValues["remove-allowance-succeeded"] : "Remove allowance succeeded.") : ((langJson && langJson.langValues && langJson.langValues["add-allowance-succeeded"]) ? langJson.langValues["add-allowance-succeeded"] : "Add allowance succeeded.");
-                showAlertAndExecuteOnClose(msg, goToFirstSwapScreen);
-            } else if (res.status === "failed") {
-                if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-                swapApprovalPollingId = null;
-                if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-                swapApprovalStatusRotateId = null;
-                swapApprovalLastTxHash = null;
-                var mode = allowancePanelMode;
-                allowancePanelMode = null;
-                setRemoveAllowancePanelWaiting(false);
-                setAddAllowancePanelWaiting(false);
-                showWarnAlert(res.error || (langJson.errors.transactionFailed || "Transaction failed."));
-            }
-            return;
-        }
-        if (swapConfirmTxMode === "swap") {
-            if (res.status === "succeeded") {
-                if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-                swapApprovalPollingId = null;
-                if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-                swapApprovalStatusRotateId = null;
-                swapApprovalLastTxHash = null;
-                swapConfirmTxMode = null;
-                setSwapConfirmPanelWaitingForApprovalTx(false);
-                (async function () {
-                    await refreshAccountBalance();
-                    var fromAfter = await getSwapBalanceForSymbol(swapSuccessFromToken);
-                    var toAfter = await getSwapBalanceForSymbol(swapSuccessToToken);
-                    var gasFeeCoins = swapSuccessGasLimit != null ? (swapSuccessGasLimit * SWAP_GAS_FEE_RATE).toFixed(6) : "0";
-                    showSwapSuccessPanel(swapSuccessFromToken, swapSuccessToToken, swapSuccessFromBefore, swapSuccessToBefore, fromAfter, toAfter, gasFeeCoins);
-                    swapSuccessFromToken = null;
-                    swapSuccessToToken = null;
-                    swapSuccessFromBefore = null;
-                    swapSuccessToBefore = null;
-                    swapSuccessGasLimit = null;
-                })();
-            } else if (res.status === "failed") {
-                if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-                swapApprovalPollingId = null;
-                if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
-                swapApprovalStatusRotateId = null;
-                swapApprovalLastTxHash = null;
-                swapConfirmTxMode = null;
-                setSwapConfirmPanelWaitingForApprovalTx(false);
-                var errPanel = document.getElementById("divSwapConfirmApprovalTxError");
-                if (errPanel) { errPanel.textContent = htmlEncode(res.error || (langJson.errors.transactionFailed || "Transaction failed.")); errPanel.style.display = "block"; }
-            }
-            return;
-        }
-        if (res.status === "succeeded") {
-            if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-            swapApprovalPollingId = null;
-            swapApprovalLastTxHash = null;
-            setSwapConfirmPanelWaitingForApprovalTx(false);
-            await reloadSwapApprovalContext();
-            var approvalDoneMsg = (langJson && langJson.langValues && langJson.langValues["swap-approval-completed"]) ? langJson.langValues["swap-approval-completed"] : "Token approval completed. You can continue with Swap.";
-            showAlert(approvalDoneMsg);
-        } else if (res.status === "failed") {
-            if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
-            swapApprovalPollingId = null;
-            setSwapConfirmPanelWaitingForApprovalTx(false);
-            var errPanel = document.getElementById("divSwapConfirmApprovalTxError");
-            if (errPanel) { errPanel.textContent = htmlEncode(res.error || (langJson.errors.transactionFailed || "Transaction failed.")); errPanel.style.display = "block"; }
-        }
-    } catch (e) { /* ignore */ }
 }
 
 async function decryptAndUnlockWalletForSwapApproval() {
@@ -3001,11 +3171,10 @@ async function decryptAndUnlockWalletForSwapApproval() {
 }
 
 function onSwapApprovalSubmitCloseClick() {
-    if (swapApprovalPollingId) clearInterval(swapApprovalPollingId);
+    if (typeof swapApprovalPollingId !== "undefined" && swapApprovalPollingId) clearInterval(swapApprovalPollingId);
     swapApprovalPollingId = null;
-    if (swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
+    if (typeof swapApprovalStatusRotateId !== "undefined" && swapApprovalStatusRotateId) clearInterval(swapApprovalStatusRotateId);
     swapApprovalStatusRotateId = null;
-    closeSwapApprovalSubmitDialog();
     return false;
 }
 
@@ -3020,25 +3189,12 @@ function onRemoveSwapAllowanceClick() {
     var contractAddr = getSwapContractAddress(fromValue);
     var aEl = document.getElementById("aRemoveAllowanceContract");
     if (aEl) { aEl.textContent = contractAddr; aEl.setAttribute("data-contract-address", contractAddr); }
-    document.getElementById("txtRemoveAllowanceGasLimit").value = "210000";
     document.getElementById("divRemoveAllowanceError").style.display = "none";
     document.getElementById("divRemoveAllowanceError").textContent = "";
     setRemoveAllowancePanelWaiting(false);
-    (async function () {
-        try {
-            var approveGasPayload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                fromAddress: currentWalletAddress,
-                amount: "0",
-                fromDecimals: getSwapTokenDecimals(fromValue)
-            };
-            var res = await getSwapEstimateApproveGas(approveGasPayload);
-            if (res && res.success && res.gasLimit) document.getElementById("txtRemoveAllowanceGasLimit").value = res.gasLimit;
-        } catch (e) { /* keep default */ }
-        updateRemoveAllowanceGasFeeLabel();
-    })();
+    resetCurrentGasConfig(swapApproveGasState);
+    setGasFeeLabel("spanRemoveAllowanceGasFee", "");
+    scheduleGasEstimation(function () { return getSwapApproveTxContext("0"); }, "divRemoveAllowanceGasIcon", "spanRemoveAllowanceGasFee", swapApproveGasState);
     return false;
 }
 
@@ -3049,16 +3205,15 @@ function onRemoveAllowanceRemoveClick() {
         return false;
     }
     var contractAddr = getSwapContractAddress(document.getElementById("ddlSwapFromToken").value);
-    var gasLimit = (document.getElementById("txtRemoveAllowanceGasLimit").value || "").trim();
-    var gasFee = (document.getElementById("spanRemoveAllowanceGasFee").textContent || "").trim();
+    var resolved = resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState);
     var review = {
         asset: langJson.langValues["remove-allowance-title"] || "Remove allowance",
         contractAddress: contractAddr,
         toAddress: contractAddr,
         quantityLabelKey: "approval-quantity",
         quantityValue: "0",
-        gasLimit: gasLimit,
-        gasFee: gasFee
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee
     };
     showSwapApprovalTransactionReview(review, "remove");
     return false;
@@ -3072,24 +3227,9 @@ function setAddAllowanceQuantityToMax() {
 
 function onAddAllowanceQuantityInput() {
     if (!currentBlockchainNetwork) return;
-    var fromValue = document.getElementById("ddlSwapFromToken").value;
     var amount = (document.getElementById("txtAddAllowanceQuantity").value || "").trim();
     if (!amount || parseFloat(amount) <= 0) return;
-    (async function () {
-        try {
-            var payload = {
-                rpcEndpoint: currentBlockchainNetwork.rpcEndpoint,
-                chainId: parseInt(currentBlockchainNetwork.networkId, 10),
-                fromTokenValue: fromValue,
-                fromAddress: currentWalletAddress,
-                amount: amount,
-                fromDecimals: getSwapTokenDecimals(fromValue)
-            };
-            var res = await getSwapEstimateApproveGas(payload);
-            if (res && res.success && res.gasLimit) document.getElementById("txtAddAllowanceGasLimit").value = res.gasLimit;
-        } catch (e) { /* keep default */ }
-        updateAddAllowanceGasFeeLabel();
-    })();
+    scheduleGasEstimation(function () { return getSwapApproveTxContext(amount); }, "divAddAllowanceGasIcon", "spanAddAllowanceGasFee", swapApproveGasState);
 }
 
 function onAddAllowanceAddClick() {
@@ -3100,16 +3240,15 @@ function onAddAllowanceAddClick() {
     }
     var contractAddr = getSwapContractAddress(document.getElementById("ddlSwapFromToken").value);
     var approvalQty = (document.getElementById("txtAddAllowanceQuantity").value || "").trim();
-    var gasLimit = (document.getElementById("txtAddAllowanceGasLimit").value || "").trim();
-    var gasFee = (document.getElementById("spanAddAllowanceGasFee").textContent || "").trim();
+    var resolved = resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState);
     var review = {
         asset: langJson.langValues["add-allowance-title"] || "Add allowance",
         contractAddress: contractAddr,
         toAddress: contractAddr,
         quantityLabelKey: "approval-quantity",
         quantityValue: approvalQty,
-        gasLimit: gasLimit,
-        gasFee: gasFee
+        gasLimit: resolved.gasLimit,
+        gasFee: resolved.gasFee
     };
     showSwapApprovalTransactionReview(review, "add");
     return false;

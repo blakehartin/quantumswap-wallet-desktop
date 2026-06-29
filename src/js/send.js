@@ -3,6 +3,48 @@ const TOKEN_SEND_GAS = 84000;
 
 let sendShowUnrecognizedTokens = false;
 
+function getSendTxContext() {
+    let ddlCoinTokenToSend = document.getElementById("ddlCoinTokenToSend");
+    let selectedValue = ddlCoinTokenToSend ? ddlCoinTokenToSend.value : "Q";
+    let toAddress = (document.getElementById("txtSendAddress").value || "").trim();
+    let amount = (document.getElementById("txtSendQuantity").value || "").trim();
+    let isCoin = (selectedValue === "Q");
+    // The dropdown option value is the token contract address for recognized tokens;
+    // "other" is the offline manual-entry case where the address is in txtTokenContractAddress.
+    // (txtTokenContractAddress is not populated in online mode, so don't rely on it here.)
+    let contractAddress = isCoin
+        ? null
+        : (selectedValue === "other" ? document.getElementById("txtTokenContractAddress").value : selectedValue);
+    var ctx = {
+        txKind: isCoin ? "sendCoin" : "sendToken",
+        toAddress: toAddress || currentWalletAddress,
+        amount: amount || "0",
+        defaultGasLimit: isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS,
+        bufferPercent: isCoin ? GAS_NO_BUFFER_PERCENT : GAS_ESTIMATE_BUFFER_PERCENT
+    };
+    if (!isCoin) {
+        ctx.contractAddress = contractAddress;
+        ctx.fromDecimals = getSwapTokenDecimals(contractAddress);
+    }
+    return ctx;
+}
+
+function onSendGasIconClick() {
+    return onGasIconClick("spanSendGasFee", null, getSendTxContext);
+}
+
+function scheduleSendGasEstimation() {
+    scheduleGasEstimation(getSendTxContext, "divSendGasIcon", "spanSendGasFee", null, function (errorDetail) {
+        var base = (langJson && langJson.errors && langJson.errors.gasEstimateError)
+            ? langJson.errors.gasEstimateError
+            : "Could not fetch the gas fee from the network. Using the default estimate.";
+        // errorDetail is the raw RPC return value / transport error; showTransientToast
+        // renders via textContent so any HTML in it is sanitized (not parsed).
+        var message = errorDetail ? (base + " (" + errorDetail + ")") : base;
+        showTransientToast(message, 4000);
+    });
+}
+
 function resetTokenList() {
     let ddlCoinTokenToSend = document.getElementById("ddlCoinTokenToSend");
     removeOptions(ddlCoinTokenToSend);
@@ -114,11 +156,14 @@ function syncSendScreenTokenList() {
 async function updateInfoSendScreen() {
     let ddlCoinTokenToSend = document.getElementById("ddlCoinTokenToSend");
     let selectedValue = ddlCoinTokenToSend.value;
+    if (document.getElementById("SendScreen").style.display === "block") {
+        resetCurrentGasConfig();
+        setGasFeeLabel("spanSendGasFee", "");
+    }
     document.getElementById("divCoinTokenToSend").textContent = "";
     document.getElementById("divCoinTokenToSend").style.display = "";
     document.getElementById("divBalanceSendScreen").textContent = "";
     document.getElementById("txtTokenContractAddress").style.display = "none";
-
     if(offlineSignEnabled == true) {
         document.getElementById("divSendScreenBalanceBox").style.display = "none";
     } else {
@@ -158,6 +203,9 @@ async function updateInfoSendScreen() {
         }
     }
 
+    if (document.getElementById("SendScreen").style.display === "block") {
+        scheduleSendGasEstimation();
+    }
     return false;
 }
 
@@ -193,7 +241,19 @@ async function showSendScreen() {
     document.getElementById("pwdSend").value = "";
     document.getElementById("txtSendAddress").focus();
 
+    resetCurrentGasConfig();
+    attachSendGasListeners();
+    setGasFeeLabel("spanSendGasFee", "");
+    scheduleSendGasEstimation();
+
     return false;
+}
+
+function attachSendGasListeners() {
+    var addr = document.getElementById("txtSendAddress");
+    var qty = document.getElementById("txtSendQuantity");
+    if (addr && !addr.dataset.gasBound) { addr.addEventListener("input", scheduleSendGasEstimation); addr.dataset.gasBound = "1"; }
+    if (qty && !qty.dataset.gasBound) { qty.addEventListener("input", scheduleSendGasEstimation); qty.dataset.gasBound = "1"; }
 }
 
 async function signOfflineSend() {
@@ -249,8 +309,9 @@ async function signOfflineSend() {
 
     var isCoin = (selectedValue === "Q");
     var offlineContractAddress = isCoin ? null : document.getElementById("txtTokenContractAddress").value;
-    var gasLimit = isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS;
-    var gasFee = (typeof SWAP_GAS_FEE_RATE !== "undefined" ? (gasLimit * SWAP_GAS_FEE_RATE) : 0).toFixed(6);
+    var resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
+    var gasLimit = parseInt(resolved.gasLimit, 10);
+    var gasFee = resolved.gasFee;
 
     var review = {
         asset: getSendAssetSymbol(offlineContractAddress, isCoin),
@@ -307,7 +368,7 @@ async function signOfflineTxnSendToken(quantumWallet) {
             contractAddress: contractAddress,
             fromDecimals: getSwapTokenDecimals(contractAddress),
             nonce: parseInt(currentNonce),
-            gasLimit: TOKEN_SEND_GAS,
+            gasLimit: parseInt(resolveGasForTx(TOKEN_SEND_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
@@ -349,7 +410,7 @@ async function signOfflineTxnSend(quantumWallet) {
             toAddress: sendAddress,
             amount: sendQuantity,
             nonce: parseInt(currentNonce),
-            gasLimit: COIN_SEND_GAS,
+            gasLimit: parseInt(resolveGasForTx(COIN_SEND_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
@@ -440,8 +501,9 @@ async function sendCoins() {
     }
 
     var isCoin = (contractAddress === QuantumCoin);
-    var gasLimit = isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS;
-    var gasFee = (typeof SWAP_GAS_FEE_RATE !== "undefined" ? (gasLimit * SWAP_GAS_FEE_RATE) : 0).toFixed(6);
+    var resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
+    var gasLimit = parseInt(resolved.gasLimit, 10);
+    var gasFee = resolved.gasFee;
 
     var review = {
         asset: getSendAssetSymbol(contractAddress, isCoin),
@@ -494,6 +556,8 @@ async function sendCoinsSubmit(quantumWallet) {
     updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
     var sendAddress = document.getElementById("txtSendAddress").value;
     var sendQuantity = document.getElementById("txtSendQuantity").value;
+    var resolved = resolveGasForTx(COIN_SEND_GAS);
+    var gasLimit = parseInt(resolved.gasLimit, 10);
 
     try {
         let currentDate = new Date();
@@ -504,7 +568,7 @@ async function sendCoinsSubmit(quantumWallet) {
             amount: sendQuantity,
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
-            gasLimit: COIN_SEND_GAS,
+            gasLimit: gasLimit,
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
         });
 
@@ -540,6 +604,8 @@ async function sendTokensSubmit(quantumWallet) {
         var sendAddress = document.getElementById("txtSendAddress").value;
         var sendQuantity = document.getElementById("txtSendQuantity").value;
         var contractAddress = document.getElementById("divCoinTokenToSend").textContent;
+        var resolvedTok = resolveGasForTx(TOKEN_SEND_GAS);
+        var gasLimitTok = parseInt(resolvedTok.gasLimit, 10);
 
         let currentDate = new Date();
         var result = await submitSendTokens({
@@ -551,7 +617,7 @@ async function sendTokensSubmit(quantumWallet) {
             fromDecimals: getSwapTokenDecimals(contractAddress),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
-            gasLimit: TOKEN_SEND_GAS,
+            gasLimit: gasLimitTok,
             advancedSigningEnabled: await advancedSigningGetDefaultValue()
         });
 

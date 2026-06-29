@@ -42,6 +42,108 @@ btnYesNoNo.onclick = function () {
     onYesNoConfirmFunc = null;
 };
 
+//Gas configuration
+var modalGasConfig = document.getElementById("modalGasConfig");
+var btnGasConfigOk = document.getElementById("btnGasConfigOk");
+var btnGasConfigCancel = document.getElementById("btnGasConfigCancel");
+var onGasConfigOk = null;
+
+// Restrict the gas-fee field to numbers and a single decimal point (no other characters).
+function sanitizeGasFeeInput(el) {
+    if (!el || el.dataset.gasSanitized) return;
+    el.dataset.gasSanitized = "1";
+    el.addEventListener("input", function () {
+        var v = el.value;
+        var cleaned = v.replace(/[^0-9.]/g, "");
+        var parts = cleaned.split(".");
+        if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+        if (cleaned !== v) el.value = cleaned;
+    });
+}
+
+// Price per gas unit (coins) derived from the estimate the dialog was opened with.
+// Used to recompute the fee field live when the user edits the gas limit.
+var gasConfigFeeRate = null;
+
+// Bind a one-time input listener on the gas-limit field that recomputes the fee
+// field as (gasLimit * gasConfigFeeRate). Generic: applies to every screen that
+// opens this dialog (send, validator, swap), since they all share these inputs.
+function bindGasLimitRecompute(limitEl, feeEl) {
+    if (!limitEl || !feeEl || limitEl.dataset.gasRecomputeBound) return;
+    limitEl.dataset.gasRecomputeBound = "1";
+    limitEl.addEventListener("input", function () {
+        if (gasConfigFeeRate == null) return;
+        var lim = parseFloat(limitEl.value);
+        if (isNaN(lim) || lim < 0) return;
+        var fee = lim * gasConfigFeeRate;
+        feeEl.value = (typeof formatGasFeeNumber === "function") ? formatGasFeeNumber(fee) : String(fee);
+    });
+}
+
+function showGasConfigDialog(opts) {
+    opts = opts || {};
+    var limitEl = document.getElementById("txtGasLimit");
+    var feeEl = document.getElementById("txtGasFee");
+    if (limitEl) limitEl.value = (opts.gasLimit != null ? String(opts.gasLimit) : "");
+    if (feeEl) feeEl.value = (opts.gasFee != null ? String(opts.gasFee) : "");
+    sanitizeGasFeeInput(feeEl);
+    // Derive the coins-per-gas-unit rate from the opened estimate so editing the
+    // gas limit updates the fee. Null when there is no usable estimate yet.
+    var limitNum = parseFloat(opts.gasLimit);
+    var feeNum = parseFloat(opts.gasFee);
+    gasConfigFeeRate = (!isNaN(limitNum) && limitNum > 0 && !isNaN(feeNum)) ? (feeNum / limitNum) : null;
+    bindGasLimitRecompute(limitEl, feeEl);
+    onGasConfigOk = (typeof opts.onOk === "function") ? opts.onOk : null;
+    modalGasConfig.style.display = "block";
+    modalGasConfig.showModal();
+    setTimeout(function () { if (limitEl) limitEl.focus(); }, 80);
+    return false;
+}
+
+btnGasConfigOk.onclick = function () {
+    var limitEl = document.getElementById("txtGasLimit");
+    var feeEl = document.getElementById("txtGasFee");
+    var gasLimit = parseInt((limitEl && limitEl.value) || "", 10);
+    var gasFee = (feeEl && feeEl.value != null) ? String(feeEl.value).trim() : "";
+    var feeNum = parseFloat(gasFee);
+    if (isNaN(gasLimit) || gasLimit <= 0 || isNaN(feeNum) || feeNum < 0) {
+        showWarnAlert((langJson && langJson.errors && langJson.errors.invalidValue) ? langJson.errors.invalidValue : "Invalid value");
+        return;
+    }
+    modalGasConfig.style.display = "none";
+    modalGasConfig.close();
+    var cb = onGasConfigOk;
+    onGasConfigOk = null;
+    if (cb != null) {
+        cb({ gasLimit: String(gasLimit), gasFee: gasFee });
+    }
+};
+
+btnGasConfigCancel.onclick = function () {
+    modalGasConfig.style.display = "none";
+    modalGasConfig.close();
+    onGasConfigOk = null;
+};
+
+// Transient tooltip-like toast shown above the active screen (e.g. send screen)
+// when an RPC call fails. Auto-hides after `durationMs` (default 4000ms).
+// The message is rendered via textContent, which never parses HTML, so any
+// markup contained in an RPC return value / transport error is neutralized.
+var gasToastTimerId = null;
+function showTransientToast(message, durationMs) {
+    var el = document.getElementById("divGasToast");
+    if (!el) return;
+    var text = (message == null) ? "" : String(message);
+    if (text.length > 300) text = text.substring(0, 297) + "...";
+    el.textContent = text;
+    el.classList.add("gas-toast-visible");
+    if (gasToastTimerId) { clearTimeout(gasToastTimerId); gasToastTimerId = null; }
+    gasToastTimerId = setTimeout(function () {
+        el.classList.remove("gas-toast-visible");
+        gasToastTimerId = null;
+    }, durationMs || 4000);
+}
+
 //Network
 var modalNetwork = document.getElementById("modalNetworkDialog");
 var spanNetwork = document.getElementsByClassName("oknetwork")[0];
@@ -258,7 +360,7 @@ var txReviewRequirePassword = false;
 var modalSendCompleted = document.getElementById("modalSendCompleted");
 
 window.onclick = function (event) {
-    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalSubmit || event.target == modalTransactionReview || event.target == modalSendCompleted) {
+    if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalSubmit || event.target == modalTransactionReview || event.target == modalSendCompleted || event.target == modalGasConfig) {
         if (modalOkDialog.style.display !== "none") {
             modalNetwork.style.display = "none";
             modalNetwork.close();
@@ -301,6 +403,11 @@ window.onclick = function (event) {
         }
         if (modalSendCompleted && modalSendCompleted.style.display !== "none") {
             closeSendCompletedDialog();
+        }
+        if (modalGasConfig && modalGasConfig.style.display !== "none") {
+            modalGasConfig.style.display = "none";
+            modalGasConfig.close();
+            onGasConfigOk = null;
         }
     }
 }
