@@ -1,7 +1,8 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin } from "../sdk";
 
 export function registerFormatHandlers(): void {
-    const { parseEther, formatEther, FixedNumber } = require("quantumcoin");
+    const { parseEther, formatEther, FixedNumber } = loadQuantumCoin();
 
     ipcMain.handle("FormatApiEtherToWei", async (_event, data) => {
         const etherAmount = parseEther(data);

@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin, loadQuantumCoinConfig } from "../sdk";
 import * as crypto from "crypto";
 import { base64ToBytes, bytesToBase64 } from "../rpc";
 
@@ -43,8 +44,8 @@ export function registerCryptoHandlers(): void {
     });
 
     ipcMain.handle("WalletFromSeed", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { Wallet } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { Wallet } = loadQuantumCoin();
 
         await Initialize(null);
         const seedNumbers = Array.from(data.seed) as number[];
@@ -59,8 +60,8 @@ export function registerCryptoHandlers(): void {
     });
 
     ipcMain.handle("WalletEncryptJson", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { Wallet } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { Wallet } = loadQuantumCoin();
 
         await Initialize(null);
         const privBytes = Buffer.from(data.privateKey, "base64");
@@ -70,8 +71,8 @@ export function registerCryptoHandlers(): void {
     });
 
     ipcMain.handle("WalletDecryptJson", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { Wallet } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { Wallet } = loadQuantumCoin();
 
         await Initialize(null);
         const wallet = Wallet.fromEncryptedJsonSync(data.json, data.passphrase);
@@ -95,8 +96,8 @@ export function registerCryptoHandlers(): void {
     });
 
     ipcMain.handle("ComputeAddress", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { computeAddress } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { computeAddress } = loadQuantumCoin();
 
         await Initialize(null);
         const pubBytes = Buffer.from(data, "base64");
@@ -104,16 +105,16 @@ export function registerCryptoHandlers(): void {
     });
 
     ipcMain.handle("IsValidAddress", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { isAddress } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { isAddress } = loadQuantumCoin();
 
         await Initialize(null);
         return isAddress(data);
     });
 
     ipcMain.handle("ScryptDerive", async (_event, data) => {
-        const { Initialize } = require("quantumcoin/config");
-        const { scryptSync } = require("quantumcoin");
+        const { Initialize } = loadQuantumCoinConfig();
+        const { scryptSync } = loadQuantumCoin();
 
         // scryptSync requires the SDK to be initialized. The legacy handler
         // relied on another quantumcoin IPC call having initialized the

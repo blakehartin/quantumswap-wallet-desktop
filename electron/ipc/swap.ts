@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk";
 import {
     SWAP_WQ_CONTRACT_ADDRESS,
     SWAP_ROUTER_V2_CONTRACT_ADDRESS,
@@ -15,9 +16,9 @@ import {
 export function registerSwapHandlers(): void {
     ipcMain.handle("SwapQuoteGetAmountsOut", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, formatUnits, getAddress } = require("quantumcoin");
-            const { QuantumSwapV2Router02 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, formatUnits, getAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, error: "Invalid chain ID" };
@@ -48,9 +49,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteCheckPairExists", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { getAddress, ZeroAddress } = require("quantumcoin");
-            const { QuantumSwapV2Factory } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { getAddress, ZeroAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Factory } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { exists: false, error: "Invalid chain ID" };
@@ -64,7 +65,7 @@ export function registerSwapHandlers(): void {
             const tokenA = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
             const tokenB = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
             const pairAddr = await factory.getPair(getAddress(tokenA), getAddress(tokenB));
-            const pairAddrStr = typeof pairAddr === "string" ? pairAddr : (pairAddr && pairAddr.toString ? pairAddr.toString() : String(pairAddr));
+            const pairAddrStr = typeof pairAddr === "string" ? pairAddr : String(pairAddr);
             const zeroAddr = ZeroAddress || "0x0000000000000000000000000000000000000000000000000000000000000000";
             const exists = !!(pairAddrStr && pairAddrStr !== zeroAddr && pairAddrStr !== "0x" + "0".repeat(64));
 
@@ -76,9 +77,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteGetAmountsIn", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, formatUnits, getAddress } = require("quantumcoin");
-            const { QuantumSwapV2Router02 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, formatUnits, getAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, error: "Invalid chain ID" };
@@ -109,9 +110,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteEstimateGas", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, getAddress } = require("quantumcoin");
-            const { QuantumSwapV2Router02 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, getAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, gasLimit: null, error: "Invalid chain ID" };
@@ -164,9 +165,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteCheckAllowance", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, sufficient: false, error: "Invalid chain ID" };
@@ -201,9 +202,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteEstimateApproveGas", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, gasLimit: null, error: "Invalid chain ID" };
@@ -235,9 +236,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteGetSwapContractData", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, getAddress } = require("quantumcoin");
-            const { QuantumSwapV2Router02 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, getAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "Invalid chain ID" };
@@ -290,9 +291,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapQuoteGetApproveContractData", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, dataHex: null, error: "Invalid chain ID" };
@@ -318,9 +319,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapSubmitApproval", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
@@ -349,9 +350,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapSubmitSwap", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
-            const { QuantumSwapV2Router02 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
+            const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
@@ -408,9 +409,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapSubmitRemoveAllowance", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
@@ -437,9 +438,9 @@ export function registerSwapHandlers(): void {
 
     ipcMain.handle("SwapSubmitAddAllowance", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };

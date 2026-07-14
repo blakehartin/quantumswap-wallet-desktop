@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk";
 import {
     SWAP_WQ_CONTRACT_ADDRESS,
     SWAP_ROUTER_V2_CONTRACT_ADDRESS,
@@ -59,9 +60,9 @@ function applyGasBuffer(gasLimitBi: unknown, percent: number | null): bigint | n
 
 // Build the unsigned tx request (with `from`) for a given transaction kind, for estimateGas.
 async function buildEstimateGasTx(data: any, provider: any): Promise<Record<string, unknown>> {
-    const { Initialize, Config } = require("quantumcoin/config");
-    const { parseUnits, getAddress, Contract } = require("quantumcoin");
-    const { QuantumSwapV2Router02, IERC20 } = require("quantumswap");
+    const { Initialize, Config } = loadQuantumCoinConfig();
+    const { parseUnits, getAddress, Contract } = loadQuantumCoin();
+    const { QuantumSwapV2Router02, IERC20 } = loadQuantumSwap();
 
     const chainId = Number(data.chainId);
     await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
@@ -124,7 +125,9 @@ async function buildEstimateGasTx(data: any, provider: any): Promise<Record<stri
     if (STAKING_ALLOWED_METHODS && STAKING_ALLOWED_METHODS.includes(txKind)) {
         const contract = new Contract(STAKING_CONTRACT_ADDRESS, STAKING_ABI_JSON, provider);
         const methodArgs = prepareStakingMethodArgs(STAKING_ABI_JSON, txKind, data.methodArgs || []);
-        const tx = await contract.populateTransaction[txKind](...methodArgs);
+        // populateTransaction is declared as {} and filled from the ABI at runtime.
+        const populate = contract.populateTransaction as Record<string, (...args: unknown[]) => Promise<object>>;
+        const tx = await populate[txKind](...methodArgs);
         const out: Record<string, unknown> = { ...tx, from: getAddress(fromAddress) };
         if (data.value && data.value !== "0" && data.value !== "0.0") {
             out.value = parseUnits(normalizeAmountString(data.value), 18);

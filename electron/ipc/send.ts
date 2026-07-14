@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk";
 import {
     createQuantumRpcProvider,
     initRpcUrlForConfig,
@@ -10,8 +11,8 @@ import {
 export function registerSendHandlers(): void {
     ipcMain.handle("SendCoinsSubmit", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
@@ -42,9 +43,9 @@ export function registerSendHandlers(): void {
 
     ipcMain.handle("SendTokensSubmit", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
             if (!Number.isInteger(chainId)) return { success: false, txHash: null, error: "Invalid chain ID" };
@@ -74,8 +75,8 @@ export function registerSendHandlers(): void {
 
     ipcMain.handle("OfflineSignCoinTransaction", async (_event, data) => {
         try {
-            const { Initialize } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
+            const { Initialize } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
 
             if (!data.privateKey || !data.publicKey) return { success: false, txData: null, error: "Wallet keys required" };
             if (!data.toAddress) return { success: false, txData: null, error: "Recipient address required" };
@@ -107,9 +108,9 @@ export function registerSendHandlers(): void {
 
     ipcMain.handle("OfflineSignTokenTransaction", async (_event, data) => {
         try {
-            const { Initialize } = require("quantumcoin/config");
-            const { Wallet, parseUnits, getAddress } = require("quantumcoin");
-            const { IERC20 } = require("quantumswap");
+            const { Initialize } = loadQuantumCoinConfig();
+            const { Wallet, parseUnits, getAddress } = loadQuantumCoin();
+            const { IERC20 } = loadQuantumSwap();
 
             if (!data.privateKey || !data.publicKey) return { success: false, txData: null, error: "Wallet keys required" };
             if (!data.toAddress) return { success: false, txData: null, error: "Recipient address required" };

@@ -1,4 +1,5 @@
 import * as os from "os";
+import { loadQuantumCoin } from "./sdk";
 import * as path from "path";
 
 export const SWAP_WQ_CONTRACT_ADDRESS = "0x0E49c26cd1ca19bF8ddA2C8985B96783288458754757F4C9E00a5439A7291628";
@@ -62,25 +63,31 @@ export function toNodeIpcPath(rpcEndpoint: unknown): string {
     return t;
 }
 
-/** Same endpoint string shape as createQuantumRpcProvider (IPC path vs HTTP URL). */
-export function initRpcUrlForConfig(rpcEndpoint: unknown): string | null {
+/**
+ * Same endpoint string shape as createQuantumRpcProvider (IPC path vs HTTP URL).
+ * Returns undefined (not null) when unavailable: Config's constructor only
+ * applies its default endpoint for undefined. Callers reject invalid endpoints
+ * via createQuantumRpcProvider before Initialize, so this is a safety net.
+ */
+export function initRpcUrlForConfig(rpcEndpoint: unknown): string | undefined {
     if (rpcEndpoint == null || typeof rpcEndpoint !== "string" || !rpcEndpoint.trim()) {
-        return null;
+        return undefined;
     }
     if (isIpcLikeRpc(rpcEndpoint)) {
         return toNodeIpcPath(rpcEndpoint);
     }
-    return buildSwapRpcUrl(rpcEndpoint);
+    return buildSwapRpcUrl(rpcEndpoint) ?? undefined;
 }
 
 export function createQuantumRpcProvider(rpcEndpoint: unknown, chainId: number): any {
     if (rpcEndpoint == null || typeof rpcEndpoint !== "string" || !rpcEndpoint.trim()) return null;
-    const { getProvider } = require("quantumcoin");
+    const { getProvider } = loadQuantumCoin();
     const endpoint = isIpcLikeRpc(rpcEndpoint) ? toNodeIpcPath(rpcEndpoint) : buildSwapRpcUrl(rpcEndpoint);
     if (!endpoint) return null;
     const provider = getProvider(endpoint, chainId);
     if (provider && Number.isInteger(chainId)) {
-        provider.chainId = chainId;
+        // Not part of AbstractProvider's declared surface; handlers read it back.
+        (provider as { chainId?: number }).chainId = chainId;
     }
     return provider;
 }

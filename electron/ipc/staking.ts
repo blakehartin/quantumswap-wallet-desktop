@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { loadQuantumCoin, loadQuantumCoinConfig } from "../sdk";
 import {
     createQuantumRpcProvider,
     initRpcUrlForConfig,
@@ -10,8 +11,8 @@ import { STAKING_CONTRACT_ADDRESS, STAKING_ABI_JSON, STAKING_ALLOWED_METHODS, pr
 export function registerStakingHandlers(): void {
     ipcMain.handle("StakingContractSubmit", async (_event, data) => {
         try {
-            const { Initialize, Config } = require("quantumcoin/config");
-            const { Wallet, Contract, parseUnits } = require("quantumcoin");
+            const { Initialize, Config } = loadQuantumCoinConfig();
+            const { Wallet, Contract, parseUnits } = loadQuantumCoin();
 
             if (!data.method || !STAKING_ALLOWED_METHODS.includes(data.method)) return { success: false, txHash: null, error: "Invalid staking method" };
             if (!data.privateKey || !data.publicKey) return { success: false, txHash: null, error: "Wallet keys required" };
@@ -35,7 +36,9 @@ export function registerStakingHandlers(): void {
             }
             methodArgs.push(overrides);
 
-            const tx = await contract[data.method](...methodArgs);
+            // ABI methods are attached to the Contract at runtime; the d.ts has no index signature.
+            const contractMethods = contract as unknown as Record<string, (...args: unknown[]) => Promise<{ hash: string }>>;
+            const tx = await contractMethods[data.method](...methodArgs);
             return { success: true, txHash: tx.hash, error: null };
         } catch (err: any) {
             return { success: false, txHash: null, error: (err && err.message) ? err.message : String(err) };
@@ -44,8 +47,8 @@ export function registerStakingHandlers(): void {
 
     ipcMain.handle("StakingContractOfflineSign", async (_event, data) => {
         try {
-            const { Initialize } = require("quantumcoin/config");
-            const { Wallet, Contract, parseUnits } = require("quantumcoin");
+            const { Initialize } = loadQuantumCoinConfig();
+            const { Wallet, Contract, parseUnits } = loadQuantumCoin();
 
             if (!data.method || !STAKING_ALLOWED_METHODS.includes(data.method)) return { success: false, txData: null, error: "Invalid staking method" };
             if (!data.privateKey || !data.publicKey) return { success: false, txData: null, error: "Wallet keys required" };
@@ -68,7 +71,9 @@ export function registerStakingHandlers(): void {
             }
             methodArgs.push(overrides);
 
-            const txReq = await contract.populateTransaction[data.method](...methodArgs);
+            // populateTransaction is declared as {} and filled from the ABI at runtime.
+            const populate = contract.populateTransaction as Record<string, (...args: unknown[]) => Promise<object>>;
+            const txReq = await populate[data.method](...methodArgs);
             const txData = await wallet.signTransaction(signingOverrides(wallet, data, { ...txReq, nonce: nonce, chainId: chainId }));
             return { success: true, txData: txData, error: null };
         } catch (err: any) {
