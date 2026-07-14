@@ -18,6 +18,10 @@ export async function GetAppVersion(): Promise<string> {
     return await AppApi.send("AppApiGetVersion", null);
 }
 
+export async function GetPackageName(): Promise<string> {
+    return await AppApi.send("AppApiGetPackageName", null);
+}
+
 export async function ReadFile(seedfile: string): Promise<string | null> {
     return await FileApi.send("FileApiReadFile", seedfile);
 }

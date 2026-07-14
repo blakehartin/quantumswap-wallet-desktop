@@ -15,6 +15,14 @@ export function registerSystemHandlers(rendererRoot: string): void {
         return app.getVersion();
     });
 
+    // Returns package.json "name" (app.getName() is unsuitable: it prefers
+    // productName). Used by the renderer to pick the theme.
+    ipcMain.handle("AppApiGetPackageName", async () => {
+        const pkgPath = path.join(app.getAppPath(), "package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        return String(pkg.name);
+    });
+
     ipcMain.handle("ClipboardWriteText", async (_event, data) => {
         clipboard.writeText(String(data));
     });

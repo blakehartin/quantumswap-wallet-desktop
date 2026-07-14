@@ -27,6 +27,8 @@ import {
     backupSpecificWallet,
     checkNewPassword,
     clickOnEnter,
+    closeBurgerMenu,
+    toggleBurgerMenu,
     copyAddress,
     copyAddressReceiveScreen,
     copyConfirmWalletAddress,
@@ -172,6 +174,18 @@ export function registerAppHandlers(): void {
         "showSettingsScreen();": () => showSettingsScreen(),
         "showWalletListScreen();": () => showWalletListScreen(),
         "showNetworksScreen()": () => showNetworksScreen(),
+
+        // ---- click/keydown: top-left burger menu ----
+        "return toggleBurgerMenu();": () => toggleBurgerMenu(),
+        "if (event.key === 'Enter' || event.key === ' ') { document.getElementById('burgerButton').click(); }":
+            (_element, event) => {
+                const key = (event as KeyboardEvent).key;
+                if (key === "Enter" || key === " ") {
+                    document.getElementById("burgerButton")!.click();
+                }
+            },
+        "closeBurgerMenu(); return showWalletListScreen();": () => { closeBurgerMenu(); return showWalletListScreen(); },
+        "closeBurgerMenu(); return showSettingsScreen();": () => { closeBurgerMenu(); return showSettingsScreen(); },
         "return showNetworksScreen();": () => showNetworksScreen(),
         "return showAddNetworkScreen();": () => showAddNetworkScreen(),
         "addNetwork();": () => addNetwork(),

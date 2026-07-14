@@ -36,10 +36,26 @@ test("window title comes from en-us.json plus the app version", async () => {
     await expect(page).toHaveTitle(/Quantum.* \d+\.\d+\.\d+/);
 });
 
+test("quantum theme is applied for the first-party package name", async () => {
+    // package.json name is "quantumswapwallet", so the quantum theme applies.
+    await expect(page.locator('link[href="theme-quantum.css"]')).toHaveCount(1);
+    await expect(page.locator('link[href="theme-quantum-chrome.css"]')).toHaveCount(1);
+    await expect(page.locator("body")).toHaveClass(/theme-quantum/);
+});
+
 test("accepting the EULA advances to onboarding", async () => {
     await page.locator("#divIAgree").click();
     await expect(page.locator("#modalEulaDialog")).not.toHaveAttribute("open", "");
     // Fresh profile has no main key, so the app proceeds toward onboarding
     // (network selection dialog or welcome/info screen).
     await expect(page.locator("#modalNetworkDialog[open], #welcomeScreen, #infoScreen")).not.toHaveCount(0);
+});
+
+test("burger menu replaces the bottom tab bar and stays hidden pre-unlock", async () => {
+    // The old bottom tab bar is gone in both themes.
+    await expect(page.locator("#tab-bar")).toHaveCount(0);
+    // The burger exists but stays hidden until a wallet is unlocked (this
+    // fresh profile is still in onboarding, so no wallet exists yet).
+    await expect(page.locator("#burgerMenu")).toHaveCount(1);
+    await expect(page.locator("#burgerMenu")).toBeHidden();
 });

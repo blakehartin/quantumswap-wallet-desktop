@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld("FileApi", makeApi(["FileApiReadFile"]));
 
 contextBridge.exposeInMainWorld("LocalStorageApi", makeApi(["StorageApiGetPath"]));
 
-contextBridge.exposeInMainWorld("AppApi", makeApi(["AppApiGetVersion"]));
+contextBridge.exposeInMainWorld("AppApi", makeApi(["AppApiGetVersion", "AppApiGetPackageName"]));
 
 contextBridge.exposeInMainWorld("CryptoApi", makeApi([
     "CryptoApiEncrypt",

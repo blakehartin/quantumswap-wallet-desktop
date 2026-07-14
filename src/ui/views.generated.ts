@@ -10,6 +10,12 @@ import { e, w, c, t } from "./render";
 export function buildAppBody(): Node[] {
     return [
         t("\n"),
+        c(" Ambient background orbs (decorative; styled only by theme-quantum.css). "),
+        t("\n"),
+        e("div", [["class", "qs-orb qs-orb-1"]], []),
+        t("\n"),
+        e("div", [["class", "qs-orb qs-orb-2"]], []),
+        t("\n"),
         e("template", [["id", "tplBlockchainNetworkRow"]], [
             "\n    ",
             e("tr", [["class", "network-row"]], [
@@ -673,6 +679,42 @@ export function buildAppBody(): Node[] {
         t("\n\n    "),
         e("div", [["style", "margin: -10px;"]], [
             "\n        ",
+            e("div", [["class", "burger-menu"], ["id", "burgerMenu"], ["style", "display:none;"]], [
+                "\n            ",
+                w(w(e("div", [["class", "burger-button"], ["id", "burgerButton"], ["role", "button"], ["tabindex", "9"], ["aria-label", "Menu"]], [
+                    "\n                ",
+                    e("span", [], []),
+                    e("span", [], []),
+                    e("span", [], []),
+                    "\n            ",
+                ]), "click", "return toggleBurgerMenu();"), "keydown", "if (event.key === 'Enter' || event.key === ' ') { document.getElementById('burgerButton').click(); }"),
+                "\n            ",
+                e("div", [["class", "burger-dropdown"], ["id", "burgerDropdown"], ["style", "display:none;"]], [
+                    "\n                ",
+                    w(e("div", [["class", "burger-item"], ["id", "tab1"], ["role", "button"], ["tabindex", "10"]], [
+                        "\n                    ",
+                        e("img", [["class", "tab-icon"], ["src", "assets/svg/wallet-outline.svg"], ["alt", "Wallets Icon"]], []),
+                        "\n                    ",
+                        e("div", [["class", "tab-name"], ["data-lang-key", "wallets"]], [
+                            "Wallets",
+                        ]),
+                        "\n                ",
+                    ]), "click", "closeBurgerMenu(); return showWalletListScreen();"),
+                    "\n                ",
+                    w(e("div", [["class", "burger-item"], ["id", "tab4"], ["role", "button"], ["tabindex", "11"]], [
+                        "\n                    ",
+                        e("img", [["class", "tab-icon"], ["src", "assets/svg/settings.svg"], ["alt", "Settings Icon"]], []),
+                        "\n                    ",
+                        e("div", [["class", "tab-name"], ["data-lang-key", "settings"]], [
+                            "Settings",
+                        ]),
+                        "\n                ",
+                    ]), "click", "closeBurgerMenu(); return showSettingsScreen();"),
+                    "\n            ",
+                ]),
+                "\n        ",
+            ]),
+            "\n        ",
             w(e("div", [["class", "dropdown"], ["id", "divNetworkDropdown"], ["role", "button"], ["tabindex", "1000"], ["style", "display:none;"]], [
                 "\n            ",
                 e("div", [["style", "width:fit-content;margin-top:4px;float:left;"]], [
@@ -721,15 +763,15 @@ export function buildAppBody(): Node[] {
                                     "Password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdUnlock"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "Enter a password"], ["tabindex", "1"], ["autofocus", ""]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["data-alt-key", "show-password"], ["role", "button"], ["tabindex", "2"]], []), "click", "togglePasswordBox(this, 'pwdUnlock');"),
                                         "\n                                ",
@@ -867,15 +909,15 @@ export function buildAppBody(): Node[] {
                                     "Password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdPassword"], ["name", "password"], ["placeholder", "Enter a password"], ["data-placeholder-key", "enter-a-password"], ["tabindex", "1"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["data-alt-key", "show-password"], ["role", "button"], ["tabindex", "2"]], []), "click", "togglePasswordBox(this, 'pwdPassword');"),
                                         "\n                                ",
@@ -893,15 +935,15 @@ export function buildAppBody(): Node[] {
                                     "Retype Password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdRetypePassword"], ["name", "password"], ["placeholder", "Retype the password"], ["data-placeholder-key", "retype-the-password"], ["tabindex", "3"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["data-alt-key", "show-password"], ["role", "button"], ["tabindex", "4"]], []), "click", "togglePasswordBox(this, 'pwdRetypePassword');"),
                                         "\n                                ",
@@ -3244,15 +3286,15 @@ export function buildAppBody(): Node[] {
                                     "Enter the above wallet's password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdRestoreWallet"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "Enter the above wallet's password"], ["tabindex", "2"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["data-alt-key", "show-password"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["role", "button"], ["tabindex", "3"]], []), "click", "togglePasswordBox(this, 'pwdRestoreWallet');"),
                                         "\n                                ",
@@ -3398,15 +3440,15 @@ export function buildAppBody(): Node[] {
                                 "\n                            ",
                                 e("div", [["class", "divider"]], []),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdVerifyWalletPassword"], ["name", "password"], ["placeholder", "Enter wallet password"], ["data-placeholder-key", "password"], ["tabindex", "1"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["role", "button"], ["tabindex", "2"]], []), "click", "togglePasswordBox(this, 'pwdVerifyWalletPassword');"),
                                         "\n                                ",
@@ -3682,7 +3724,7 @@ export function buildAppBody(): Node[] {
                     "\n            ",
                 ]),
                 "\n\n            ",
-                e("div", [["class", "center-content home-content"], ["id", "SendScreen"], ["style", "margin-top:110px;"]], [
+                e("div", [["class", "center-content home-content"], ["id", "SendScreen"]], [
                     "\n                ",
                     e("div", [["class", "center-content-rounded-container"]], [
                         "\n                    ",
@@ -3800,15 +3842,15 @@ export function buildAppBody(): Node[] {
                             "\n                        ",
                             e("div", [["class", "input_container"]], [
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdSend"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "Enter the password"], ["tabindex", "308"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["data-alt-key", "show-password"], ["role", "button"], ["tabindex", "309"]], []), "click", "togglePasswordBox(this, 'pwdSend');"),
                                         "\n                                ",
@@ -3838,7 +3880,7 @@ export function buildAppBody(): Node[] {
                     "\n            ",
                 ]),
                 "\n\n            ",
-                e("div", [["class", "center-content home-content"], ["id", "OfflineSignScreen"], ["style", "margin-top:110px;"]], [
+                e("div", [["class", "center-content home-content"], ["id", "OfflineSignScreen"]], [
                     "\n                ",
                     e("div", [["class", "center-content-rounded-container"]], [
                         "\n                    ",
@@ -3886,7 +3928,7 @@ export function buildAppBody(): Node[] {
                     "\n            ",
                 ]),
                 "\n\n            ",
-                e("div", [["class", "center-content home-content"], ["id", "SwapScreen"], ["style", "margin-top:110px;"]], [
+                e("div", [["class", "center-content home-content"], ["id", "SwapScreen"]], [
                     "\n                ",
                     e("div", [["class", "center-content-rounded-container"], ["style", "width:93%;"]], [
                         "\n                    ",
@@ -4362,7 +4404,7 @@ export function buildAppBody(): Node[] {
                 "\n\n            ",
                 e("div", [["class", "center-content home-content"], ["id", "ReceiveScreen"]], [
                     "\n                ",
-                    e("div", [["class", "center-content-rounded-container"], ["style", "margin-top:110px;"]], [
+                    e("div", [["class", "center-content-rounded-container"]], [
                         "\n                    ",
                         w(e("div", [["class", "back-container"], ["role", "button"], ["tabindex", "310"], ["id", "divBackReceiveScreen"]], [
                             "\n\n                    ",
@@ -4402,7 +4444,7 @@ export function buildAppBody(): Node[] {
                     "\n            ",
                 ]),
                 "\n\n            ",
-                e("div", [["class", "center-content home-content"], ["id", "TransactionsScreen"], ["style", "margin-top:110px;"]], [
+                e("div", [["class", "center-content home-content"], ["id", "TransactionsScreen"]], [
                     "\n\n                ",
                     e("div", [["class", "center-content-rounded-container"], ["style", "width:95%;max-width: 95%;"]], [
                         "\n                    ",
@@ -4700,7 +4742,7 @@ export function buildAppBody(): Node[] {
                     "\n            ",
                 ]),
                 "\n\n            ",
-                e("div", [["class", "center-content home-content"], ["id", "ValidatorScreen"], ["style", "margin-top:110px;"]], [
+                e("div", [["class", "center-content home-content"], ["id", "ValidatorScreen"]], [
                     "\n                ",
                     e("div", [["class", "center-content-rounded-container"]], [
                         "\n                    ",
@@ -4819,15 +4861,15 @@ export function buildAppBody(): Node[] {
                                     "Enter Wallet Password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;margin-top:5px;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
-                                        e("input", [["class", "tab-name"], ["style", "margin-top:5px; text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdValidator"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "password"], ["tabindex", "2304"]], []),
+                                        e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdValidator"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "password"], ["tabindex", "2304"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left;margin-top:5px;"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["data-alt-key", "show-password"], ["role", "button"], ["tabindex", "2305"]], []), "click", "togglePasswordBox(this, 'pwdValidator');"),
                                         "\n                                ",
@@ -4858,34 +4900,7 @@ export function buildAppBody(): Node[] {
                     ]),
                     "\n            ",
                 ]),
-                "\n\n            ",
-                e("div", [["class", "tab-bar"], ["id", "tab-bar"]], [
-                    "\n                ",
-                    e("div", [["style", "display:flex; width:50%; margin:0 auto;"]], [
-                        "\n                    ",
-                        w(e("div", [["class", "tabbutton"], ["id", "tab1"], ["style", "display: flex;flex-direction: column;"], ["role", "button"], ["tabindex", "9"]], [
-                            "\n                        ",
-                            e("img", [["class", "tab-icon"], ["style", "align-self: center;"], ["src", "assets/svg/wallet-outline.svg"], ["alt", "Wallets Icon"]], []),
-                            "\n                        ",
-                            e("div", [["class", "tab-name"], ["style", "width: fit-content;align-self: center;"], ["data-lang-key", "wallets"]], [
-                                "Wallets",
-                            ]),
-                            "\n                    ",
-                        ]), "click", "showWalletListScreen();"),
-                        w(e("div", [["class", "tabbutton"], ["id", "tab4"], ["style", "display: flex;flex-direction: column;"], ["role", "button"], ["tabindex", "12"]], [
-                            "\n                        ",
-                            e("img", [["class", "tab-icon"], ["style", "align-self: center;"], ["src", "assets/svg/settings.svg"], ["alt", "Settings Icon"]], []),
-                            "\n                        ",
-                            e("div", [["class", "tab-name"], ["style", "width: fit-content;align-self: center;"], ["data-lang-key", "settings"]], [
-                                "Settings",
-                            ]),
-                            "\n                    ",
-                        ]), "click", "showSettingsScreen();"),
-                        "\n                ",
-                    ]),
-                    "\n            ",
-                ]),
-                "\n\n\n        ",
+                "\n\n        ",
             ]),
             "\n\n\n    ",
         ]),
@@ -5114,7 +5129,7 @@ export function buildAppBody(): Node[] {
             "\n\n        ",
             e("div", [["class", "center-content home-content"], ["id", "WalletsScreen"]], [
                 "\n\n            ",
-                e("div", [["class", "center-content-rounded-container"], ["style", "width:95%;max-width: 95%;"]], [
+                e("div", [["class", "center-content-rounded-container"], ["style", "width:95%;max-width: 95%;margin-top:15px;"]], [
                     "\n                ",
                     w(e("div", [["class", "back-container"], ["role", "button"], ["id", "backButtonWalletListScreen"]], [
                         "\n\n                ",
@@ -5132,7 +5147,7 @@ export function buildAppBody(): Node[] {
                         "\n                    ",
                         e("div", [["class", "divider"]], []),
                         "\n                    ",
-                        e("div", [["class", "blocks-content scrollbar"], ["style", "text-align: left; overflow: auto ;max-height:380px;"], ["id", "divWallets"]], [
+                        e("div", [["class", "blocks-content scrollbar"], ["style", "text-align: left; overflow: auto ;max-height:505px;"], ["id", "divWallets"]], [
                             "\n                        ",
                             e("table", [["class", "styled-table"]], [
                                 "\n                            ",
@@ -5258,15 +5273,15 @@ export function buildAppBody(): Node[] {
                                         "Enter Wallet Password",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "width:100%;"]], [
+                                    e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                         "\n                                    ",
-                                        e("div", [["style", "float: left; width: 80%;"]], [
+                                        e("div", [["style", "width: 80%;"]], [
                                             "\n                                        ",
                                             e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdRevealSeedScreenPassword"], ["name", "password"], ["data-placeholder-key", "password"], ["placeholder", "Enter the password"], ["tabindex", "1"]], []),
                                             "\n                                    ",
                                         ]),
                                         "\n                                    ",
-                                        e("div", [["style", "float:left"]], [
+                                        e("div", [], [
                                             "\n                                        ",
                                             w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["style", "cursor:pointer;width:20px;"], ["role", "button"], ["tabindex", "2"]], []), "click", "togglePasswordBox(this, 'pwdRevealSeedScreenPassword');"),
                                             "\n                                    ",
@@ -6006,15 +6021,15 @@ export function buildAppBody(): Node[] {
                                     "Enter your wallet password",
                                 ]),
                                 "\n                            ",
-                                e("div", [["style", "width:100%;"]], [
+                                e("div", [["style", "width:100%;display:flex;align-items:center;"]], [
                                     "\n                                ",
-                                    e("div", [["style", "float: left; width: 80%;"]], [
+                                    e("div", [["style", "width: 80%;"]], [
                                         "\n                                    ",
                                         e("input", [["class", "tab-name"], ["style", "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black; letter-spacing: 0.11em;"], ["type", "password"], ["autocomplete", "off"], ["id", "pwdBackupSpecificWallet"], ["name", "password"], ["placeholder", "Enter the password"], ["data-placeholder-key", "password"], ["tabindex", "1"]], []),
                                         "\n                                ",
                                     ]),
                                     "\n                                ",
-                                    e("div", [["style", "float:left"]], [
+                                    e("div", [], [
                                         "\n                                    ",
                                         w(e("img", [["src", "assets/svg/eye-outline.svg"], ["alt", "Show Password"], ["data-alt-key", "show-password"], ["style", "cursor:pointer;width:20px;"], ["role", "button"], ["tabindex", "2"]], []), "click", "togglePasswordBox(this, 'pwdBackupSpecificWallet');"),
                                         "\n                                ",

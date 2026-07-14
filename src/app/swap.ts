@@ -50,7 +50,7 @@ import {
     txReviewNetworkText,
     TransactionReview,
 } from "./dialog";
-import { getGenericError, refreshAccountBalance, removeOptions, showWalletScreen } from "./app";
+import { getGenericError, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
 import { showSendCompletedDialog } from "./send";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
@@ -480,7 +480,7 @@ export function openSwapScreen(): boolean {
     byId("SwapScreen").style.display = "block";
     byId("ReceiveScreen").style.display = "none";
     byId("TransactionsScreen").style.display = "none";
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
 
     byId("divSwapScreenInner").style.display = "block";
     byId("divSwapConfirmPanel").style.display = "none";

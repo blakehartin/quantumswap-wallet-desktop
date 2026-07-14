@@ -8,9 +8,15 @@ import { registerAppHandlers } from "./app/handlers";
 import { initDialogs, showErrorAndLockup } from "./app/dialog";
 import { initSend } from "./app/send";
 import { initApp, showRestoreWalletLabel } from "./app/app";
+import { applyConfiguredTheme } from "./app/theme";
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
     registerAppHandlers();
+
+    // Theme is decided by package.json "name" (quantum for the first-party
+    // package, legacy grey otherwise); applied while the body is still empty
+    // so there is no unthemed flash.
+    await applyConfiguredTheme();
 
     for (const node of buildAppBody()) {
         document.body.appendChild(node);
@@ -32,6 +38,16 @@ function bootstrap(): void {
         });
     });
 
+    // Close the burger dropdown when clicking anywhere outside of it.
+    document.addEventListener("click", function (event) {
+        const menu = document.getElementById("burgerMenu");
+        const dropdown = document.getElementById("burgerDropdown");
+        if (!menu || !dropdown || dropdown.style.display !== "block") return;
+        if (!menu.contains(event.target as Node)) {
+            dropdown.style.display = "none";
+        }
+    });
+
     initApp();
 }
 
@@ -46,7 +62,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bootstrap);
+    document.addEventListener("DOMContentLoaded", () => { void bootstrap(); });
 } else {
-    bootstrap();
+    void bootstrap();
 }

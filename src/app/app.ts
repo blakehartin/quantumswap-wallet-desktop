@@ -141,6 +141,7 @@ export async function initApp(): Promise<void> {
     byId("main-content").style.display = "none";
     byId("settings-content").style.display = "none";
     byId("wallets-content").style.display = "none";
+    setWalletMenuEnabled(false);
 
     //Set all properties of data-lang-key
     const dataLangList = document.querySelectorAll("[" + DATA_LANG_KEY + "]");
@@ -192,7 +193,7 @@ export function resizeBoxes(): void {
     let maxHeightMiddle = "";
 
     if (screen.height >= 1024) {
-        maxHeight = "520px";
+        maxHeight = "560px";
         maxHeightMiddle = "550px";
         tokensMaxHeight = "295px";
     } else if (screen.height >= 960) {
@@ -231,6 +232,14 @@ export function resizeBoxes(): void {
     for (let i = 0; i < elements.length; i++) {
         (elements[i] as HTMLElement).style.maxHeight = maxHeightMiddle;
     }
+}
+
+// Header band sizing. "home" keeps the tall black band so the wallet action
+// card overlaps it by ~100px; "compact" fits just the logo row so content
+// (back button first) starts right below the band.
+export function setHeaderBand(mode: "home" | "compact"): void {
+    byId("gradient").style.height = mode === "home" ? "168px" : "64px";
+    byId("main-content").style.marginTop = mode === "home" ? "-100px" : "25px";
 }
 
 export async function resumePostEula(): Promise<void> {
@@ -367,6 +376,7 @@ export async function saveSelectedBlockchainNetwork(): Promise<void> {
 export async function showInfoScreen(): Promise<void> {
     byId("login-content").style.display = "block";
     byId("welcomeScreen").style.display = "block";
+    setWalletMenuEnabled(false);
 
     displayInfoStep(1);
 }
@@ -883,13 +893,14 @@ export async function showWalletScreen(): Promise<boolean> {
     byId("divMainContent").style.display = "block";
     byId("HomeScreen").style.display = "block";
     byId("divNetworkDropdown").style.display = "block";
+    setWalletMenuEnabled(true);
 
     byId("SendScreen").style.display = "none";
     byId("SwapScreen").style.display = "none";
     byId("ReceiveScreen").style.display = "none";
     byId("TransactionsScreen").style.display = "none";
 
-    byId("gradient").style.height = "224px";
+    setHeaderBand("home");
     byId("walletAddress").textContent = App.currentWalletAddress;
 
     initRefreshAccountBalanceBackground();
@@ -908,7 +919,7 @@ export function removeOptions(selectElement: HTMLSelectElement): void {
 export function showReceiveScreen(): boolean {
     byId("HomeScreen").style.display = "none";
     byId("ReceiveScreen").style.display = "block";
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
     byId("receiveWalletAddress").innerText = App.currentWalletAddress;
     loadQRcode(App.currentWalletAddress);
     byId("divCopyReceiveScreen").focus();
@@ -1073,7 +1084,7 @@ export async function restoreWalletFileOpen(): Promise<void> {
 }
 
 export function showWalletListScreen(): boolean {
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
     byId("login-content").style.display = "none";
     byId("main-content").style.display = "none";
     byId("wallets-content").style.display = "block";
@@ -1300,6 +1311,7 @@ export function showUnlockScreen(): void {
     byId("main-content").style.display = "none";
     byId("settings-content").style.display = "none";
     byId("wallets-content").style.display = "none";
+    setWalletMenuEnabled(false);
     setTimeout(function () {
         const el = document.getElementById("pwdUnlock");
         if (el) { el.focus(); }
@@ -1377,7 +1389,7 @@ export async function openBlockExplorerAccount(): Promise<void> {
 
 export function showSettingsScreen(): boolean {
     byId("ahrefWalletPath").focus();
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
     byId("login-content").style.display = "none";
     byId("main-content").style.display = "none";
     byId("wallets-content").style.display = "none";
@@ -1392,6 +1404,31 @@ export function showSettingsScreen(): boolean {
     byId("settingsScreen").style.display = "block";
 
     return false;
+}
+
+// Show/hide the burger menu. It stays hidden until a wallet is unlocked
+// (which implies at least one wallet exists); locking or returning to
+// onboarding hides it again.
+export function setWalletMenuEnabled(enabled: boolean): void {
+    const menu = document.getElementById("burgerMenu");
+    if (!menu) return;
+    menu.style.display = enabled ? "block" : "none";
+    if (!enabled) {
+        closeBurgerMenu();
+    }
+}
+
+// Top-left burger menu (Wallets / Settings). Replaces the old bottom tab bar.
+export function toggleBurgerMenu(): boolean {
+    const dropdown = document.getElementById("burgerDropdown");
+    if (!dropdown) return false;
+    dropdown.style.display = (dropdown.style.display === "block") ? "none" : "block";
+    return false;
+}
+
+export function closeBurgerMenu(): void {
+    const dropdown = document.getElementById("burgerDropdown");
+    if (dropdown) dropdown.style.display = "none";
 }
 
 export function togglePasswordBox(eyeImg: HTMLElement, txtBoxId: string): void {
@@ -1789,7 +1826,7 @@ export function getTokenBalance(contactAddress: string): string | null {
 export async function showTransactionsScreen(): Promise<boolean> {
     byId("HomeScreen").style.display = "none";
     byId("TransactionsScreen").style.display = "block";
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
 
     byId("divPrevTxnList").style.display = "block";
     byId("divNextTxnList").style.display = "block";

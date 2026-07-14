@@ -42,7 +42,7 @@ import {
     updateWaitingBox,
     TransactionReview,
 } from "./dialog";
-import { getGenericError, showWalletScreen } from "./app";
+import { getGenericError, setHeaderBand, showWalletScreen } from "./app";
 import { showSendCompletedDialog } from "./send";
 
 export const STAKING_CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000001000";
@@ -143,7 +143,7 @@ export async function showValidatorScreen(): Promise<boolean> {
     byId("SendScreen").style.display = "none";
     byId("OfflineSignScreen").style.display = "none";
     byId("ValidatorScreen").style.display = "block";
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
 
     const ddlValidatorOptions = selectById("ddlValidatorOptions");
     ddlValidatorOptions.value = "none";

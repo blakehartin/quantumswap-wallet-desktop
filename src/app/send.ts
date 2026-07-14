@@ -49,7 +49,7 @@ import {
     updateWaitingBox,
     TransactionReview,
 } from "./dialog";
-import { getGenericError, getTokenBalance, refreshAccountBalance, removeOptions, showWalletScreen, OpenScanTxn } from "./app";
+import { getGenericError, getTokenBalance, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen, OpenScanTxn } from "./app";
 import { getSwapTokenDecimals } from "./swap";
 
 export const COIN_SEND_GAS = 21000;
@@ -290,7 +290,7 @@ export async function showSendScreen(): Promise<boolean> {
     byId("HomeScreen").style.display = "none";
     byId("SendScreen").style.display = "block";
     byId("OfflineSignScreen").style.display = "none";
-    byId("gradient").style.height = "116px";
+    setHeaderBand("compact");
     inputById("txtSendAddress").value = "";
     inputById("txtSendQuantity").value = "";
     inputById("txtCurrentNonce").value = "";
