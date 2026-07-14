@@ -16,13 +16,15 @@ import { walletGetByAddress, Wallet } from "../lib/wallet";
 import { TransactionDetails } from "../lib/api";
 import {
     ADDRESS_LENGTH_CHECK,
-    App,
     HTTPS,
     STORAGE_PATH_TEMPLATE,
     TxContext,
     byId,
     inputById,
+    networkStore,
     selectById,
+    settingsStore,
+    walletStore,
 } from "./state";
 import {
     onGasIconClick,
@@ -59,7 +61,7 @@ export function showValidatorTransactionReview(review: TransactionReview, onConf
     review.requirePassword = false;
     review.assetLabelKey = "action";
     review.submitLabelKey = "submit";
-    review.fromAddress = App.currentWalletAddress;
+    review.fromAddress = walletStore.currentWalletAddress;
     review.networkText = txReviewNetworkText();
     review.contractAddress = STAKING_CONTRACT_ADDRESS;
     review.onSubmit = onConfirm;
@@ -126,12 +128,12 @@ export function attachValidatorGasListeners(): void {
 }
 
 export function openValidatorPage(): boolean {
-    OpenUrl(HTTPS + (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain + "/validator/page");
+    OpenUrl(HTTPS + (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain + "/validator/page");
     return false;
 }
 
 export async function showValidatorScreen(): Promise<boolean> {
-    byId("ahrefValidatorPage").textContent = (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain + "/validator/page";
+    byId("ahrefValidatorPage").textContent = (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain + "/validator/page";
     byId("main-content").style.display = "block";
     byId("settings-content").style.display = "none";
     byId("settingsScreen").style.display = "none";
@@ -180,9 +182,9 @@ export async function updateValidatorScreen(): Promise<void> {
     } else {
         byId("divValidatorButton").style.display = "block";
         byId("divValidatorScreenPassword").style.display = "block";
-        App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+        settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
 
-        if (App.offlineSignEnabled === true) {
+        if (settingsStore.offlineSignEnabled === true) {
             byId("btnValidation").style.display = "none";
             byId("divCurrentNonceValidator").style.display = "block";
             byId("btnOfflineValidation").style.display = "block";
@@ -233,7 +235,7 @@ export async function copyOfflineSignature(): Promise<void> {
 // Shared by all validator flows: validate the (optional) offline nonce and the
 // wallet password exactly the way each legacy module did inline.
 function readValidatorNonce(): string | null | false {
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         const currentNonce = inputById("txtCurrentNonceValidator").value;
         if (currentNonce == null || currentNonce.length < 1) {
             showWarnAlert(langJson.errors.enterCurrentNonce);
@@ -279,7 +281,7 @@ async function checkDepositCoinsEntered(validatorDepositCoins: string): Promise<
 async function decryptAndRunValidatorAction(submit: (quantumWallet: Wallet) => void): Promise<boolean> {
     const password = inputById("pwdValidator").value;
     try {
-        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
             hideWaitingBox();
             showWarnAlert(getGenericError(""));
@@ -288,7 +290,7 @@ async function decryptAndRunValidatorAction(submit: (quantumWallet: Wallet) => v
         submit(quantumWallet);
     } catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return false;
     }
     return false;
@@ -300,8 +302,8 @@ async function submitValidatorTransaction(quantumWallet: Wallet, method: string,
 
     try {
         const result = await submitStakingContract({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             method: method,
             methodArgs: methodArgs,
             value: value,
@@ -314,7 +316,7 @@ async function submitValidatorTransaction(quantumWallet: Wallet, method: string,
         if (result && result.success && result.txHash) {
             const currentDate = new Date();
             const pendingTxn = new TransactionDetails(result.txHash, currentDate, quantumWallet.address, STAKING_CONTRACT_ADDRESS, value, true);
-            App.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (App.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
+            walletStore.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (networkStore.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
 
             setTimeout(() => {
                 hideWaitingBox();
@@ -342,7 +344,7 @@ async function offlineSignValidatorTransaction(quantumWallet: Wallet, method: st
 
     try {
         const result = await offlineSignStakingContract({
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             method: method,
             methodArgs: methodArgs,
             value: value,
@@ -377,7 +379,7 @@ export async function newDeposit(): Promise<boolean> {
         return false;
     }
 
-    if (App.currentWalletAddress.toLowerCase().trim() === validatorAddress.toLowerCase().trim()) {
+    if (walletStore.currentWalletAddress.toLowerCase().trim() === validatorAddress.toLowerCase().trim()) {
         showWarnAlert(langJson.errors.validatorDepositorAddress);
         return false;
     }
@@ -386,7 +388,7 @@ export async function newDeposit(): Promise<boolean> {
         return false;
     }
 
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -419,10 +421,10 @@ export async function decryptAndUnlockWalletNewDeposit(): Promise<boolean> {
 }
 
 export async function newDepositSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const validatorAddress = inputById("txtValidatorAddress").value;
     const validatorDepositCoins = inputById("txtValidatorDepositCoins").value;
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "newDeposit", [validatorAddress], validatorDepositCoins, NEW_DEPOSIT_GAS);
         return;
     }
@@ -439,7 +441,7 @@ export async function increaseDeposit(): Promise<boolean> {
         return false;
     }
 
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -472,9 +474,9 @@ export async function decryptAndUnlockWalletIncreaseDeposit(): Promise<boolean> 
 }
 
 export async function increaseDepositSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const validatorDepositCoins = inputById("txtValidatorDepositCoins").value;
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "increaseDeposit", [], validatorDepositCoins, INCREASE_DEPOSIT_GAS);
         return;
     }
@@ -491,7 +493,7 @@ export async function initiatePartialWithdrawal(): Promise<boolean> {
         return false;
     }
 
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -524,9 +526,9 @@ export async function decryptAndUnlockWalletInitiatePartialWithdrawalConfirm(): 
 }
 
 export async function initiatePartialWithdrawalConfirmSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const validatorDepositCoins = inputById("txtValidatorDepositCoins").value;
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "initiatePartialWithdrawal", [validatorDepositCoins], "0", INITIATE_PARTIAL_WITHDRAWAL_GAS);
         return;
     }
@@ -537,7 +539,7 @@ export async function initiatePartialWithdrawalConfirmSubmit(quantumWallet: Wall
 //---- Complete partial withdrawal ----
 
 export async function completePartialWithdrawal(): Promise<boolean> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -570,8 +572,8 @@ export async function decryptAndUnlockWalletCompletePartialWithdrawal(): Promise
 }
 
 export async function completePartialWithdrawalSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
-    if (App.offlineSignEnabled === true) {
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "completePartialWithdrawal", [], "0", COMPLETE_PARTIAL_WITHDRAWAL_GAS);
         return;
     }
@@ -582,7 +584,7 @@ export async function completePartialWithdrawalSubmit(quantumWallet: Wallet): Pr
 //---- Pause validation ----
 
 export async function pauseValidation(): Promise<boolean> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -615,8 +617,8 @@ export async function decryptAndUnlockWalletPauseValidation(): Promise<boolean> 
 }
 
 export async function pauseValidationSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
-    if (App.offlineSignEnabled === true) {
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "pauseValidation", [], "0", PAUSE_VALIDATION_GAS);
         return;
     }
@@ -627,7 +629,7 @@ export async function pauseValidationSubmit(quantumWallet: Wallet): Promise<void
 //---- Resume validation ----
 
 export async function resumeValidation(): Promise<boolean> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     const nonceValue = readValidatorNonce();
     if (nonceValue === false) {
         return false;
@@ -660,8 +662,8 @@ export async function decryptAndUnlockWalletResumeValidation(): Promise<boolean>
 }
 
 export async function resumeValidationSubmit(quantumWallet: Wallet): Promise<void> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
-    if (App.offlineSignEnabled === true) {
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled === true) {
         await offlineSignValidatorTransaction(quantumWallet, "resumeValidation", [], "0", RESUME_VALIDATION_GAS);
         return;
     }

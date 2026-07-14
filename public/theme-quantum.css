@@ -189,7 +189,9 @@ a {
 [style*="color: black"],
 [style*="color:black"],
 [style*="color: #372339"],
-[style*="color:#372339"] {
+[style*="color:#372339"],
+input.qs-input,
+input.qs-input-strong {
     color: var(--text) !important;
 }
 
@@ -223,6 +225,17 @@ a {
 [style*="border:1px solid;"],
 [style*="border: 1px solid;"] {
     border-color: var(--input-border) !important;
+}
+
+/* Swap screen: allowance label/value and the two token contract addresses in
+   plain white (the generic recolor above maps their inline colors to the
+   softer --text). !important + id specificity beats both the inline styles
+   and the [style*=] hooks; the "Remove allowance" link keeps its own cyan. */
+#divSwapFromAllowanceRow,
+#spanSwapFromAllowance,
+#aSwapFromContract,
+#aSwapToContract {
+    color: #ffffff !important;
 }
 
 [style*="solid green"] {

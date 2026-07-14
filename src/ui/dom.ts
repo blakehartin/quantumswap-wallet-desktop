@@ -1,6 +1,7 @@
 // Tiny typed DOM builder used to construct the UI programmatically.
-// The generated tree mirrors the old monolithic index.html 1:1 (same ids,
-// classes, inline styles and attribute values) so styles.css applies unchanged.
+// Hand-written screen modules keep the legacy ids, classes and inline styles
+// so styles.css and the theme CSS apply unchanged.
+import { langJson } from "../lib/i18n";
 
 export type ElChild = Node | string | null | undefined;
 
@@ -48,4 +49,13 @@ export function text(value: string): Text {
 
 export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     return document.getElementById(id) as T;
+}
+
+// i18n at render time for dynamically (re)built DOM. Static markup mounted at
+// bootstrap should keep using data-lang-key & co. (initApp()'s localization
+// pass covers it); this is for text created after langJson is loaded, such as
+// table rows and lazily rebuilt panels.
+export function t(key: string): string {
+    const value = langJson?.langValues?.[key];
+    return value == null ? key : value;
 }

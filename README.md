@@ -8,7 +8,8 @@ QuantumSwap Desktop Wallets for Windows and Mac are built using Electron and Typ
 - `src/` - renderer (sandboxed, no Node access; talks to the main process only through the whitelisted preload bridge).
   - `src/lib/` - storage, crypto, wallet, API and i18n modules.
   - `src/app/` - application logic (onboarding, wallet, send, swap, validator, settings, dialogs).
-  - `src/ui/` - DOM construction: `views.generated.ts` rebuilds the legacy markup 1:1 and is produced by `scripts/generate-views.mjs`; `autocomplete.ts` is the built-in replacement for the old autocomplete library.
+  - `src/ui/` - DOM primitives: `dom.ts` (typed `el()` builder + i18n `t()`), `screens.ts` (screen-module mounting); `autocomplete.ts` is the built-in replacement for the old autocomplete library.
+  - `src/screens/` and `src/dialogs/` - hand-written typed screen/dialog modules (one per screen, mounted at bootstrap by `src/renderer.ts`).
 - `public/` - verbatim legacy assets (styles.css, fonts, SVG icons, `json/en-us.json`, `json/blockchain-networks.json`) copied byte-for-byte into the build.
 
 The renderer is bundled with Vite to `dist/renderer`; `electron-builder` packages `dist/`.
@@ -31,7 +32,7 @@ The renderer is bundled with Vite to `dist/renderer`; `electron-builder` package
 ## Development
 
 - `npm run build` - typecheck + bundle renderer + compile main process
-- `npm test` - unit tests (includes storage byte-compatibility golden vectors and DOM parity tests)
+- `npm test` - unit tests (includes storage byte-compatibility golden vectors)
 - `npm run lint` - ESLint (bans `innerHTML`/`eval`-style sinks in the renderer)
 - `npm run dist` - build and package locally without publishing
 

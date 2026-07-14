@@ -42,7 +42,6 @@ import { htmlEncode } from "../lib/util";
 import { QRCode } from "../ui/qrcode";
 import { AutoCompleteDropdownControl } from "../ui/autocomplete";
 import {
-    App,
     ADDRESS_TEMPLATE,
     BLOCK_EXPLORER_ACCOUNT_TEMPLATE,
     BLOCK_EXPLORER_DOMAIN_TEMPLATE,
@@ -50,7 +49,6 @@ import {
     DATA_ALT_KEY,
     DATA_LANG_KEY,
     DATA_PLACEHOLDER_KEY,
-    DROPDOWN_TEXT,
     ERROR_TEMPLATE,
     HTTPS,
     STORAGE_PATH_TEMPLATE,
@@ -61,8 +59,14 @@ import {
     inputById,
     maxTokenNameLength,
     maxTokenSymbolLength,
+    networkStore,
+    onboardingStore,
     removeAllChildren,
     replaceTemplateTokenOnce,
+    rowTemplates,
+    tokenStore,
+    txnStore,
+    walletStore,
 } from "./state";
 import {
     hideWaitingBox,
@@ -94,7 +98,7 @@ export function checkDuplicateIds(): void {
 }
 
 export function getGenericError(error: unknown): string {
-    return langJson.errors.error.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH).replace(ERROR_TEMPLATE, String(error ?? ""));
+    return langJson.errors.error.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH).replace(ERROR_TEMPLATE, String(error ?? ""));
 }
 
 export async function initApp(): Promise<void> {
@@ -114,26 +118,26 @@ export async function initApp(): Promise<void> {
         throw new Error(langJson.errors.seedInitError);
     }
 
-    App.STORAGE_PATH = await storageGetPath();
+    walletStore.STORAGE_PATH = await storageGetPath();
 
     // Capture the row templates before any screen mutates them (the old app
     // captured outerHTML strings here).
-    App.templates.walletListRow = document.getElementsByClassName("wallet-row")[0].cloneNode(true) as HTMLTableRowElement;
-    App.templates.blockchainNetworkOptionItem = document.getElementsByClassName("network-template")[0].cloneNode(true) as HTMLElement;
+    rowTemplates.walletListRow = document.getElementsByClassName("wallet-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.blockchainNetworkOptionItem = document.getElementsByClassName("network-template")[0].cloneNode(true) as HTMLElement;
     const tplNetworkRow = byId<HTMLTemplateElement>("tplBlockchainNetworkRow");
     if (tplNetworkRow != null) {
         const rowInTemplate = tplNetworkRow.content.querySelector("tr.network-row");
-        App.templates.blockchainNetworkRow = rowInTemplate ? (rowInTemplate.cloneNode(true) as HTMLTableRowElement) : null;
+        rowTemplates.blockchainNetworkRow = rowInTemplate ? (rowInTemplate.cloneNode(true) as HTMLTableRowElement) : null;
     }
-    if (App.templates.blockchainNetworkRow == null) {
+    if (rowTemplates.blockchainNetworkRow == null) {
         const fallbackRow = document.querySelector("#tbodyNetworkRow tr.network-row");
-        App.templates.blockchainNetworkRow = fallbackRow ? (fallbackRow.cloneNode(true) as HTMLTableRowElement) : null;
+        rowTemplates.blockchainNetworkRow = fallbackRow ? (fallbackRow.cloneNode(true) as HTMLTableRowElement) : null;
     }
-    App.templates.completedTxnInRow = document.getElementsByClassName("completed-txn-in-row")[0].cloneNode(true) as HTMLTableRowElement;
-    App.templates.completedTxnOutRow = document.getElementsByClassName("completed-txn-out-row")[0].cloneNode(true) as HTMLTableRowElement;
-    App.templates.failedTxnInRow = document.getElementsByClassName("failed-txn-in-row")[0].cloneNode(true) as HTMLTableRowElement;
-    App.templates.failedTxnOutRow = document.getElementsByClassName("failed-txn-out-row")[0].cloneNode(true) as HTMLTableRowElement;
-    App.templates.tokenListRow = document.getElementsByClassName("token-list-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.completedTxnInRow = document.getElementsByClassName("completed-txn-in-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.completedTxnOutRow = document.getElementsByClassName("completed-txn-out-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.failedTxnInRow = document.getElementsByClassName("failed-txn-in-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.failedTxnOutRow = document.getElementsByClassName("failed-txn-out-row")[0].cloneNode(true) as HTMLTableRowElement;
+    rowTemplates.tokenListRow = document.getElementsByClassName("token-list-row")[0].cloneNode(true) as HTMLTableRowElement;
 
     byId("login-content").style.display = "none";
     byId("welcomeScreen").style.display = "none";
@@ -256,12 +260,12 @@ export async function resumePostEula(): Promise<void> {
 
 export async function showBlockchainNetworks(): Promise<void> {
     const networkMap = await blockchainNetworksList();
-    App.currentBlockchainNetworkIndex = await blockchainNetworkGetDefaultIndex();
+    networkStore.currentBlockchainNetworkIndex = await blockchainNetworkGetDefaultIndex();
 
     const sortedKeys = [...networkMap.keys()].sort((a, b) => (a as unknown as number[])[0] - (b as unknown as number[])[0]);
-    if (sortedKeys.length > 0 && !networkMap.has(App.currentBlockchainNetworkIndex)) {
-        App.currentBlockchainNetworkIndex = sortedKeys[0];
-        await blockchainNetworkSetDefaultIndex(App.currentBlockchainNetworkIndex);
+    if (sortedKeys.length > 0 && !networkMap.has(networkStore.currentBlockchainNetworkIndex)) {
+        networkStore.currentBlockchainNetworkIndex = sortedKeys[0];
+        await blockchainNetworkSetDefaultIndex(networkStore.currentBlockchainNetworkIndex);
     }
 
     const rows: HTMLElement[] = [];
@@ -273,7 +277,7 @@ export async function showBlockchainNetworks(): Promise<void> {
         // The legacy template replaced [BLOCKCHAIN_NETWORK_INDEX] once (input value
         // attribute only; the id attribute keeps its placeholder), then name/id in
         // the label text, then [TAB_INDEX].
-        const row = (App.templates.blockchainNetworkOptionItem as HTMLElement).cloneNode(true) as HTMLElement;
+        const row = (rowTemplates.blockchainNetworkOptionItem as HTMLElement).cloneNode(true) as HTMLElement;
         const input = row.querySelector("input") as HTMLInputElement;
         input.setAttribute("value", index.toString());
         input.setAttribute("tabindex", startTabIndex.toString());
@@ -284,12 +288,10 @@ export async function showBlockchainNetworks(): Promise<void> {
         });
         startTabIndex = startTabIndex + 1;
         rows.push(row);
-        if (index == App.currentBlockchainNetworkIndex) {
-            const spnNetwork = byId("spnNetwork");
-            removeAllChildren(spnNetwork);
-            spnNetwork.appendChild(document.createTextNode(String(networkItem.blockchainName) + DROPDOWN_TEXT));
-            byId("lblNetworkConfirm").textContent = String(networkItem.blockchainName);
-            App.currentBlockchainNetwork = networkItem;
+        if (index == networkStore.currentBlockchainNetworkIndex) {
+            // The header network chip and the confirm dialog's network label
+            // subscribe to networkStore and update themselves on this write.
+            networkStore.currentBlockchainNetwork = networkItem;
         }
     }
     const divNetworkListDialog = byId("divNetworkListDialog");
@@ -299,7 +301,7 @@ export async function showBlockchainNetworks(): Promise<void> {
     }
     // As in the legacy app, the row id keeps its placeholder, so this lookup only
     // matches when a template with a substituted id is present.
-    const selectedNetworkEl = document.getElementById("optNetwork" + App.currentBlockchainNetworkIndex.toString()) as HTMLInputElement | null;
+    const selectedNetworkEl = document.getElementById("optNetwork" + networkStore.currentBlockchainNetworkIndex.toString()) as HTMLInputElement | null;
     if (selectedNetworkEl) {
         selectedNetworkEl.checked = true;
     }
@@ -325,12 +327,12 @@ function replaceTextNodeTokens(root: HTMLElement, transform: (text: string) => s
 
 export async function showBlockchainNetworksTable(): Promise<void> {
     const networkMap = await blockchainNetworksList();
-    App.currentBlockchainNetworkIndex = await blockchainNetworkGetDefaultIndex();
+    networkStore.currentBlockchainNetworkIndex = await blockchainNetworkGetDefaultIndex();
     const tbody = byId("tbodyNetworkRow");
     removeAllChildren(tbody);
     const sortedEntries = [...networkMap.entries()].sort((a, b) => a[0] - b[0]);
     for (const [, networkItem] of sortedEntries) {
-        const rowTpl = App.templates.blockchainNetworkRow;
+        const rowTpl = rowTemplates.blockchainNetworkRow;
         if (rowTpl == null) {
             continue;
         }
@@ -365,7 +367,7 @@ export async function saveSelectedBlockchainNetwork(): Promise<void> {
     } else {
         await showBlockchainNetworks();
         byId("spnAccountBalance").textContent = "";
-        App.currentBalance = "";
+        walletStore.currentBalance = "";
         await refreshAccountBalance();
         if (byId("TransactionsScreen").style.display !== "none") {
             await refreshTransactionList();
@@ -383,20 +385,20 @@ export async function showInfoScreen(): Promise<void> {
 
 export function displayInfoStep(step: number): void {
     if (step >= 1 && step <= langJson.info.length) {
-        App.currentInfoStep = step;
+        onboardingStore.currentInfoStep = step;
         const totalSteps = langJson.info.length;
         const jsonData = langJson.info[step - 1];
 
         byId("welcomeText").textContent = langJson.infoStep.replace("[STEP]", String(step)).replace("[TOTAL_STEPS]", String(totalSteps));
         byId("divInfoPanelTitle").textContent = jsonData.title;
-        byId("divInfoPanelDetail").textContent = jsonData.desc.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH);
+        byId("divInfoPanelDetail").textContent = jsonData.desc.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH);
     }
 }
 
 export function nextInfoStep(): void {
-    if (App.currentInfoStep < langJson.info.length) {
-        App.currentInfoStep++;
-        displayInfoStep(App.currentInfoStep);
+    if (onboardingStore.currentInfoStep < langJson.info.length) {
+        onboardingStore.currentInfoStep++;
+        displayInfoStep(onboardingStore.currentInfoStep);
     } else {
         displayQuizStep();
     }
@@ -410,7 +412,7 @@ export function showCreateWalletPasswordScreen(): void {
 }
 
 export function displayQuizStep(): void {
-    if (App.currentQuizStep > langJson.quiz.length) {
+    if (onboardingStore.currentQuizStep > langJson.quiz.length) {
         showCreateWalletPasswordScreen();
         return;
     }
@@ -419,9 +421,9 @@ export function displayQuizStep(): void {
     byId("quizScreen").style.display = "block";
 
     const totalSteps = langJson.quiz.length;
-    const quizData = langJson.quiz[App.currentQuizStep - 1];
+    const quizData = langJson.quiz[onboardingStore.currentQuizStep - 1];
 
-    byId("divSafetyQuizTitle").textContent = langJson.quizStep.replace("[STEP]", String(App.currentQuizStep)).replace("[TOTAL_STEPS]", String(totalSteps));
+    byId("divSafetyQuizTitle").textContent = langJson.quizStep.replace("[STEP]", String(onboardingStore.currentQuizStep)).replace("[TOTAL_STEPS]", String(totalSteps));
     byId("divSafetyQuizSubTitle").textContent = quizData.title;
     byId("divSafetyQuizQuestion").textContent = quizData.question;
 
@@ -439,7 +441,7 @@ export function displayQuizStep(): void {
     for (let i = 0; i < quizData.choices.length; i++) {
         const choiceCloneNode = choiceNode.cloneNode(true) as HTMLElement;
         choiceCloneNode.id = "choice" + i;
-        choiceCloneNode.appendChild(document.createTextNode(quizData.choices[i].replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH)));
+        choiceCloneNode.appendChild(document.createTextNode(quizData.choices[i].replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH)));
         (choiceCloneNode.getElementsByClassName("safety_quiz_option")[0] as HTMLInputElement).value = String(i + 1);
         choiceCloneNode.style.display = "block";
         quizForm.appendChild(choiceCloneNode);
@@ -455,14 +457,14 @@ export function submitQuizForm(): void {
         }
     });
     if (selectedValue !== "") {
-        const quizData = langJson.quiz[App.currentQuizStep - 1];
+        const quizData = langJson.quiz[onboardingStore.currentQuizStep - 1];
         if (quizData == null) {
             showWarnAlert(langJson.quizNoChoice);
             return;
         }
         if (selectedValue === quizData.correctChoice.toString()) {
-            App.currentQuizStep = App.currentQuizStep + 1;
-            showAlertAndExecuteOnClose(quizData.afterQuizInfo.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH), displayQuizStep);
+            onboardingStore.currentQuizStep = onboardingStore.currentQuizStep + 1;
+            showAlertAndExecuteOnClose(quizData.afterQuizInfo.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH), displayQuizStep);
         } else {
             showWarnAlert(langJson.quizWrongAnswer);
         }
@@ -472,7 +474,7 @@ export function submitQuizForm(): void {
 }
 
 export function showWalletPath(): void {
-    showAlert(App.STORAGE_PATH);
+    showAlert(walletStore.STORAGE_PATH);
 }
 
 export function checkNewPassword(): boolean | void {
@@ -496,7 +498,7 @@ export function checkNewPassword(): boolean | void {
         return false;
     }
 
-    App.tempPassword = password;
+    onboardingStore.tempPassword = password;
 
     showCreateWalletPromptScreen();
 }
@@ -566,9 +568,9 @@ export async function walletTypeFormSubmitted(): Promise<void> {
     });
 
     if (selectedValue === "default") {
-        App.currentSeedBytes = 64;
+        onboardingStore.currentSeedBytes = 64;
     } else if (selectedValue === "advanced") {
-        App.currentSeedBytes = 72;
+        onboardingStore.currentSeedBytes = 72;
     } else {
         showWarnAlert(langJson.errors.selectOption);
         return;
@@ -587,7 +589,7 @@ export function updateSeedRowVisibility(prefix: string, wordCount: number): void
 }
 
 export async function showNewSeedScreen(): Promise<void> {
-    App.tempSeedArray = await cryptoNewSeed(App.currentSeedBytes);
+    onboardingStore.tempSeedArray = await cryptoNewSeed(onboardingStore.currentSeedBytes);
 
     byId("createWalletPromptScreen").style.display = "none";
     byId("walletTypeScreen").style.display = "none";
@@ -596,8 +598,8 @@ export async function showNewSeedScreen(): Promise<void> {
     byId("divSeedPanel").style.display = "none";
     byId("divNewSeedButtons").style.display = "none";
 
-    const wordCount = App.tempSeedArray.length / 2;
-    const wordList = await getWordListFromSeedArrayAsync(App.tempSeedArray);
+    const wordCount = onboardingStore.tempSeedArray.length / 2;
+    const wordList = await getWordListFromSeedArrayAsync(onboardingStore.tempSeedArray);
     for (let i = 0; i < wordCount; i++) {
         byId("divNewSeed" + i).textContent = (wordList as string[])[i].toUpperCase();
     }
@@ -633,11 +635,11 @@ export function restoreSeedTypeFormSubmitted(): void {
     });
 
     if (selectedValue === "32") {
-        App.currentSeedBytes = 64;
+        onboardingStore.currentSeedBytes = 64;
     } else if (selectedValue === "36") {
-        App.currentSeedBytes = 72;
+        onboardingStore.currentSeedBytes = 72;
     } else if (selectedValue === "48") {
-        App.currentSeedBytes = 96;
+        onboardingStore.currentSeedBytes = 96;
     } else {
         showWarnAlert(langJson.errors.selectOption);
         return;
@@ -648,7 +650,7 @@ export function restoreSeedTypeFormSubmitted(): void {
 }
 
 export function showRestoreSeedScreen(): void {
-    const wordCount = App.currentSeedBytes / 2;
+    const wordCount = onboardingStore.currentSeedBytes / 2;
 
     byId("createWalletPromptScreen").style.display = "none";
     byId("restoreSeedTypeScreen").style.display = "none";
@@ -667,7 +669,7 @@ export function showRestoreSeedScreen(): void {
 
 export async function populateRestoreSeedAutoComplete(wordCount: number): Promise<void> {
     const seedWordList = await getAllSeedWordsAsync();
-    if (App.autoCompleteInitializedRestore == false) {
+    if (onboardingStore.autoCompleteInitializedRestore == false) {
         for (let i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
             const box = byId("txtRestoreSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase());
             const myAutoComplete = new AutoCompleteDropdownControl(box);
@@ -675,13 +677,13 @@ export async function populateRestoreSeedAutoComplete(wordCount: number): Promis
             myAutoComplete.limitToList = true;
             myAutoComplete.optionValues = seedWordList;
             myAutoComplete.initialize();
-            App.autoCompleteBoxesRestore.push(myAutoComplete);
+            onboardingStore.autoCompleteBoxesRestore.push(myAutoComplete);
         }
-        App.autoCompleteInitializedRestore = true;
+        onboardingStore.autoCompleteInitializedRestore = true;
     } else {
-        for (let i = 0; i < App.autoCompleteBoxesRestore.length; i++) {
-            App.autoCompleteBoxesRestore[i].setSelectedValue("");
-            App.autoCompleteBoxesRestore[i].reset();
+        for (let i = 0; i < onboardingStore.autoCompleteBoxesRestore.length; i++) {
+            onboardingStore.autoCompleteBoxesRestore[i].setSelectedValue("");
+            onboardingStore.autoCompleteBoxesRestore[i].reset();
         }
     }
     updateSeedRowVisibility("restoreSeedRowHead", wordCount);
@@ -690,7 +692,7 @@ export async function populateRestoreSeedAutoComplete(wordCount: number): Promis
 }
 
 export async function copyNewSeed(): Promise<void> {
-    const tempSeedArray = App.tempSeedArray as Uint8Array;
+    const tempSeedArray = onboardingStore.tempSeedArray as Uint8Array;
     const wordCount = tempSeedArray.length / 2;
     const wordList = (await getWordListFromSeedArrayAsync(tempSeedArray)) as string[];
     let copyText = SEED_FRIENDLY_INDEX_ARRAY[0].toUpperCase() + " = " + wordList[0].toUpperCase() + "\r\n";
@@ -701,7 +703,7 @@ export async function copyNewSeed(): Promise<void> {
 }
 
 export async function copyRevealSeed(): Promise<void> {
-    const revealSeedArray = App.revealSeedArray as Uint8Array;
+    const revealSeedArray = onboardingStore.revealSeedArray as Uint8Array;
     const wordCount = revealSeedArray.length / 2;
     const wordList = (await getWordListFromSeedArrayAsync(revealSeedArray)) as string[];
     let copyText = SEED_FRIENDLY_INDEX_ARRAY[0].toUpperCase() + " = " + wordList[0].toUpperCase() + "\r\n";
@@ -719,7 +721,7 @@ export function showSeedPanel(): boolean {
 }
 
 export function showVerifySeedPanel(): void {
-    const wordCount = (App.tempSeedArray as Uint8Array).length / 2;
+    const wordCount = (onboardingStore.tempSeedArray as Uint8Array).length / 2;
 
     for (let i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
         byId("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent = "";
@@ -733,7 +735,7 @@ export function showVerifySeedPanel(): void {
 
 export async function populateVerifySeedAutoComplete(wordCount: number): Promise<boolean> {
     const seedWordList = await getAllSeedWordsAsync();
-    if (App.autoCompleteInitialized == false) {
+    if (onboardingStore.autoCompleteInitialized == false) {
         for (let i = 0; i < SEED_FRIENDLY_INDEX_ARRAY.length; i++) {
             const box = byId("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase());
             const myAutoComplete = new AutoCompleteDropdownControl(box);
@@ -741,13 +743,13 @@ export async function populateVerifySeedAutoComplete(wordCount: number): Promise
             myAutoComplete.limitToList = true;
             myAutoComplete.optionValues = seedWordList;
             myAutoComplete.initialize();
-            App.autoCompleteBoxes.push(myAutoComplete);
+            onboardingStore.autoCompleteBoxes.push(myAutoComplete);
         }
-        App.autoCompleteInitialized = true;
+        onboardingStore.autoCompleteInitialized = true;
     } else {
-        for (let i = 0; i < App.autoCompleteBoxes.length; i++) {
-            App.autoCompleteBoxes[i].setSelectedValue("");
-            App.autoCompleteBoxes[i].reset();
+        for (let i = 0; i < onboardingStore.autoCompleteBoxes.length; i++) {
+            onboardingStore.autoCompleteBoxes[i].setSelectedValue("");
+            onboardingStore.autoCompleteBoxes[i].reset();
         }
     }
     updateSeedRowVisibility("verifySeedRowHead", wordCount);
@@ -757,7 +759,7 @@ export async function populateVerifySeedAutoComplete(wordCount: number): Promise
 }
 
 export async function verifySeedWords(): Promise<void> {
-    const tempSeedArray = App.tempSeedArray as Uint8Array;
+    const tempSeedArray = onboardingStore.tempSeedArray as Uint8Array;
     const wordCount = tempSeedArray.length / 2;
     for (let i = 0; i < wordCount; i++) {
         let seedWord = byId("txtSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent;
@@ -796,11 +798,11 @@ export function verifyWalletPassword(): boolean | void {
         showWarnAlert(langJson.errors.enterWalletPassord);
         return false;
     }
-    if (App.additionalWalletMode == false && password !== App.tempPassword) {
+    if (onboardingStore.additionalWalletMode == false && password !== onboardingStore.tempPassword) {
         showWarnAlert(langJson.errors.walletPasswordMismatch);
         return false;
     } else {
-        App.tempPassword = password;
+        onboardingStore.tempPassword = password;
     }
 
     showLoadingAndExecuteAsync(langJson.langValues.waitWalletSave, saveWallet);
@@ -818,7 +820,7 @@ export async function saveWallet(): Promise<boolean> {
     try {
         const walletIndex = await walletGetMaxIndex();
         if (walletIndex == -1) {
-            if (App.additionalWalletMode == true) {
+            if (onboardingStore.additionalWalletMode == true) {
                 hideWaitingBox();
                 showErrorAndLockup(getGenericError(""));
                 return false;
@@ -829,26 +831,26 @@ export async function saveWallet(): Promise<boolean> {
                 showErrorAndLockup(getGenericError(""));
                 return false;
             }
-            await storageCreateMainKey(App.tempPassword);
+            await storageCreateMainKey(onboardingStore.tempPassword);
         }
-        if (App.currentWallet == null) {
-            App.currentWallet = await walletCreateNewWalletFromSeed(App.tempSeedArray as Uint8Array);
+        if (walletStore.currentWallet == null) {
+            walletStore.currentWallet = await walletCreateNewWalletFromSeed(onboardingStore.tempSeedArray as Uint8Array);
         }
 
-        if (walletDoesAddressExistInCache(App.currentWallet.address)) {
+        if (walletDoesAddressExistInCache(walletStore.currentWallet.address)) {
             hideWaitingBox();
-            showWarnAlertAndExecuteOnClose(langJson.errors.walletAddressExists.replace(ADDRESS_TEMPLATE, App.currentWallet.address), createOrRestoreWallet);
+            showWarnAlertAndExecuteOnClose(langJson.errors.walletAddressExists.replace(ADDRESS_TEMPLATE, walletStore.currentWallet.address), createOrRestoreWallet);
             return false;
         }
 
-        const ret = await walletSave(App.currentWallet, App.tempPassword);
+        const ret = await walletSave(walletStore.currentWallet, onboardingStore.tempPassword);
         if (ret == false) {
             hideWaitingBox();
             showErrorAndLockup(getGenericError(""));
             return false;
         }
 
-        App.currentWalletAddress = App.currentWallet.address;
+        walletStore.currentWalletAddress = walletStore.currentWallet.address;
 
         hideWaitingBox();
         showAlertAndExecuteOnClose(langJson.langValues.walletSaved, showBackupWalletScreen);
@@ -870,13 +872,13 @@ export function saveFile(content: string, mimeType: string, filename: string): v
 }
 
 export async function showWalletScreen(): Promise<boolean> {
-    App.currentWallet = null;
-    App.tempSeedArray = null;
-    App.specificWalletAddress = "";
-    App.tempPassword = "";
-    App.revealSeedArray = null;
-    App.currentBalance = "";
-    App.showingUnrecognizedTokens = false;
+    walletStore.currentWallet = null;
+    onboardingStore.tempSeedArray = null;
+    walletStore.specificWalletAddress = "";
+    onboardingStore.tempPassword = "";
+    onboardingStore.revealSeedArray = null;
+    walletStore.currentBalance = "";
+    tokenStore.showingUnrecognizedTokens = false;
 
     byId("login-content").style.display = "none";
     byId("settings-content").style.display = "none";
@@ -901,7 +903,7 @@ export async function showWalletScreen(): Promise<boolean> {
     byId("TransactionsScreen").style.display = "none";
 
     setHeaderBand("home");
-    byId("walletAddress").textContent = App.currentWalletAddress;
+    byId("walletAddress").textContent = walletStore.currentWalletAddress;
 
     initRefreshAccountBalanceBackground();
 
@@ -920,15 +922,15 @@ export function showReceiveScreen(): boolean {
     byId("HomeScreen").style.display = "none";
     byId("ReceiveScreen").style.display = "block";
     setHeaderBand("compact");
-    byId("receiveWalletAddress").innerText = App.currentWalletAddress;
-    loadQRcode(App.currentWalletAddress);
+    byId("receiveWalletAddress").innerText = walletStore.currentWalletAddress;
+    loadQRcode(walletStore.currentWalletAddress);
     byId("divCopyReceiveScreen").focus();
 
     return false;
 }
 
 export async function copyAddressReceiveScreen(): Promise<boolean> {
-    await WriteTextToClipboard(App.currentWalletAddress);
+    await WriteTextToClipboard(walletStore.currentWalletAddress);
     return false;
 }
 
@@ -937,11 +939,11 @@ export function backupCurrentWallet(): void {
 }
 
 export async function encryptAndBackupCurrentWallet(): Promise<void> {
-    const walletJson = await walletGetAccountJsonFromWallet(App.currentWallet as Wallet, App.tempPassword);
+    const walletJson = await walletGetAccountJsonFromWallet(walletStore.currentWallet as Wallet, onboardingStore.tempPassword);
 
     let isoStr = new Date().toISOString();
     isoStr = isoStr.replaceAll(":", "-");
-    let addr = (App.currentWallet as Wallet).address.toLowerCase();
+    let addr = (walletStore.currentWallet as Wallet).address.toLowerCase();
     if (addr.startsWith("0x") == true) {
         addr = addr.substring(2, addr.length);
     }
@@ -955,7 +957,7 @@ export async function encryptAndBackupCurrentWallet(): Promise<void> {
 }
 
 export async function restoreSeed(): Promise<void> {
-    const wordCount = App.currentSeedBytes / 2;
+    const wordCount = onboardingStore.currentSeedBytes / 2;
     const seedWords: string[] = new Array(wordCount);
     for (let i = 0; i < wordCount; i++) {
         let seedWord = byId("txtRestoreSeed" + SEED_FRIENDLY_INDEX_ARRAY[i].toUpperCase()).textContent;
@@ -973,8 +975,8 @@ export async function restoreSeed(): Promise<void> {
         seedWords[i] = seedWord;
     }
 
-    App.tempSeedArray = await getSeedArrayFromWordListAsync(seedWords);
-    if (App.tempSeedArray == null) {
+    onboardingStore.tempSeedArray = await getSeedArrayFromWordListAsync(seedWords);
+    if (onboardingStore.tempSeedArray == null) {
         // The legacy showToastBox was an alias of the warn alert path.
         return showWarnAlert(langJson.errors.wordToSeed);
     }
@@ -989,26 +991,26 @@ export async function showConfirmWalletScreen(): Promise<void> {
     byId("verifyWalletPasswordScreen").style.display = "none";
     byId("confirmWalletScreen").style.display = "block";
 
-    App.currentWallet = await walletCreateNewWalletFromSeed(App.tempSeedArray as Uint8Array);
-    App.currentWalletAddress = App.currentWallet.address;
-    byId("confirmWalletAddress").textContent = App.currentWalletAddress;
+    walletStore.currentWallet = await walletCreateNewWalletFromSeed(onboardingStore.tempSeedArray as Uint8Array);
+    walletStore.currentWalletAddress = walletStore.currentWallet.address;
+    byId("confirmWalletAddress").textContent = walletStore.currentWalletAddress;
 
     byId("spnConfirmWalletBalance").textContent = "-";
     await refreshConfirmWalletBalance();
 }
 
 export async function refreshConfirmWalletBalance(): Promise<void> {
-    if (App.isRefreshingConfirmBalance == true) {
+    if (walletStore.isRefreshingConfirmBalance == true) {
         return;
     }
-    App.isRefreshingConfirmBalance = true;
+    walletStore.isRefreshingConfirmBalance = true;
 
     try {
         byId("divConfirmWalletLoadingBalance").style.display = "block";
         byId("spnConfirmWalletBalance").textContent = "-";
 
-        if (App.currentBlockchainNetwork != null) {
-            const accountDetails = await getAccountDetails(App.currentBlockchainNetwork.scanApiDomain, App.currentWalletAddress);
+        if (networkStore.currentBlockchainNetwork != null) {
+            const accountDetails = await getAccountDetails(networkStore.currentBlockchainNetwork.scanApiDomain, walletStore.currentWalletAddress);
             if (accountDetails != null) {
                 const balance = await weiToEtherFormatted(accountDetails.balance);
                 byId("spnConfirmWalletBalance").textContent = balance;
@@ -1020,12 +1022,12 @@ export async function refreshConfirmWalletBalance(): Promise<void> {
     }
     finally {
         byId("divConfirmWalletLoadingBalance").style.display = "none";
-        App.isRefreshingConfirmBalance = false;
+        walletStore.isRefreshingConfirmBalance = false;
     }
 }
 
 export function backFromConfirmWalletScreen(): boolean {
-    App.isRefreshingConfirmBalance = false;
+    walletStore.isRefreshingConfirmBalance = false;
     byId("divConfirmWalletLoadingBalance").style.display = "none";
     byId("confirmWalletScreen").style.display = "none";
     byId("restoreSeedScreen").style.display = "block";
@@ -1033,14 +1035,14 @@ export function backFromConfirmWalletScreen(): boolean {
 }
 
 export function nextFromConfirmWalletScreen(): boolean {
-    App.isRefreshingConfirmBalance = false;
+    walletStore.isRefreshingConfirmBalance = false;
     byId("divConfirmWalletLoadingBalance").style.display = "none";
     showVerifyWalletPasswordScreen();
     return false;
 }
 
 export async function copyConfirmWalletAddress(): Promise<boolean> {
-    await WriteTextToClipboard(App.currentWalletAddress);
+    await WriteTextToClipboard(walletStore.currentWalletAddress);
     return false;
 }
 
@@ -1070,7 +1072,7 @@ export async function restoreWalletFileOpen(): Promise<void> {
             }
 
             const walletPassword = inputById("pwdRestoreWallet").value;
-            App.currentWallet = await walletCreateNewWalletFromJson(walletJson, walletPassword);
+            walletStore.currentWallet = await walletCreateNewWalletFromJson(walletJson, walletPassword);
 
             hideWaitingBox();
             showVerifyWalletPasswordScreen();
@@ -1100,7 +1102,7 @@ export function showWalletListScreen(): boolean {
     let tabIndex = 1;
     for (const [address] of walletMap.entries()) {
         const shortAddress = getShortAddress(address);
-        const row = (App.templates.walletListRow as HTMLTableRowElement).cloneNode(true) as HTMLTableRowElement;
+        const row = (rowTemplates.walletListRow as HTMLTableRowElement).cloneNode(true) as HTMLTableRowElement;
 
         // td0: short-address link (legacy onclick="setWalletAddressAndShowWalletScreen('[ADDRESS]');")
         const addrLink = row.cells[0].querySelector("a") as HTMLAnchorElement;
@@ -1141,9 +1143,9 @@ export function showWalletListScreen(): boolean {
 }
 
 export async function setWalletAddressAndShowWalletScreen(address: string): Promise<void> {
-    App.currentWalletAddress = address;
-    App.currentBalance = "";
-    App.currentAccountDetails = null;
+    walletStore.currentWalletAddress = address;
+    walletStore.currentBalance = "";
+    walletStore.currentAccountDetails = null;
     byId("spnAccountBalance").textContent = "";
     removeAllChildren(byId("tbodyAccountTokens"));
     byId("divAccountTokens").style.display = "none";
@@ -1161,7 +1163,7 @@ export function showSpecificWalletBackupScreen(addr: string): boolean {
     byId("backupSpecificWalletScreen").style.display = "block";
     byId("divSpecificBackupAddress").textContent = addr;
 
-    App.specificWalletAddress = addr;
+    walletStore.specificWalletAddress = addr;
 
     byId("pwdBackupSpecificWallet").focus();
 
@@ -1181,16 +1183,16 @@ export async function encryptAndBackupSpecificWallet(): Promise<void> {
     const password = inputById("pwdBackupSpecificWallet").value;
     let specificWallet: Wallet | null;
     try {
-        specificWallet = await walletGetByAddress(password, App.specificWalletAddress);
+        specificWallet = await walletGetByAddress(password, walletStore.specificWalletAddress);
         if (specificWallet == null) {
             hideWaitingBox();
-            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH));
+            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH));
             return;
         }
     }
     catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return;
     }
     const walletJson = await walletGetAccountJsonFromWallet(specificWallet, password);
@@ -1214,8 +1216,8 @@ export function showRevealSeedScreen(addr: string): boolean {
     }
     inputById("pwdRevealSeedScreenPassword").value = "";
 
-    App.specificWalletAddress = addr;
-    byId("divRevealSeedAddress").textContent = App.specificWalletAddress;
+    walletStore.specificWalletAddress = addr;
+    byId("divRevealSeedAddress").textContent = walletStore.specificWalletAddress;
     byId("WalletsScreen").style.display = "none";
     byId("revealSeedScreen").style.display = "block";
     byId("divRevealSeedHelp").style.display = "block";
@@ -1245,40 +1247,40 @@ export async function revealSeedWallet(): Promise<void> {
     const password = inputById("pwdRevealSeedScreenPassword").value;
     let specificWallet: Wallet | null;
     try {
-        specificWallet = await walletGetByAddress(password, App.specificWalletAddress);
+        specificWallet = await walletGetByAddress(password, walletStore.specificWalletAddress);
         if (specificWallet == null) {
             hideWaitingBox();
-            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH));
+            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH));
             return;
         }
     }
     catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return;
     }
 
-    App.revealSeedArray = specificWallet.getSeedArray();
-    if (App.revealSeedArray == null) {
+    onboardingStore.revealSeedArray = specificWallet.getSeedArray();
+    if (onboardingStore.revealSeedArray == null) {
         hideWaitingBox();
         showWarnAlert(langJson.errors.noSeed);
         return;
     }
 
-    if (specificWallet.address.toLowerCase() !== App.specificWalletAddress.toLowerCase()) {
+    if (specificWallet.address.toLowerCase() !== walletStore.specificWalletAddress.toLowerCase()) {
         hideWaitingBox();
         showWarnAlert(getGenericError(""));
         return;
     }
 
-    const wordList = await getWordListFromSeedArrayAsync(App.revealSeedArray);
+    const wordList = await getWordListFromSeedArrayAsync(onboardingStore.revealSeedArray);
     if (wordList == null) {
         hideWaitingBox();
         showWarnAlert(getGenericError(""));
         return;
     }
 
-    const wordCount = App.revealSeedArray.length / 2;
+    const wordCount = onboardingStore.revealSeedArray.length / 2;
     for (let i = 0; i < wordCount; i++) {
         byId("divRevealSeed" + i).textContent = wordList[i].toUpperCase();
     }
@@ -1292,12 +1294,12 @@ export async function revealSeedWallet(): Promise<void> {
 }
 
 export function createOrRestoreWallet(): boolean {
-    App.additionalWalletMode = true;
-    App.currentWallet = null;
-    App.tempSeedArray = null;
-    App.specificWalletAddress = "";
-    App.tempPassword = "";
-    App.revealSeedArray = null;
+    onboardingStore.additionalWalletMode = true;
+    walletStore.currentWallet = null;
+    onboardingStore.tempSeedArray = null;
+    walletStore.specificWalletAddress = "";
+    onboardingStore.tempPassword = "";
+    onboardingStore.revealSeedArray = null;
 
     byId("login-content").style.display = "block";
     byId("wallets-content").style.display = "none";
@@ -1337,19 +1339,19 @@ export async function decryptAndUnlockWallet(): Promise<boolean | void> {
         const walletList = await walletLoadAll(password);
         if (walletList == null || walletList.length < 1) {
             hideWaitingBox();
-            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH));
+            showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH));
             return;
         }
         const walletReverseMap = walletGetCachedIndexToAddressMap();
         const walletAddress = walletReverseMap.get(0) as string;
         hideWaitingBox();
         byId("unlockScreen").style.display = "none";
-        App.additionalWalletMode = true;
+        onboardingStore.additionalWalletMode = true;
         setWalletAddressAndShowWalletScreen(walletAddress);
     }
     catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return;
     }
     return false;
@@ -1376,13 +1378,13 @@ export function showRestoreWalletScreen(): void {
 }
 
 export async function copyAddress(): Promise<void> {
-    await WriteTextToClipboard(App.currentWalletAddress);
+    await WriteTextToClipboard(walletStore.currentWalletAddress);
 }
 
 export async function openBlockExplorerAccount(): Promise<void> {
     let url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE;
-    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
-    url = url.replace(ADDRESS_TEMPLATE, App.currentWalletAddress);
+    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
+    url = url.replace(ADDRESS_TEMPLATE, walletStore.currentWalletAddress);
 
     await OpenUrl(url);
 }
@@ -1445,7 +1447,7 @@ export function togglePasswordBox(eyeImg: HTMLElement, txtBoxId: string): void {
 export function backFromCreateOrRestoreWallet(): void {
     byId("createWalletPromptScreen").style.display = "none";
 
-    if (App.additionalWalletMode == true) {
+    if (onboardingStore.additionalWalletMode == true) {
         showWalletListScreen();
     } else {
         showCreateWalletPasswordScreen();
@@ -1537,27 +1539,27 @@ export async function checkAndAddNetwork(): Promise<void> {
 
 export async function refreshAccountBalance(): Promise<void> {
     try {
-        if (App.isRefreshingBalance == true) {
+        if (walletStore.isRefreshingBalance == true) {
             return;
         }
-        App.isRefreshingBalance = true;
+        walletStore.isRefreshingBalance = true;
 
-        App.currentWalletTokenList = [];
-        App.currentWalletRecognizedTokens = [];
-        App.currentWalletUnrecognizedTokens = [];
+        tokenStore.currentWalletTokenList = [];
+        tokenStore.currentWalletRecognizedTokens = [];
+        tokenStore.currentWalletUnrecognizedTokens = [];
         byId("divAccountTokens").style.display = "none";
         byId("divTokenTabs").style.display = "none";
         removeAllChildren(byId("tbodyAccountTokens"));
         byId("divRefreshBalance").style.display = "none";
         byId("divLoadingBalance").style.display = "block";
         byId("spnAccountBalance").textContent = "";
-        App.currentAccountDetails = null;
-        const accountDetails = await getAccountDetails((App.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, App.currentWalletAddress);
+        walletStore.currentAccountDetails = null;
+        const accountDetails = await getAccountDetails((networkStore.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, walletStore.currentWalletAddress);
         if (accountDetails != null) {
-            App.currentAccountDetails = accountDetails;
-            App.currentBalance = await weiToEtherFormatted(accountDetails.balance);
-            byId("spnAccountBalance").textContent = App.currentBalance;
-            App.balanceNotificationMap.set(App.currentWalletAddress.toLowerCase(), App.currentBalance);
+            walletStore.currentAccountDetails = accountDetails;
+            walletStore.currentBalance = await weiToEtherFormatted(accountDetails.balance);
+            byId("spnAccountBalance").textContent = walletStore.currentBalance;
+            walletStore.balanceNotificationMap.set(walletStore.currentWalletAddress.toLowerCase(), walletStore.currentBalance);
         }
 
         await refreshTokenList();
@@ -1565,13 +1567,13 @@ export async function refreshAccountBalance(): Promise<void> {
         setTimeout(() => {
             byId("divRefreshBalance").style.display = "block";
             byId("divLoadingBalance").style.display = "none";
-            App.isRefreshingBalance = false;
+            walletStore.isRefreshingBalance = false;
         }, 500);
     }
     catch (error: any) {
         byId("divRefreshBalance").style.display = "block";
         byId("divLoadingBalance").style.display = "none";
-        App.isRefreshingBalance = false;
+        walletStore.isRefreshingBalance = false;
         if (isNetworkError(error)) {
             showWarnAlert(langJson.errors.internetDisconnected);
         } else {
@@ -1591,7 +1593,7 @@ function renderTokenRows(tokenList: AccountTokenDetails[]): void {
 
     for (let i = 0; i < tokenList.length; i++) {
         const token = tokenList[i];
-        const row = (App.templates.tokenListRow as HTMLTableRowElement).cloneNode(true) as HTMLTableRowElement;
+        const row = (rowTemplates.tokenListRow as HTMLTableRowElement).cloneNode(true) as HTMLTableRowElement;
         const tokenShortContractAddress = getShortAddress(token.contractAddress); //contract address is already verified for correctness in api.js listAccountTokens function
 
         // Legacy truncation appended a green "..." span after the cut name/symbol.
@@ -1625,7 +1627,7 @@ export function setTokenTabActiveStyles(): void {
     if (recognizedBtn == null || unrecognizedBtn == null) {
         return;
     }
-    if (App.showingUnrecognizedTokens === true) {
+    if (tokenStore.showingUnrecognizedTokens === true) {
         recognizedBtn.style.fontWeight = "400";
         recognizedBtn.style.borderBottom = "2px solid transparent";
         unrecognizedBtn.style.fontWeight = "700";
@@ -1639,7 +1641,7 @@ export function setTokenTabActiveStyles(): void {
 }
 
 export function renderHomeTokenTab(): void {
-    const unionEmpty = App.currentWalletRecognizedTokens.length === 0 && App.currentWalletUnrecognizedTokens.length === 0;
+    const unionEmpty = tokenStore.currentWalletRecognizedTokens.length === 0 && tokenStore.currentWalletUnrecognizedTokens.length === 0;
 
     if (unionEmpty === true) {
         removeAllChildren(byId("tbodyAccountTokens"));
@@ -1649,13 +1651,13 @@ export function renderHomeTokenTab(): void {
     }
 
     //Auto-switch to the non-empty tab so the user always sees content.
-    if (App.showingUnrecognizedTokens === true && App.currentWalletUnrecognizedTokens.length === 0 && App.currentWalletRecognizedTokens.length !== 0) {
-        App.showingUnrecognizedTokens = false;
-    } else if (App.showingUnrecognizedTokens === false && App.currentWalletRecognizedTokens.length === 0 && App.currentWalletUnrecognizedTokens.length !== 0) {
-        App.showingUnrecognizedTokens = true;
+    if (tokenStore.showingUnrecognizedTokens === true && tokenStore.currentWalletUnrecognizedTokens.length === 0 && tokenStore.currentWalletRecognizedTokens.length !== 0) {
+        tokenStore.showingUnrecognizedTokens = false;
+    } else if (tokenStore.showingUnrecognizedTokens === false && tokenStore.currentWalletRecognizedTokens.length === 0 && tokenStore.currentWalletUnrecognizedTokens.length !== 0) {
+        tokenStore.showingUnrecognizedTokens = true;
     }
 
-    const activeList = App.showingUnrecognizedTokens === true ? App.currentWalletUnrecognizedTokens : App.currentWalletRecognizedTokens;
+    const activeList = tokenStore.showingUnrecognizedTokens === true ? tokenStore.currentWalletUnrecognizedTokens : tokenStore.currentWalletRecognizedTokens;
     renderTokenRows(activeList);
     byId("divTokenTabs").style.display = "";
     byId("divAccountTokens").style.display = "";
@@ -1663,14 +1665,14 @@ export function renderHomeTokenTab(): void {
 }
 
 export function selectTokenTab(showUnrecognized: boolean): boolean {
-    App.showingUnrecognizedTokens = showUnrecognized === true;
+    tokenStore.showingUnrecognizedTokens = showUnrecognized === true;
     renderHomeTokenTab();
     return false;
 }
 
 export async function refreshTokenList(): Promise<void> {
     //refresh token list/balance
-    const tokenListDetails = await listAccountTokens((App.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, App.currentWalletAddress, 1); //todo: pagination
+    const tokenListDetails = await listAccountTokens((networkStore.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, walletStore.currentWalletAddress, 1); //todo: pagination
     if (tokenListDetails == null || !("tokenList" in tokenListDetails) || tokenListDetails.tokenList == null || tokenListDetails.tokenList.length === 0) {
         syncSendScreenTokenList();
         return;
@@ -1687,64 +1689,64 @@ export async function refreshTokenList(): Promise<void> {
 
     //Hard-suppress stablecoin impersonators (recognized contracts bypass), then partition.
     const impersonatorFilteredList = filterStablecoinImpersonators(safeTokenList) as AccountTokenDetails[];
-    App.currentWalletRecognizedTokens = [];
-    App.currentWalletUnrecognizedTokens = [];
+    tokenStore.currentWalletRecognizedTokens = [];
+    tokenStore.currentWalletUnrecognizedTokens = [];
     for (let j = 0; j < impersonatorFilteredList.length; j++) {
         const token = impersonatorFilteredList[j];
         if (isRecognizedToken(token.contractAddress) === true) {
-            App.currentWalletRecognizedTokens.push(token);
+            tokenStore.currentWalletRecognizedTokens.push(token);
         } else {
-            App.currentWalletUnrecognizedTokens.push(token);
+            tokenStore.currentWalletUnrecognizedTokens.push(token);
         }
     }
 
-    App.currentWalletTokenList = App.currentWalletRecognizedTokens.concat(App.currentWalletUnrecognizedTokens);
+    tokenStore.currentWalletTokenList = tokenStore.currentWalletRecognizedTokens.concat(tokenStore.currentWalletUnrecognizedTokens);
     renderHomeTokenTab();
     syncSendScreenTokenList();
 }
 
 export async function initRefreshAccountBalanceBackground(): Promise<void> {
-    if (App.initAccountBalanceBackgroundStarted == true) {
+    if (walletStore.initAccountBalanceBackgroundStarted == true) {
         return;
     }
-    App.initAccountBalanceBackgroundStarted = true;
+    walletStore.initAccountBalanceBackgroundStarted = true;
     refreshAccountBalanceBackground();
 }
 
 export async function refreshAccountBalanceBackground(): Promise<void> {
     try {
-        if (App.isRefreshingBalance == true) {
+        if (walletStore.isRefreshingBalance == true) {
             setTimeout(refreshAccountBalanceBackground, 10.0 * 1000);
             return;
         }
-        App.isRefreshingBalance = true;
-        App.currentWalletTokenList = [];
-        App.currentWalletRecognizedTokens = [];
-        App.currentWalletUnrecognizedTokens = [];
+        walletStore.isRefreshingBalance = true;
+        tokenStore.currentWalletTokenList = [];
+        tokenStore.currentWalletRecognizedTokens = [];
+        tokenStore.currentWalletUnrecognizedTokens = [];
         byId("divRefreshBalance").style.display = "none";
         byId("divLoadingBalance").style.display = "block";
-        App.currentAccountDetails = null;
-        const accountDetails = await getAccountDetails((App.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, App.currentWalletAddress);
+        walletStore.currentAccountDetails = null;
+        const accountDetails = await getAccountDetails((networkStore.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, walletStore.currentWalletAddress);
         if (accountDetails != null) {
-            App.currentAccountDetails = accountDetails;
-            const curAddrLower = App.currentWalletAddress.toLowerCase();
+            walletStore.currentAccountDetails = accountDetails;
+            const curAddrLower = walletStore.currentWalletAddress.toLowerCase();
             const newBalance = await weiToEtherFormatted(accountDetails.balance);
 
-            if (App.currentBalance !== "" && newBalance !== "0" && newBalance !== App.currentBalance) {
-                if (App.pendingTransactionsMap.has(curAddrLower + (App.currentBlockchainNetwork as { index: number }).index.toString()) || (App.balanceNotificationMap.has(curAddrLower) && App.balanceNotificationMap.get(curAddrLower) !== newBalance)) {
+            if (walletStore.currentBalance !== "" && newBalance !== "0" && newBalance !== walletStore.currentBalance) {
+                if (walletStore.pendingTransactionsMap.has(curAddrLower + (networkStore.currentBlockchainNetwork as { index: number }).index.toString()) || (walletStore.balanceNotificationMap.has(curAddrLower) && walletStore.balanceNotificationMap.get(curAddrLower) !== newBalance)) {
                     showBalanceChangeNotification(newBalance);
-                    App.balanceNotificationMap.set(App.currentWalletAddress.toLowerCase(), newBalance);
+                    walletStore.balanceNotificationMap.set(walletStore.currentWalletAddress.toLowerCase(), newBalance);
                 }
             }
 
-            App.currentBalance = newBalance;
+            walletStore.currentBalance = newBalance;
             byId("spnAccountBalance").textContent = newBalance;
         }
         await refreshTokenList();
         byId("divRefreshBalance").style.display = "block";
         byId("divLoadingBalance").style.display = "none";
-        App.isRefreshingBalance = false;
-        App.isFirstTimeAccountRefresh = false;
+        walletStore.isRefreshingBalance = false;
+        walletStore.isFirstTimeAccountRefresh = false;
         setTimeout(refreshAccountBalanceBackground, 10.0 * 1000);
     }
     catch (error: any) {
@@ -1753,10 +1755,10 @@ export async function refreshAccountBalanceBackground(): Promise<void> {
 
         const backoffJitterDelay = Math.random() * (60 - 20) + 20;
         setTimeout(refreshAccountBalanceBackground, backoffJitterDelay * 1000);
-        App.isRefreshingBalance = false;
+        walletStore.isRefreshingBalance = false;
 
-        if (App.isFirstTimeAccountRefresh == true) { //Show error only when wallet screen displayed first time after the app is opened
-            App.isFirstTimeAccountRefresh = false;
+        if (walletStore.isFirstTimeAccountRefresh == true) { //Show error only when wallet screen displayed first time after the app is opened
+            walletStore.isFirstTimeAccountRefresh = false;
             if (isNetworkError(error)) {
                 showWarnAlert(langJson.errors.internetDisconnected);
             } else {
@@ -1812,12 +1814,12 @@ export function showBalanceChangeNotification(value: string): boolean {
 }
 
 export function getTokenBalance(contactAddress: string): string | null {
-    if (App.currentWalletTokenList == null) {
+    if (tokenStore.currentWalletTokenList == null) {
         return null;
     }
-    for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-        if (App.currentWalletTokenList[i].contractAddress === contactAddress) {
-            return App.currentWalletTokenList[i].tokenBalance;
+    for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+        if (tokenStore.currentWalletTokenList[i].contractAddress === contactAddress) {
+            return tokenStore.currentWalletTokenList[i].tokenBalance;
         }
     }
     return null;
@@ -1832,7 +1834,7 @@ export async function showTransactionsScreen(): Promise<boolean> {
     byId("divNextTxnList").style.display = "block";
 
     removeAllChildren(byId("tbodyComplextedTransactions"));
-    App.currentTxnPageIndex = 0;
+    txnStore.currentTxnPageIndex = 0;
     await refreshTransactionList();
 
     return false;
@@ -1913,14 +1915,14 @@ function buildTransactionRow(template: HTMLTableRowElement, txn: { from: string;
 }
 
 export async function refreshTransactionListInner(isPending: boolean, isPrev: boolean): Promise<void> {
-    const pageIndex = (isPending) ? 0 : App.currentTxnPageIndex;
-    const currAddressLower = App.currentWalletAddress.toLowerCase();
-    const network = App.currentBlockchainNetwork as { scanApiDomain: string; index: number };
+    const pageIndex = (isPending) ? 0 : txnStore.currentTxnPageIndex;
+    const currAddressLower = walletStore.currentWalletAddress.toLowerCase();
+    const network = networkStore.currentBlockchainNetwork as { scanApiDomain: string; index: number };
     const rows: HTMLTableRowElement[] = [];
 
     const txnListDetails: TransactionListDetails | null = isPending
-        ? await getPendingTransactionDetails(network.scanApiDomain, App.currentWalletAddress, pageIndex)
-        : await getCompletedTransactionDetails(network.scanApiDomain, App.currentWalletAddress, pageIndex);
+        ? await getPendingTransactionDetails(network.scanApiDomain, walletStore.currentWalletAddress, pageIndex)
+        : await getCompletedTransactionDetails(network.scanApiDomain, walletStore.currentWalletAddress, pageIndex);
     if (txnListDetails == null || txnListDetails.transactionList == null) {
         if (isPending) {
             const pendingRow = getPendingTxnRow(currAddressLower);
@@ -1931,7 +1933,7 @@ export async function refreshTransactionListInner(isPending: boolean, isPrev: bo
             }
         } else {
             removeAllChildren(byId("tbodyComplextedTransactions"));
-            App.currentTxnPageIndex = 0;
+            txnStore.currentTxnPageIndex = 0;
         }
         return;
     }
@@ -1940,40 +1942,40 @@ export async function refreshTransactionListInner(isPending: boolean, isPrev: bo
         const txn = txnListDetails.transactionList[i];
         let txnTemplate: HTMLTableRowElement;
         if (isPending) {
-            txnTemplate = App.templates.completedTxnOutRow as HTMLTableRowElement;
+            txnTemplate = rowTemplates.completedTxnOutRow as HTMLTableRowElement;
         } else {
-            if (txn.from.toLowerCase() == App.currentWalletAddress.toLowerCase()) {
+            if (txn.from.toLowerCase() == walletStore.currentWalletAddress.toLowerCase()) {
                 if (txn.status == true) {
-                    txnTemplate = App.templates.completedTxnOutRow as HTMLTableRowElement;
+                    txnTemplate = rowTemplates.completedTxnOutRow as HTMLTableRowElement;
                 } else {
-                    txnTemplate = App.templates.failedTxnOutRow as HTMLTableRowElement;
+                    txnTemplate = rowTemplates.failedTxnOutRow as HTMLTableRowElement;
                 }
             } else {
                 if (txn.status == true) {
-                    txnTemplate = App.templates.completedTxnInRow as HTMLTableRowElement;
+                    txnTemplate = rowTemplates.completedTxnInRow as HTMLTableRowElement;
                 } else {
-                    txnTemplate = App.templates.failedTxnInRow as HTMLTableRowElement;
+                    txnTemplate = rowTemplates.failedTxnInRow as HTMLTableRowElement;
                 }
             }
         }
         rows.push(buildTransactionRow(txnTemplate, txn));
 
-        if (App.pendingTransactionsMap.has(currAddressLower + network.index.toString())) { //if txn appears in current transaction list, remove from pending
-            const pendingTxn = App.pendingTransactionsMap.get(currAddressLower + network.index.toString()) as TransactionDetails;
+        if (walletStore.pendingTransactionsMap.has(currAddressLower + network.index.toString())) { //if txn appears in current transaction list, remove from pending
+            const pendingTxn = walletStore.pendingTransactionsMap.get(currAddressLower + network.index.toString()) as TransactionDetails;
             if (pendingTxn.hash.toLowerCase() === txn.hash.toLowerCase()) {
-                App.pendingTransactionsMap.delete(currAddressLower + network.index.toString());
+                walletStore.pendingTransactionsMap.delete(currAddressLower + network.index.toString());
             }
         }
     }
 
     if (!isPending && !isPrev) {
-        if (App.currentTxnPageIndex == 0) {
-            App.currentTxnPageIndex = txnListDetails.pageCount;
+        if (txnStore.currentTxnPageIndex == 0) {
+            txnStore.currentTxnPageIndex = txnListDetails.pageCount;
         } else {
-            App.currentTxnPageIndex = App.currentTxnPageIndex + 1;
+            txnStore.currentTxnPageIndex = txnStore.currentTxnPageIndex + 1;
         }
     }
-    App.currentTxnPageCount = txnListDetails.pageCount;
+    txnStore.currentTxnPageCount = txnListDetails.pageCount;
 
     if (isPending) {
         const tbodyPending = byId("tbodyPendingTransactions");
@@ -1995,17 +1997,17 @@ export async function refreshTransactionListInner(isPending: boolean, isPrev: bo
 }
 
 export function getPendingTxnRow(currAddressLower: string): HTMLTableRowElement | null {
-    const network = App.currentBlockchainNetwork as { index: number };
-    if (App.pendingTransactionsMap.has(currAddressLower + network.index.toString()) == false) {
+    const network = networkStore.currentBlockchainNetwork as { index: number };
+    if (walletStore.pendingTransactionsMap.has(currAddressLower + network.index.toString()) == false) {
         return null;
     }
-    const pendingTxn = App.pendingTransactionsMap.get(currAddressLower + network.index.toString()) as TransactionDetails;
-    return buildTransactionRow(App.templates.completedTxnOutRow as HTMLTableRowElement, pendingTxn);
+    const pendingTxn = walletStore.pendingTransactionsMap.get(currAddressLower + network.index.toString()) as TransactionDetails;
+    return buildTransactionRow(rowTemplates.completedTxnOutRow as HTMLTableRowElement, pendingTxn);
 }
 
 export async function OpenScanAddress(address: string): Promise<void> {
     let url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE;
-    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
+    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
     url = url.replace(ADDRESS_TEMPLATE, address);
 
     await OpenUrl(url);
@@ -2013,30 +2015,30 @@ export async function OpenScanAddress(address: string): Promise<void> {
 
 export async function OpenScanTxn(hash: string): Promise<void> {
     let url = BLOCK_EXPLORER_TRANSACTION_TEMPLATE;
-    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
+    url = url.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
     url = url.replace(TRANSACTION_HASH_TEMPLATE, hash);
 
     await OpenUrl(url);
 }
 
 export async function showPrevTxnPage(): Promise<void> {
-    if (App.currentTxnPageIndex > 1) {
-        App.currentTxnPageIndex = App.currentTxnPageIndex - 1;
-    } else if (App.currentTxnPageIndex == 1) {
+    if (txnStore.currentTxnPageIndex > 1) {
+        txnStore.currentTxnPageIndex = txnStore.currentTxnPageIndex - 1;
+    } else if (txnStore.currentTxnPageIndex == 1) {
         showWarnAlert(langJson.errors.noMoreTxns);
         return;
-    } else if (App.currentTxnPageIndex == 0 && App.currentTxnPageCount > 0) {
-        App.currentTxnPageIndex = App.currentTxnPageCount - 1;
+    } else if (txnStore.currentTxnPageIndex == 0 && txnStore.currentTxnPageCount > 0) {
+        txnStore.currentTxnPageIndex = txnStore.currentTxnPageCount - 1;
     }
     await refreshTransactionListWithContext(true);
 }
 
 export async function showNextTxnPage(): Promise<void> {
-    if (App.currentTxnPageIndex == 0 || App.currentTxnPageIndex == App.currentTxnPageCount) {
+    if (txnStore.currentTxnPageIndex == 0 || txnStore.currentTxnPageIndex == txnStore.currentTxnPageCount) {
         showWarnAlert(langJson.errors.noMoreTxns);
         return;
     }
-    App.currentTxnPageIndex = App.currentTxnPageIndex + 1;
+    txnStore.currentTxnPageIndex = txnStore.currentTxnPageIndex + 1;
     await refreshTransactionList();
 }
 
@@ -2046,7 +2048,7 @@ export async function showHelp(): Promise<boolean> {
 }
 
 export async function openBlockExplorer(): Promise<boolean> {
-    OpenUrl(HTTPS + (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
+    OpenUrl(HTTPS + (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain);
     return false;
 }
 

@@ -20,14 +20,17 @@ import { walletGetByAddress, Wallet } from "../lib/wallet";
 import { getTransactionStatusByHash, TransactionDetails, AccountTokenDetails } from "../lib/api";
 import {
     ADDRESS_LENGTH_CHECK,
-    App,
     QuantumCoin,
     STORAGE_PATH_TEMPLATE,
     TxContext,
     byId,
     inputById,
     maxTokenNameLength,
+    networkStore,
     selectById,
+    settingsStore,
+    tokenStore,
+    walletStore,
 } from "./state";
 import {
     GAS_ESTIMATE_BUFFER_PERCENT,
@@ -71,7 +74,7 @@ export function getSendTxContext(): TxContext {
         : (selectedValue === "other" ? inputById("txtTokenContractAddress").value : selectedValue);
     const ctx: TxContext = {
         txKind: isCoin ? "sendCoin" : "sendToken",
-        toAddress: toAddress || App.currentWalletAddress,
+        toAddress: toAddress || walletStore.currentWalletAddress,
         amount: amount || "0",
         defaultGasLimit: isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS,
         bufferPercent: isCoin ? GAS_NO_BUFFER_PERCENT : GAS_ESTIMATE_BUFFER_PERCENT,
@@ -106,7 +109,7 @@ export function resetTokenList(): void {
     option.text = "Q";
     option.value = "Q";
     ddlCoinTokenToSend.add(option);
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         const optOther = document.createElement("option");
         optOther.text = "(token)";
         optOther.value = "other";
@@ -130,12 +133,12 @@ export function addTokenOptionToSendDropdown(ddlCoinTokenToSend: HTMLSelectEleme
 
 export function getSendAssetSymbol(contractAddress: string | null, isCoin: boolean): string {
     if (isCoin) return "Q";
-    if (App.currentWalletTokenList != null) {
-        for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-            if (App.currentWalletTokenList[i].contractAddress === contractAddress) {
-                const sym = App.currentWalletTokenList[i].symbol;
+    if (tokenStore.currentWalletTokenList != null) {
+        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+            if (tokenStore.currentWalletTokenList[i].contractAddress === contractAddress) {
+                const sym = tokenStore.currentWalletTokenList[i].symbol;
                 if (sym) return sym;
-                return App.currentWalletTokenList[i].name || langJson.langValues.tokens;
+                return tokenStore.currentWalletTokenList[i].name || langJson.langValues.tokens;
             }
         }
     }
@@ -149,21 +152,21 @@ export function populateSendScreen(): void {
 
     //Recognized tokens are always listed; unrecognized only when the toggle is on.
     //Stablecoin impersonators are already removed upstream so they never appear here.
-    if (App.currentWalletRecognizedTokens != null) {
-        for (let i = 0; i < App.currentWalletRecognizedTokens.length; i++) {
-            addTokenOptionToSendDropdown(ddlCoinTokenToSend, App.currentWalletRecognizedTokens[i]);
+    if (tokenStore.currentWalletRecognizedTokens != null) {
+        for (let i = 0; i < tokenStore.currentWalletRecognizedTokens.length; i++) {
+            addTokenOptionToSendDropdown(ddlCoinTokenToSend, tokenStore.currentWalletRecognizedTokens[i]);
         }
     }
 
-    if (sendShowUnrecognizedTokens === true && App.currentWalletUnrecognizedTokens != null) {
-        for (let j = 0; j < App.currentWalletUnrecognizedTokens.length; j++) {
-            addTokenOptionToSendDropdown(ddlCoinTokenToSend, App.currentWalletUnrecognizedTokens[j]);
+    if (sendShowUnrecognizedTokens === true && tokenStore.currentWalletUnrecognizedTokens != null) {
+        for (let j = 0; j < tokenStore.currentWalletUnrecognizedTokens.length; j++) {
+            addTokenOptionToSendDropdown(ddlCoinTokenToSend, tokenStore.currentWalletUnrecognizedTokens[j]);
         }
     }
 
     //The toggle is only shown when there are unrecognized tokens to reveal.
     const toggleRow = byId("divSendShowUnrecognized");
-    if (App.currentWalletUnrecognizedTokens != null && App.currentWalletUnrecognizedTokens.length > 0) {
+    if (tokenStore.currentWalletUnrecognizedTokens != null && tokenStore.currentWalletUnrecognizedTokens.length > 0) {
         toggleRow.style.display = "";
     } else {
         toggleRow.style.display = "none";
@@ -218,7 +221,7 @@ export async function updateInfoSendScreen(): Promise<boolean> {
     byId("divCoinTokenToSend").style.display = "";
     byId("divBalanceSendScreen").textContent = "";
     inputById("txtTokenContractAddress").style.display = "none";
-    if (App.offlineSignEnabled == true) {
+    if (settingsStore.offlineSignEnabled == true) {
         byId("divSendScreenBalanceBox").style.display = "none";
     } else {
         // Preserved legacy behavior: "false" is not a valid display value, so the
@@ -228,14 +231,14 @@ export async function updateInfoSendScreen(): Promise<boolean> {
 
     if (selectedValue === "Q") {
         byId("divCoinTokenToSend").textContent = QuantumCoin;
-        if (App.offlineSignEnabled === false) {
-            if (App.currentAccountDetails !== null) {
-                const newBalance = await weiToEtherFormatted(App.currentAccountDetails.balance);
+        if (settingsStore.offlineSignEnabled === false) {
+            if (walletStore.currentAccountDetails !== null) {
+                const newBalance = await weiToEtherFormatted(walletStore.currentAccountDetails.balance);
                 byId("divBalanceSendScreen").textContent = newBalance;
             }
         }
     } else {
-        if (App.offlineSignEnabled === true) {
+        if (settingsStore.offlineSignEnabled === true) {
             const txtContract = inputById("txtTokenContractAddress");
             byId("divCoinTokenToSend").style.display = "none";
             txtContract.style.display = "";
@@ -249,9 +252,9 @@ export async function updateInfoSendScreen(): Promise<boolean> {
                 txtContract.readOnly = true;
             }
         } else {
-            for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-                if (App.currentWalletTokenList[i].contractAddress === selectedValue) {
-                    byId("divBalanceSendScreen").textContent = App.currentWalletTokenList[i].tokenBalance;
+            for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+                if (tokenStore.currentWalletTokenList[i].contractAddress === selectedValue) {
+                    byId("divBalanceSendScreen").textContent = tokenStore.currentWalletTokenList[i].tokenBalance;
                     byId("divCoinTokenToSend").textContent = selectedValue;
                     break;
                 }
@@ -266,7 +269,7 @@ export async function updateInfoSendScreen(): Promise<boolean> {
 }
 
 export async function showSendScreen(): Promise<boolean> {
-    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     sendShowUnrecognizedTokens = false;
     inputById("chkSendShowUnrecognized").checked = false;
     inputById("txtTokenContractAddress").readOnly = false;
@@ -276,7 +279,7 @@ export async function showSendScreen(): Promise<boolean> {
     await updateInfoSendScreen();
     ddlCoinTokenToSend.disabled = false;
 
-    if (App.offlineSignEnabled === true) {
+    if (settingsStore.offlineSignEnabled === true) {
         byId("btnOfflineSign").style.display = "block";
         byId("divCurrentNonce").style.display = "block";
         byId("btnSendCoins").style.display = "none";
@@ -372,7 +375,7 @@ export async function signOfflineSend(): Promise<boolean> {
     const review: TransactionReview = {
         asset: getSendAssetSymbol(offlineContractAddress, isCoin),
         contractAddress: offlineContractAddress,
-        fromAddress: App.currentWalletAddress,
+        fromAddress: walletStore.currentWalletAddress,
         toAddress: sendAddress,
         quantityLabelKey: "send-quantity",
         quantityValue: sendQuantity,
@@ -395,7 +398,7 @@ export async function onSignOfflineSendCoinsConfirm(): Promise<void> {
 export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
     const password = inputById("pwdSend").value;
     try {
-        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
             hideWaitingBox();
             showWarnAlert(getGenericError(""));
@@ -404,7 +407,7 @@ export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
         signOfflineTxnSend(quantumWallet);
     } catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return false;
     }
     return false;
@@ -418,7 +421,7 @@ export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<vo
 
     try {
         const result = await offlineSignTokenTransaction({
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             toAddress: sendAddress,
             amount: sendQuantity,
             contractAddress: contractAddress,
@@ -442,7 +445,7 @@ export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<vo
         byId("OfflineSignScreen").style.display = "block";
     } catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
     }
 }
 
@@ -461,7 +464,7 @@ export async function signOfflineTxnSend(quantumWallet: Wallet): Promise<void> {
 
     try {
         const result = await offlineSignCoinTransaction({
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             toAddress: sendAddress,
             amount: sendQuantity,
             nonce: parseInt(currentNonce),
@@ -483,7 +486,7 @@ export async function signOfflineTxnSend(quantumWallet: Wallet): Promise<void> {
         byId("OfflineSignScreen").style.display = "block";
     } catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
     }
 }
 
@@ -523,7 +526,7 @@ export async function sendCoins(): Promise<boolean> {
     }
 
     if (contractAddress === QuantumCoin) {
-        quantityToSend = App.currentBalance;
+        quantityToSend = walletStore.currentBalance;
         CoinTokenToSendName = langJson.langValues.coins;
     } else {
         quantityToSend = getTokenBalance(contractAddress);
@@ -534,7 +537,7 @@ export async function sendCoins(): Promise<boolean> {
     if (quantityToSend == null || quantityToSend === "") {
         await refreshAccountBalance();
         if (contractAddress === QuantumCoin) {
-            quantityToSend = App.currentBalance;
+            quantityToSend = walletStore.currentBalance;
         } else {
             quantityToSend = getTokenBalance(contractAddress);
         }
@@ -564,7 +567,7 @@ export async function sendCoins(): Promise<boolean> {
     const review: TransactionReview = {
         asset: getSendAssetSymbol(contractAddress, isCoin),
         contractAddress: isCoin ? null : contractAddress,
-        fromAddress: App.currentWalletAddress,
+        fromAddress: walletStore.currentWalletAddress,
         toAddress: sendAddress,
         quantityLabelKey: "send-quantity",
         quantityValue: sendQuantity,
@@ -587,7 +590,7 @@ export async function onSendCoinsConfirm(): Promise<void> {
 export async function decryptAndUnlockWalletSend(): Promise<boolean> {
     const password = inputById("pwdSend").value;
     try {
-        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
             hideWaitingBox();
             showWarnAlert(getGenericError(""));
@@ -596,7 +599,7 @@ export async function decryptAndUnlockWalletSend(): Promise<boolean> {
         sendCoinsSubmit(quantumWallet);
     } catch (error) {
         hideWaitingBox();
-        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
         return false;
     }
     return false;
@@ -618,8 +621,8 @@ export async function sendCoinsSubmit(quantumWallet: Wallet): Promise<void> {
     try {
         const currentDate = new Date();
         const result = await submitSendCoins({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             toAddress: sendAddress,
             amount: sendQuantity,
             privateKey: await quantumWallet.getPrivateKey(),
@@ -635,7 +638,7 @@ export async function sendCoinsSubmit(quantumWallet: Wallet): Promise<void> {
         }
 
         const pendingTxn = new TransactionDetails(result.txHash, currentDate, quantumWallet.address, sendAddress, sendQuantity, true);
-        App.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (App.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
+        walletStore.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (networkStore.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
 
         setTimeout(() => {
             hideWaitingBox();
@@ -664,8 +667,8 @@ export async function sendTokensSubmit(quantumWallet: Wallet): Promise<void> {
 
         const currentDate = new Date();
         const result = await submitSendTokens({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             toAddress: sendAddress,
             amount: sendQuantity,
             contractAddress: contractAddress,
@@ -683,7 +686,7 @@ export async function sendTokensSubmit(quantumWallet: Wallet): Promise<void> {
         }
 
         const pendingTxn = new TransactionDetails(result.txHash, currentDate, quantumWallet.address, contractAddress, "0", true);
-        App.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (App.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
+        walletStore.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (networkStore.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
 
         setTimeout(() => {
             hideWaitingBox();
@@ -764,9 +767,9 @@ export function updateSendCompletedStatusText(): void {
 }
 
 export async function pollSendCompletedStatus(): Promise<void> {
-    if (!sendCompletedLastTxHash || !App.currentBlockchainNetwork) return;
+    if (!sendCompletedLastTxHash || !networkStore.currentBlockchainNetwork) return;
     try {
-        const res = await getTransactionStatusByHash(App.currentBlockchainNetwork.scanApiDomain, App.currentWalletAddress, sendCompletedLastTxHash);
+        const res = await getTransactionStatusByHash(networkStore.currentBlockchainNetwork.scanApiDomain, walletStore.currentWalletAddress, sendCompletedLastTxHash);
         if (res.status === "succeeded") {
             stopSendCompletedTimers();
             setSendCompletedSucceeded();

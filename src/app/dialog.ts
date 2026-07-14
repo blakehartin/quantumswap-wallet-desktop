@@ -5,7 +5,7 @@
 import { htmlEncode } from "../lib/util";
 import { langJson } from "../lib/i18n";
 import { storeEulaAccepted } from "../lib/storage";
-import { App, byId, inputById, removeAllChildren } from "./state";
+import { byId, inputById, networkStore, removeAllChildren } from "./state";
 import { formatGasFeeNumber } from "./gas";
 import {
     getGenericError,
@@ -289,11 +289,11 @@ export function closeTransactionReviewDialog(): void {
 }
 
 export function txReviewNetworkText(): string {
-    if (App.currentBlockchainNetwork == null) {
+    if (networkStore.currentBlockchainNetwork == null) {
         return "";
     }
-    const name = App.currentBlockchainNetwork.blockchainName || "";
-    const chainId = App.currentBlockchainNetwork.networkId;
+    const name = networkStore.currentBlockchainNetwork.blockchainName || "";
+    const chainId = networkStore.currentBlockchainNetwork.networkId;
     const chainSuffix = (langJson && langJson.langValues["chain-id-suffix"]) ? langJson.langValues["chain-id-suffix"] : "chain";
     if (name === "") {
         return "(" + chainSuffix + " " + chainId + ")";

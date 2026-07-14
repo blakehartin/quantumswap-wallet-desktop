@@ -1,7 +1,8 @@
-// Shared application state and constants. 1:1 port of the module-level
-// globals from the old src/js/app.js. All cross-module mutable state lives
-// on the single exported App object so ports of app.js/dialog.js/send.js/
-// validator/*.js read and write the same values the old globals did.
+// Shared application state and constants. The mutable globals of the old
+// src/js/app.js live in small per-domain stores (wallet, network, tokens,
+// transactions, settings, onboarding). Each store supports subscribe() so
+// screens can react to changes; the ported logic modules still mutate fields
+// directly and call notify() where reactions are needed.
 import type { Wallet } from "../lib/wallet";
 import type { BlockchainNetwork } from "../lib/blockchainNetwork";
 import type { AccountDetails, AccountTokenDetails, TransactionDetails } from "../lib/api";
@@ -111,52 +112,102 @@ export interface RowTemplates {
     tokenListRow: HTMLTableRowElement | null;
 }
 
-export const App = {
+export type Unsubscribe = () => void;
+
+export interface Store {
+    subscribe(listener: () => void): Unsubscribe;
+}
+
+// Small reactive store: direct field assignment (store.foo = x) notifies
+// subscribers. Mutating a field in place (map.set, array.push) does not; call
+// sites that need a reaction after in-place mutation reassign the field.
+function createStore<T extends object>(fields: T): T & Store {
+    const listeners = new Set<() => void>();
+    const base = fields as T & Store;
+    Object.defineProperty(base, "subscribe", {
+        value: (listener: () => void): Unsubscribe => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+        enumerable: false,
+    });
+    return new Proxy(base, {
+        set(target, prop, value) {
+            Reflect.set(target, prop, value);
+            for (const listener of listeners) {
+                listener();
+            }
+            return true;
+        },
+    });
+}
+
+// Onboarding / unlock flow state (info carousel, quiz, seed entry).
+export const onboardingStore = createStore({
     currentInfoStep: 1,
     currentQuizStep: 1,
-    STORAGE_PATH: "",
-
     tempPassword: "",
     tempSeedArray: null as Uint8Array | number[] | null,
-    currentWallet: null as Wallet | null,
-    currentWalletAddress: "",
-    specificWalletAddress: "",
     additionalWalletMode: false, //this means first wallet has already been created and user is trying to create additional wallet
     revealSeedArray: null as Uint8Array | null,
     currentSeedBytes: 96,
-    isRefreshingConfirmBalance: false,
-
-    currentBlockchainNetworkIndex: -1,
-    currentBlockchainNetwork: null as BlockchainNetwork | null,
-    isRefreshingBalance: false,
-    initAccountBalanceBackgroundStarted: false,
-    currentBalance: "",
-    currentTxnPageIndex: 0,
-    currentTxnPageCount: 0,
-    balanceNotificationMap: new Map<string, string>(), //address => balance
-    pendingTransactionsMap: new Map<string, TransactionDetails>(), //address => last made txn
     autoCompleteInitialized: false,
     autoCompleteInitializedRestore: false,
     autoCompleteBoxes: [] as AutoCompleteDropdownControl[],
     autoCompleteBoxesRestore: [] as AutoCompleteDropdownControl[],
+});
+
+// Current wallet, balances and pending transaction notifications.
+export const walletStore = createStore({
+    STORAGE_PATH: "",
+    currentWallet: null as Wallet | null,
+    currentWalletAddress: "",
+    specificWalletAddress: "",
+    currentBalance: "",
+    currentAccountDetails: null as AccountDetails | null,
+    isRefreshingBalance: false,
+    isRefreshingConfirmBalance: false,
+    initAccountBalanceBackgroundStarted: false,
     isFirstTimeAccountRefresh: true,
+    balanceNotificationMap: new Map<string, string>(), //address => balance
+    pendingTransactionsMap: new Map<string, TransactionDetails>(), //address => last made txn
+});
+
+// Selected blockchain network.
+export const networkStore = createStore({
+    currentBlockchainNetworkIndex: -1,
+    currentBlockchainNetwork: null as BlockchainNetwork | null,
+});
+
+// Token lists for the current wallet (home-screen token table, send dropdown).
+export const tokenStore = createStore({
     currentWalletTokenList: [] as AccountTokenDetails[],
     currentWalletRecognizedTokens: [] as AccountTokenDetails[],
     currentWalletUnrecognizedTokens: [] as AccountTokenDetails[],
     showingUnrecognizedTokens: false,
-    currentAccountDetails: null as AccountDetails | null,
-    offlineSignEnabled: false,
+});
 
-    templates: {
-        walletListRow: null,
-        blockchainNetworkOptionItem: null,
-        blockchainNetworkRow: null,
-        completedTxnInRow: null,
-        completedTxnOutRow: null,
-        failedTxnInRow: null,
-        failedTxnOutRow: null,
-        tokenListRow: null,
-    } as RowTemplates,
+// Transactions screen paging.
+export const txnStore = createStore({
+    currentTxnPageIndex: 0,
+    currentTxnPageCount: 0,
+});
+
+// User settings toggles.
+export const settingsStore = createStore({
+    offlineSignEnabled: false,
+});
+
+// Row templates captured once at startup; not reactive.
+export const rowTemplates: RowTemplates = {
+    walletListRow: null,
+    blockchainNetworkOptionItem: null,
+    blockchainNetworkRow: null,
+    completedTxnInRow: null,
+    completedTxnOutRow: null,
+    failedTxnInRow: null,
+    failedTxnOutRow: null,
+    tokenListRow: null,
 };
 
 // Convenience typed lookups used across the ported modules. The old code used

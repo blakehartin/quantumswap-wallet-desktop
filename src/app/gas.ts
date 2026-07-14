@@ -2,7 +2,7 @@
 // of the old src/js/app.js.
 import { base64ToBytes } from "../lib/crypto";
 import { estimateGas, estimateGasFee } from "../lib/bridge";
-import { App, byId, GasState, TxContext } from "./state";
+import { byId, GasState, networkStore, TxContext, walletStore } from "./state";
 import { showGasConfigDialog } from "./dialog";
 import { advancedSigningGetDefaultValue, offlineTxnSigningGetDefaultValue } from "./settings";
 
@@ -25,7 +25,7 @@ export const DEFAULT_WALLET_KEY_TYPE = WALLET_KEY_TYPE_3;
 // is held in memory after login (currentWallet.publicKey), so this needs no password.
 export function getWalletKeyType(): number {
     try {
-        const pubB64 = (App.currentWallet && App.currentWallet.publicKey) ? App.currentWallet.publicKey : null;
+        const pubB64 = (walletStore.currentWallet && walletStore.currentWallet.publicKey) ? walletStore.currentWallet.publicKey : null;
         if (!pubB64) return DEFAULT_WALLET_KEY_TYPE;
         const bytes = base64ToBytes(pubB64);
         const len = (bytes && bytes.length) ? bytes.length : 0;
@@ -106,12 +106,12 @@ export function applyOfflineGasConfig(defaultGasLimit: number, labelId: string |
 // Build the estimateGas IPC payload for a given tx context.
 // `ctx` is provided by the calling screen and must include txKind + the relevant fields.
 export function buildEstimateGasPayload(ctx: TxContext): Record<string, unknown> | null {
-    if (!App.currentBlockchainNetwork) return null;
+    if (!networkStore.currentBlockchainNetwork) return null;
     const payload: Record<string, unknown> = {
-        rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-        chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+        rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+        chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
         txKind: ctx.txKind,
-        fromAddress: App.currentWalletAddress,
+        fromAddress: walletStore.currentWalletAddress,
     };
     if (ctx.toAddress) payload.toAddress = ctx.toAddress;
     if (ctx.amount != null) payload.amount = ctx.amount;
@@ -155,7 +155,7 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
     const s = state || currentGasConfig;
     const myToken = s._token;
     const ctx = (typeof ctxProvider === "function") ? ctxProvider() : ctxProvider;
-    if (!ctx || !ctx.txKind || !App.currentBlockchainNetwork) {
+    if (!ctx || !ctx.txKind || !networkStore.currentBlockchainNetwork) {
         if (labelId) setGasFeeLabel(labelId, "");
         setGasIconPulse(iconId, false);
         s.gasLimit = null;
@@ -224,8 +224,8 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
     let gasFee: string | number | null = null;
     try {
         const feeRes = await estimateGasFee({
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             gasLimit: gasLimit,
             keyType: keyType,
             fullSign: fullSign === true,

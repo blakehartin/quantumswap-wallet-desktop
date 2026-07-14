@@ -16,7 +16,6 @@ import { htmlEncode } from "../lib/util";
 import { langJson } from "../lib/i18n";
 import { walletGetByAddress, Wallet } from "../lib/wallet";
 import {
-    App,
     ADDRESS_TEMPLATE,
     BLOCK_EXPLORER_ACCOUNT_TEMPLATE,
     BLOCK_EXPLORER_DOMAIN_TEMPLATE,
@@ -24,7 +23,10 @@ import {
     TxContext,
     byId,
     inputById,
+    networkStore,
     selectById,
+    tokenStore,
+    walletStore,
     zero_address,
 } from "./state";
 import {
@@ -57,10 +59,10 @@ export const SWAP_SHOW_NATIVE_COIN = false;
 
 export function getSwapSymbolFromValue(value: string): string {
     if (!value || value === "Q") return "Q";
-    if (App.currentWalletTokenList == null) return "Q";
-    for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-        if (App.currentWalletTokenList[i].contractAddress === value) {
-            return App.currentWalletTokenList[i].symbol || "Q";
+    if (tokenStore.currentWalletTokenList == null) return "Q";
+    for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+        if (tokenStore.currentWalletTokenList[i].contractAddress === value) {
+            return tokenStore.currentWalletTokenList[i].symbol || "Q";
         }
     }
     return "Q";
@@ -68,13 +70,13 @@ export function getSwapSymbolFromValue(value: string): string {
 
 export async function getSwapBalanceForSymbol(value: string): Promise<string> {
     if (!value) return "0";
-    if (value === "Q" && App.currentAccountDetails != null) {
-        return await weiToEtherFormatted(App.currentAccountDetails.balance);
+    if (value === "Q" && walletStore.currentAccountDetails != null) {
+        return await weiToEtherFormatted(walletStore.currentAccountDetails.balance);
     }
-    if (App.currentWalletTokenList == null) return "0";
-    for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-        if (App.currentWalletTokenList[i].contractAddress === value) {
-            return App.currentWalletTokenList[i].tokenBalance || "0";
+    if (tokenStore.currentWalletTokenList == null) return "0";
+    for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+        if (tokenStore.currentWalletTokenList[i].contractAddress === value) {
+            return tokenStore.currentWalletTokenList[i].tokenBalance || "0";
         }
     }
     return "0";
@@ -91,7 +93,7 @@ export function updateSwapContractLabels(): void {
     const showToContract = toValue && toValue !== "Q";
     byId("divSwapFromContractRow").style.display = showFromContract ? "flex" : "none";
     byId("divSwapToContractRow").style.display = showToContract ? "flex" : "none";
-    const explorerBase = App.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, App.currentBlockchainNetwork.blockExplorerDomain) : "";
+    const explorerBase = networkStore.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, networkStore.currentBlockchainNetwork.blockExplorerDomain) : "";
     if (showFromContract) {
         const fromAddr = fromValue;
         const aFrom = byId<HTMLAnchorElement>("aSwapFromContract");
@@ -110,13 +112,13 @@ export function updateSwapContractLabels(): void {
 
 export async function openSwapFromContractInExplorer(): Promise<void> {
     const addr = byId("aSwapFromContract").getAttribute("data-contract-address") || getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
     await OpenUrl(url);
 }
 
 export async function openSwapToContractInExplorer(): Promise<void> {
     const addr = byId("aSwapToContract").getAttribute("data-contract-address") || getSwapContractAddress(selectById("ddlSwapToToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
     await OpenUrl(url);
 }
 
@@ -148,16 +150,16 @@ export async function updateSwapFromAllowanceDisplay(): Promise<void> {
     const span = byId("spanSwapFromAllowance");
     if (!row || !span) return;
     const fromValue = selectById("ddlSwapFromToken").value;
-    if (!fromValue || !App.currentBlockchainNetwork) {
+    if (!fromValue || !networkStore.currentBlockchainNetwork) {
         row.style.display = "none";
         return;
     }
     try {
         const allowancePayload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
-            ownerAddress: App.currentWalletAddress,
+            ownerAddress: walletStore.currentWalletAddress,
             requiredAmount: "0",
             fromDecimals: getSwapTokenDecimals(fromValue),
         };
@@ -231,9 +233,9 @@ export function getSwapTokenListFromWallet(): { value: string; displayText: stri
     if (SWAP_SHOW_NATIVE_COIN) {
         list.push({ value: "Q", displayText: QuantumCoin + " (Q)" });
     }
-    if (App.currentWalletTokenList != null && App.currentWalletTokenList.length > 0) {
-        for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-            const t = App.currentWalletTokenList[i];
+    if (tokenStore.currentWalletTokenList != null && tokenStore.currentWalletTokenList.length > 0) {
+        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+            const t = tokenStore.currentWalletTokenList[i];
             if (!t.symbol || !t.name || !t.contractAddress) continue;
             if (htmlEncode(t.name) !== t.name || htmlEncode(t.symbol) !== t.symbol) continue;
             list.push({
@@ -279,9 +281,9 @@ let swapTokenSymbolCache: Record<string, string> = {};
 
 export function updateSwapTokenSymbolCache(): void {
     swapTokenSymbolCache = { "Q": "Q" };
-    if (App.currentWalletTokenList != null) {
-        for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-            const t = App.currentWalletTokenList[i];
+    if (tokenStore.currentWalletTokenList != null) {
+        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+            const t = tokenStore.currentWalletTokenList[i];
             if (t.contractAddress && t.symbol) swapTokenSymbolCache[t.contractAddress] = t.symbol;
         }
     }
@@ -300,9 +302,9 @@ const SWAP_QUOTE_DEBOUNCE_MS = 400;
 
 export function getSwapTokenDecimals(value: string | null): number {
     if (!value || value === "Q") return 18;
-    if (App.currentWalletTokenList != null) {
-        for (let i = 0; i < App.currentWalletTokenList.length; i++) {
-            const token = App.currentWalletTokenList[i] as { contractAddress: string; decimals?: number };
+    if (tokenStore.currentWalletTokenList != null) {
+        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+            const token = tokenStore.currentWalletTokenList[i] as { contractAddress: string; decimals?: number };
             if (token.contractAddress === value && token.decimals != null) {
                 return token.decimals;
             }
@@ -332,14 +334,14 @@ export async function updateToQuantityFromFrom(): Promise<void> {
         inputById("txtSwapToQuantity").value = "";
         return;
     }
-    if (!App.currentBlockchainNetwork) return;
+    if (!networkStore.currentBlockchainNetwork) return;
 
     swapQuantityUpdating = true;
     showSwapQuoteLoading(true);
     try {
         const payload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10) || 123123,
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10) || 123123,
             amountIn: fromQtyStr,
             fromTokenValue: fromValue,
             toTokenValue: toValue,
@@ -389,14 +391,14 @@ export async function updateFromQuantityFromTo(): Promise<void> {
         inputById("txtSwapFromQuantity").value = "";
         return;
     }
-    if (!App.currentBlockchainNetwork) return;
+    if (!networkStore.currentBlockchainNetwork) return;
 
     swapQuantityUpdating = true;
     showSwapQuoteLoading(true);
     try {
         const payload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             amountOut: toQtyStr,
             fromTokenValue: fromValue,
             toTokenValue: toValue,
@@ -440,12 +442,12 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
     if (!fromValue || !toValue || fromValue === toValue) {
         return false;
     }
-    if (!App.currentBlockchainNetwork) return false;
+    if (!networkStore.currentBlockchainNetwork) return false;
     let pairExists = false;
     try {
         const payload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10) || 123123,
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10) || 123123,
             fromTokenValue: fromValue,
             toTokenValue: toValue,
         };
@@ -521,7 +523,7 @@ export function getSwapExecuteTxContext(): TxContext | null {
         slippagePercent: parseFloat(inputById("txtSwapSlippage").value) || 1,
         fromDecimals: getSwapTokenDecimals(fromValue),
         toDecimals: getSwapTokenDecimals(toValue),
-        recipientAddress: App.currentWalletAddress,
+        recipientAddress: walletStore.currentWalletAddress,
         defaultGasLimit: SWAP_DEFAULT_GAS,
     };
 }
@@ -591,12 +593,12 @@ export async function onSwapNextClick(): Promise<boolean> {
         showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]));
         return false;
     }
-    if (!App.currentBlockchainNetwork) return false;
+    if (!networkStore.currentBlockchainNetwork) return false;
     let pairExists = false;
     try {
         const payload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
             toTokenValue: toValue,
         };
@@ -618,10 +620,10 @@ export async function onSwapNextClick(): Promise<boolean> {
     setSwapConfirmPanelLoading(true);
     try {
         const allowancePayload = {
-            rpcEndpoint: App.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(App.currentBlockchainNetwork.networkId), 10),
+            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
-            ownerAddress: App.currentWalletAddress,
+            ownerAddress: walletStore.currentWalletAddress,
             requiredAmount: fromQty,
             fromDecimals: getSwapTokenDecimals(fromValue),
         };
@@ -750,8 +752,8 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
     const gas = parseInt(resolveGasForTx(SWAP_DEFAULT_GAS).gasLimit, 10);
     try {
         const result = await submitSwapSwap({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
             toTokenValue: toValue,
             amountIn: fromQty,
@@ -760,7 +762,7 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
             slippagePercent: slippagePercent,
             fromDecimals: getSwapTokenDecimals(fromValue),
             toDecimals: getSwapTokenDecimals(toValue),
-            recipientAddress: App.currentWalletAddress,
+            recipientAddress: walletStore.currentWalletAddress,
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             gasLimit: gas,
@@ -784,8 +786,8 @@ export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): P
     const gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
     try {
         const result = await submitSwapRemoveAllowance({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
@@ -823,8 +825,8 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
     }
     try {
         const result = await submitSwapAddAllowance({
-            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
             amount: approvalAmount,
             fromDecimals: getSwapTokenDecimals(fromValue),
@@ -896,7 +898,7 @@ export function showSwapSuccessPanel(fromToken: string, toToken: string, fromBef
     byId("divSwapAddAllowancePanel").style.display = "none";
     byId("divSwapSuccessPanel").style.display = "block";
 
-    const explorerBase = App.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, App.currentBlockchainNetwork.blockExplorerDomain) : "";
+    const explorerBase = networkStore.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, networkStore.currentBlockchainNetwork.blockExplorerDomain) : "";
     const fromAddr = getSwapContractAddress(fromToken);
     const toAddr = getSwapContractAddress(toToken);
     const fromSymbol = getSwapCachedSymbol(fromToken);
@@ -951,13 +953,13 @@ export function setAddAllowancePanelWaiting(waiting: boolean): void {
 
 export async function openRemoveAllowanceContractInExplorer(): Promise<void> {
     const addr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
     await OpenUrl(url);
 }
 
 export async function openAddAllowanceContractInExplorer(): Promise<void> {
     const addr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (App.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
+    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
     await OpenUrl(url);
 }
 
@@ -967,7 +969,7 @@ export function showSwapApprovalTransactionReview(review: TransactionReview, mod
     review.submitLabelKey = "submit";
     review.nonce = null;
     review.networkText = txReviewNetworkText();
-    review.fromAddress = App.currentWalletAddress;
+    review.fromAddress = walletStore.currentWalletAddress;
     review.onSubmit = function () {
         showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletForSwapApproval);
     };
@@ -984,7 +986,7 @@ export function showSwapExecuteConfirmDialog(): void {
     const review: TransactionReview = {
         asset: sym(fromValue) + " -> " + sym(toValue),
         contractAddress: getSwapContractAddress(fromValue),
-        toAddress: App.currentWalletAddress,
+        toAddress: walletStore.currentWalletAddress,
         quantityLabelKey: "send-quantity",
         quantityValue: fromAmt + " " + sym(fromValue) + " for " + toAmt + " " + sym(toValue),
         gasLimit: resolved.gasLimit,
@@ -999,7 +1001,7 @@ export async function decryptAndUnlockWalletForSwapApproval(): Promise<void> {
     else if (allowanceConfirmMode === "add") pwdId = "pwdAddAllowance";
     const password = (inputById(pwdId).value || "").trim();
     try {
-        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
             hideWaitingBox();
             showWarnAlert(getGenericError(""));
@@ -1027,7 +1029,7 @@ export async function decryptAndUnlockWalletForSwapApproval(): Promise<void> {
 }
 
 export function onRemoveSwapAllowanceClick(): boolean {
-    if (!App.currentBlockchainNetwork) return false;
+    if (!networkStore.currentBlockchainNetwork) return false;
     const fromValue = selectById("ddlSwapFromToken").value;
     if (!fromValue) return false;
     byId("divSwapScreenInner").style.display = "none";
@@ -1074,7 +1076,7 @@ export function setAddAllowanceQuantityToMax(): boolean {
 }
 
 export function onAddAllowanceQuantityInput(): void {
-    if (!App.currentBlockchainNetwork) return;
+    if (!networkStore.currentBlockchainNetwork) return;
     const amount = (inputById("txtAddAllowanceQuantity").value || "").trim();
     if (!amount || parseFloat(amount) <= 0) return;
     scheduleGasEstimation(function () { return getSwapApproveTxContext(amount); }, "divAddAllowanceGasIcon", "spanAddAllowanceGasFee", swapApproveGasState);

@@ -14,3 +14,34 @@
 .acd-choice {
     font-family: Consolas, Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
 }
+
+/* De-inlined shared form-field styles (formerly repeated style="..."
+   attributes on the screen modules). input.<class> ties the specificity of
+   the quantum theme's input[type=...] rules; this sheet loads after the theme
+   sheets, so these declarations win the tie, matching the old inline-style
+   behavior (borderless underlined fields). The quantum theme recolors
+   .qs-input/.qs-input-strong text alongside its [style*="color:black"]
+   hooks. */
+input.qs-input,
+input.qs-input-strong {
+    text-align: left;
+    width: 100%;
+    border: none;
+    outline: none;
+    color: black;
+}
+
+input.qs-input {
+    font-weight: 400;
+}
+
+input.qs-input-strong {
+    font-weight: 500;
+    letter-spacing: 0.11em;
+}
+
+/* Password-visibility eye toggle next to password boxes. */
+img.qs-eye {
+    cursor: pointer;
+    width: 20px;
+}
