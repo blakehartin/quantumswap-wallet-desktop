@@ -50,6 +50,7 @@ import {
     showTransactionReviewDialog,
     showWarnAlert,
     txReviewNetworkText,
+    updateWaitingBox,
     TransactionReview,
 } from "./dialog";
 import { getGenericError, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
@@ -768,6 +769,7 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
         });
+        hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setSwapConfirmPanelWaitingForApprovalTx(false);
             showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
@@ -776,6 +778,7 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
         swapSuccessGasLimit = gas;
         showSendCompletedDialog(result.txHash, onSwapSubmitCompletedDialogClose);
     } catch (err: any) {
+        hideWaitingBox();
         setSwapConfirmPanelWaitingForApprovalTx(false);
         showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
@@ -794,6 +797,7 @@ export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): P
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
         });
+        hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setRemoveAllowancePanelWaiting(false);
             showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
@@ -809,6 +813,7 @@ export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): P
             }
         });
     } catch (err: any) {
+        hideWaitingBox();
         setRemoveAllowancePanelWaiting(false);
         showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
@@ -819,6 +824,7 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
     const approvalAmount = (inputById("txtAddAllowanceQuantity").value || "").trim();
     const gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
     if (!approvalAmount || parseFloat(approvalAmount) <= 0) {
+        hideWaitingBox();
         setAddAllowancePanelWaiting(false);
         showWarnAlert(langJson.errors.approvalQuantityRequired || "Approval quantity is required.");
         return;
@@ -835,6 +841,7 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
         });
+        hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setAddAllowancePanelWaiting(false);
             showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
@@ -850,6 +857,7 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
             }
         });
     } catch (err: any) {
+        hideWaitingBox();
         setAddAllowancePanelWaiting(false);
         showWarnAlert((err && err.message) ? String(err.message) : String(err));
     }
@@ -1007,8 +1015,11 @@ export async function decryptAndUnlockWalletForSwapApproval(): Promise<void> {
             showWarnAlert(getGenericError(""));
             return;
         }
-        hideWaitingBox();
         closeTransactionReviewDialog();
+        // Keep the waiting box up while the transaction is submitted, so there is
+        // no dialog-less gap before the status dialog appears. The submit
+        // functions hide it right before showing the status dialog or an error.
+        updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
         if (allowanceConfirmMode === "remove") {
             allowanceConfirmMode = null;
             setRemoveAllowancePanelWaiting(true);
