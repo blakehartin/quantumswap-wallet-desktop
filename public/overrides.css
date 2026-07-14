@@ -1,0 +1,16 @@
+/* Post-migration overrides layered on top of the verbatim legacy styles.css.
+
+   Seed-word legibility: seed words were rendered in Poppins, where uppercase
+   "I" and lowercase "l" are identical vertical bars. Use a system monospaced
+   stack in which I / l / 1 are visually distinct in both cases (Consolas has
+   a serifed I and a tailed l; Menlo likewise on macOS). Applies to the
+   new-seed and reveal-seed word grids, the seed entry boxes, and the seed
+   autocomplete dropdown. No font files are bundled for this. */
+
+.seedrow1, .seedrow2, .seedrow3, .seedrow4, .seedrow5, .seedrow6,
+.seedrow7, .seedrow8, .seedrow9, .seedrow10, .seedrow11, .seedrow12,
+.seedrowplain,
+.entrybox.edit-div,
+.acd-choice {
+    font-family: Consolas, Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
+}

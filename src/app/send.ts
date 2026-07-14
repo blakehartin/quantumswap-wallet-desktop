@@ -1,0 +1,812 @@
+// Send screen, offline signing and the send-completed dialog.
+// 1:1 port of the old src/js/send.js. The old file bound the send-completed
+// dialog buttons at script-eval time; initSend() performs the same bindings
+// and is called from the renderer entry right after the DOM is built.
+import { isNetworkError, htmlEncode } from "../lib/util";
+import { langJson } from "../lib/i18n";
+import { IsValidAddress } from "../lib/crypto";
+import {
+    OpenUrl,
+    WriteTextToClipboard,
+    compareEther,
+    isValidEther,
+    offlineSignCoinTransaction,
+    offlineSignTokenTransaction,
+    submitSendCoins,
+    submitSendTokens,
+    weiToEtherFormatted,
+} from "../lib/bridge";
+import { walletGetByAddress, Wallet } from "../lib/wallet";
+import { getTransactionStatusByHash, TransactionDetails, AccountTokenDetails } from "../lib/api";
+import {
+    ADDRESS_LENGTH_CHECK,
+    App,
+    QuantumCoin,
+    STORAGE_PATH_TEMPLATE,
+    TxContext,
+    byId,
+    inputById,
+    maxTokenNameLength,
+    selectById,
+} from "./state";
+import {
+    GAS_ESTIMATE_BUFFER_PERCENT,
+    GAS_NO_BUFFER_PERCENT,
+    onGasIconClick,
+    resetCurrentGasConfig,
+    resolveGasForTx,
+    scheduleGasEstimation,
+    setGasFeeLabel,
+} from "./gas";
+import { advancedSigningGetDefaultValue, offlineTxnSigningGetDefaultValue } from "./settings";
+import {
+    hideWaitingBox,
+    showLoadingAndExecuteAsync,
+    showTransactionReviewDialog,
+    showTransientToast,
+    showWarnAlert,
+    txReviewNetworkText,
+    updateWaitingBox,
+    TransactionReview,
+} from "./dialog";
+import { getGenericError, getTokenBalance, refreshAccountBalance, removeOptions, showWalletScreen, OpenScanTxn } from "./app";
+import { getSwapTokenDecimals } from "./swap";
+
+export const COIN_SEND_GAS = 21000;
+export const TOKEN_SEND_GAS = 84000;
+
+let sendShowUnrecognizedTokens = false;
+
+export function getSendTxContext(): TxContext {
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    const selectedValue = ddlCoinTokenToSend ? ddlCoinTokenToSend.value : "Q";
+    const toAddress = (inputById("txtSendAddress").value || "").trim();
+    const amount = (inputById("txtSendQuantity").value || "").trim();
+    const isCoin = (selectedValue === "Q");
+    // The dropdown option value is the token contract address for recognized tokens;
+    // "other" is the offline manual-entry case where the address is in txtTokenContractAddress.
+    // (txtTokenContractAddress is not populated in online mode, so don't rely on it here.)
+    const contractAddress = isCoin
+        ? null
+        : (selectedValue === "other" ? inputById("txtTokenContractAddress").value : selectedValue);
+    const ctx: TxContext = {
+        txKind: isCoin ? "sendCoin" : "sendToken",
+        toAddress: toAddress || App.currentWalletAddress,
+        amount: amount || "0",
+        defaultGasLimit: isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS,
+        bufferPercent: isCoin ? GAS_NO_BUFFER_PERCENT : GAS_ESTIMATE_BUFFER_PERCENT,
+    };
+    if (!isCoin) {
+        ctx.contractAddress = contractAddress;
+        ctx.fromDecimals = getSwapTokenDecimals(contractAddress);
+    }
+    return ctx;
+}
+
+export function onSendGasIconClick(): boolean {
+    return onGasIconClick("spanSendGasFee", null, getSendTxContext);
+}
+
+export function scheduleSendGasEstimation(): void {
+    scheduleGasEstimation(getSendTxContext, "divSendGasIcon", "spanSendGasFee", null, function (errorDetail) {
+        const base = (langJson && langJson.errors && langJson.errors.gasEstimateError)
+            ? langJson.errors.gasEstimateError
+            : "Could not fetch the gas fee from the network. Using the default estimate.";
+        // errorDetail is the raw RPC return value / transport error; showTransientToast
+        // renders via textContent so any HTML in it is sanitized (not parsed).
+        const message = errorDetail ? (base + " (" + errorDetail + ")") : base;
+        showTransientToast(message, 4000);
+    });
+}
+
+export function resetTokenList(): void {
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    removeOptions(ddlCoinTokenToSend);
+    const option = document.createElement("option");
+    option.text = "Q";
+    option.value = "Q";
+    ddlCoinTokenToSend.add(option);
+    if (App.offlineSignEnabled === true) {
+        const optOther = document.createElement("option");
+        optOther.text = "(token)";
+        optOther.value = "other";
+        ddlCoinTokenToSend.add(optOther);
+    }
+}
+
+export function addTokenOptionToSendDropdown(ddlCoinTokenToSend: HTMLSelectElement, token: AccountTokenDetails): void {
+    let tokenName = token.name;
+
+    if (tokenName.length > maxTokenNameLength) {
+        tokenName = tokenName.substring(0, maxTokenNameLength - 1) + "...";
+    }
+    tokenName = htmlEncode(tokenName);
+
+    const tokenOption = document.createElement("option");
+    tokenOption.text = tokenName;
+    tokenOption.value = token.contractAddress;
+    ddlCoinTokenToSend.add(tokenOption);
+}
+
+export function getSendAssetSymbol(contractAddress: string | null, isCoin: boolean): string {
+    if (isCoin) return "Q";
+    if (App.currentWalletTokenList != null) {
+        for (let i = 0; i < App.currentWalletTokenList.length; i++) {
+            if (App.currentWalletTokenList[i].contractAddress === contractAddress) {
+                const sym = App.currentWalletTokenList[i].symbol;
+                if (sym) return sym;
+                return App.currentWalletTokenList[i].name || langJson.langValues.tokens;
+            }
+        }
+    }
+    return langJson.langValues.tokens;
+}
+
+export function populateSendScreen(): void {
+    resetTokenList();
+
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+
+    //Recognized tokens are always listed; unrecognized only when the toggle is on.
+    //Stablecoin impersonators are already removed upstream so they never appear here.
+    if (App.currentWalletRecognizedTokens != null) {
+        for (let i = 0; i < App.currentWalletRecognizedTokens.length; i++) {
+            addTokenOptionToSendDropdown(ddlCoinTokenToSend, App.currentWalletRecognizedTokens[i]);
+        }
+    }
+
+    if (sendShowUnrecognizedTokens === true && App.currentWalletUnrecognizedTokens != null) {
+        for (let j = 0; j < App.currentWalletUnrecognizedTokens.length; j++) {
+            addTokenOptionToSendDropdown(ddlCoinTokenToSend, App.currentWalletUnrecognizedTokens[j]);
+        }
+    }
+
+    //The toggle is only shown when there are unrecognized tokens to reveal.
+    const toggleRow = byId("divSendShowUnrecognized");
+    if (App.currentWalletUnrecognizedTokens != null && App.currentWalletUnrecognizedTokens.length > 0) {
+        toggleRow.style.display = "";
+    } else {
+        toggleRow.style.display = "none";
+    }
+}
+
+export function onToggleSendUnrecognized(): void {
+    sendShowUnrecognizedTokens = inputById("chkSendShowUnrecognized").checked === true;
+    populateSendScreen();
+    updateInfoSendScreen();
+}
+
+// Re-sync the send dropdown/toggle when the token list loads (or refreshes)
+// while the send screen is already open, so the unrecognized-tokens checkbox
+// appears as soon as the data arrives. The current selection is preserved.
+export function syncSendScreenTokenList(): void {
+    const sendScreen = byId("SendScreen");
+    if (sendScreen == null || sendScreen.style.display === "none") {
+        return;
+    }
+
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    const previousValue = ddlCoinTokenToSend.value;
+    const previousContractInput = inputById("txtTokenContractAddress").value;
+
+    populateSendScreen();
+
+    for (let i = 0; i < ddlCoinTokenToSend.options.length; i++) {
+        if (ddlCoinTokenToSend.options[i].value === previousValue) {
+            ddlCoinTokenToSend.value = previousValue;
+            break;
+        }
+    }
+
+    updateInfoSendScreen();
+
+    //Preserve a manually-typed token contract (offline "(token)" entry) that
+    //updateInfoSendScreen clears when re-selecting the manual option.
+    if (previousValue === "other") {
+        inputById("txtTokenContractAddress").value = previousContractInput;
+    }
+}
+
+export async function updateInfoSendScreen(): Promise<boolean> {
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    const selectedValue = ddlCoinTokenToSend.value;
+    if (byId("SendScreen").style.display === "block") {
+        resetCurrentGasConfig();
+        setGasFeeLabel("spanSendGasFee", "");
+    }
+    byId("divCoinTokenToSend").textContent = "";
+    byId("divCoinTokenToSend").style.display = "";
+    byId("divBalanceSendScreen").textContent = "";
+    inputById("txtTokenContractAddress").style.display = "none";
+    if (App.offlineSignEnabled == true) {
+        byId("divSendScreenBalanceBox").style.display = "none";
+    } else {
+        // Preserved legacy behavior: "false" is not a valid display value, so the
+        // browser ignores it and the box keeps its stylesheet display.
+        byId("divSendScreenBalanceBox").style.display = "false";
+    }
+
+    if (selectedValue === "Q") {
+        byId("divCoinTokenToSend").textContent = QuantumCoin;
+        if (App.offlineSignEnabled === false) {
+            if (App.currentAccountDetails !== null) {
+                const newBalance = await weiToEtherFormatted(App.currentAccountDetails.balance);
+                byId("divBalanceSendScreen").textContent = newBalance;
+            }
+        }
+    } else {
+        if (App.offlineSignEnabled === true) {
+            const txtContract = inputById("txtTokenContractAddress");
+            byId("divCoinTokenToSend").style.display = "none";
+            txtContract.style.display = "";
+            if (selectedValue === "other") {
+                //Manual entry: let the user type the contract address.
+                txtContract.value = "";
+                txtContract.readOnly = false;
+            } else {
+                //A real token was picked from the list; use its contract address.
+                txtContract.value = selectedValue;
+                txtContract.readOnly = true;
+            }
+        } else {
+            for (let i = 0; i < App.currentWalletTokenList.length; i++) {
+                if (App.currentWalletTokenList[i].contractAddress === selectedValue) {
+                    byId("divBalanceSendScreen").textContent = App.currentWalletTokenList[i].tokenBalance;
+                    byId("divCoinTokenToSend").textContent = selectedValue;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (byId("SendScreen").style.display === "block") {
+        scheduleSendGasEstimation();
+    }
+    return false;
+}
+
+export async function showSendScreen(): Promise<boolean> {
+    App.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    sendShowUnrecognizedTokens = false;
+    inputById("chkSendShowUnrecognized").checked = false;
+    inputById("txtTokenContractAddress").readOnly = false;
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    ddlCoinTokenToSend.disabled = true;
+    populateSendScreen();
+    await updateInfoSendScreen();
+    ddlCoinTokenToSend.disabled = false;
+
+    if (App.offlineSignEnabled === true) {
+        byId("btnOfflineSign").style.display = "block";
+        byId("divCurrentNonce").style.display = "block";
+        byId("btnSendCoins").style.display = "none";
+    } else {
+        byId("btnOfflineSign").style.display = "none";
+        byId("divCurrentNonce").style.display = "none";
+        byId("btnSendCoins").style.display = "block";
+    }
+
+    byId("divNetworkDropdown").style.display = "none";
+    byId("HomeScreen").style.display = "none";
+    byId("SendScreen").style.display = "block";
+    byId("OfflineSignScreen").style.display = "none";
+    byId("gradient").style.height = "116px";
+    inputById("txtSendAddress").value = "";
+    inputById("txtSendQuantity").value = "";
+    inputById("txtCurrentNonce").value = "";
+    inputById("pwdSend").value = "";
+    inputById("txtSendAddress").focus();
+
+    resetCurrentGasConfig();
+    attachSendGasListeners();
+    setGasFeeLabel("spanSendGasFee", "");
+    scheduleSendGasEstimation();
+
+    return false;
+}
+
+export function attachSendGasListeners(): void {
+    const addr = inputById("txtSendAddress");
+    const qty = inputById("txtSendQuantity");
+    if (addr && !addr.dataset.gasBound) { addr.addEventListener("input", scheduleSendGasEstimation); addr.dataset.gasBound = "1"; }
+    if (qty && !qty.dataset.gasBound) { qty.addEventListener("input", scheduleSendGasEstimation); qty.dataset.gasBound = "1"; }
+}
+
+export async function signOfflineSend(): Promise<boolean> {
+    const sendAddress = inputById("txtSendAddress").value;
+    const sendQuantity = inputById("txtSendQuantity").value;
+    const currentNonce = inputById("txtCurrentNonce").value;
+    const sendPassword = inputById("pwdSend").value;
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    const selectedValue = ddlCoinTokenToSend.value;
+    if (selectedValue === "Q") {
+        // coins
+    } else {
+        const contractAddress = inputById("txtTokenContractAddress").value;
+        if (contractAddress == null || contractAddress.length < ADDRESS_LENGTH_CHECK || await IsValidAddress(contractAddress) == false) {
+            showWarnAlert(langJson.errors.quantumAddr);
+            return false;
+        }
+    }
+
+    if (sendAddress == null || sendAddress.length < ADDRESS_LENGTH_CHECK || await IsValidAddress(sendAddress) == false) {
+        showWarnAlert(langJson.errors.quantumAddr);
+        return false;
+    }
+
+    if (sendQuantity == null || sendQuantity.length < 1) {
+        showWarnAlert(langJson.errors.enterAmount);
+        return false;
+    }
+
+    // Preserved legacy behavior: the boolean result was passed back into
+    // isValidEther, so this check never rejects; validation happens downstream.
+    const okQuantity = await isValidEther(sendQuantity);
+    if ((isValidEther(okQuantity as unknown as string) as unknown as boolean) == false) {
+        showWarnAlert(langJson.errors.enterAmount);
+        return false;
+    }
+
+    if (currentNonce == null || currentNonce.length < 1) {
+        showWarnAlert(langJson.errors.enterCurrentNonce);
+        return false;
+    }
+
+    const tempNonce = parseInt(currentNonce);
+    if (Number.isInteger(tempNonce) == false || tempNonce < 0) {
+        showWarnAlert(langJson.errors.enterCurrentNonce);
+        return false;
+    }
+
+    if (sendPassword == null || sendPassword.length < 2) {
+        showWarnAlert(langJson.errors.enterQuantumPassword);
+        return false;
+    }
+
+    const isCoin = (selectedValue === "Q");
+    const offlineContractAddress = isCoin ? null : inputById("txtTokenContractAddress").value;
+    const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
+    const gasLimit = parseInt(resolved.gasLimit, 10);
+    const gasFee = resolved.gasFee;
+
+    const review: TransactionReview = {
+        asset: getSendAssetSymbol(offlineContractAddress, isCoin),
+        contractAddress: offlineContractAddress,
+        fromAddress: App.currentWalletAddress,
+        toAddress: sendAddress,
+        quantityLabelKey: "send-quantity",
+        quantityValue: sendQuantity,
+        gasLimit: String(gasLimit),
+        gasFee: gasFee,
+        nonce: String(tempNonce),
+        networkText: txReviewNetworkText(),
+        requirePassword: false,
+        submitLabelKey: "ok",
+        onSubmit: onSignOfflineSendCoinsConfirm,
+    };
+    showTransactionReviewDialog(review);
+    return false;
+}
+
+export async function onSignOfflineSendCoinsConfirm(): Promise<void> {
+    showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletSignOffline);
+}
+
+export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
+    const password = inputById("pwdSend").value;
+    try {
+        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        if (quantumWallet == null) {
+            hideWaitingBox();
+            showWarnAlert(getGenericError(""));
+            return false;
+        }
+        signOfflineTxnSend(quantumWallet);
+    } catch (error) {
+        hideWaitingBox();
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        return false;
+    }
+    return false;
+}
+
+export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<void> {
+    const sendAddress = inputById("txtSendAddress").value;
+    const sendQuantity = inputById("txtSendQuantity").value;
+    const currentNonce = inputById("txtCurrentNonce").value;
+    const contractAddress = inputById("txtTokenContractAddress").value;
+
+    try {
+        const result = await offlineSignTokenTransaction({
+            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            toAddress: sendAddress,
+            amount: sendQuantity,
+            contractAddress: contractAddress,
+            fromDecimals: getSwapTokenDecimals(contractAddress),
+            nonce: parseInt(currentNonce),
+            gasLimit: parseInt(resolveGasForTx(TOKEN_SEND_GAS).gasLimit, 10),
+            privateKey: await quantumWallet.getPrivateKey(),
+            publicKey: await quantumWallet.getPublicKey(),
+            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
+        });
+
+        if (!result || !result.success || !result.txData) {
+            hideWaitingBox();
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.unexpectedError));
+            return;
+        }
+
+        hideWaitingBox();
+        inputById("txtSignedSendTransaction").value = result.txData;
+        byId("SendScreen").style.display = "none";
+        byId("OfflineSignScreen").style.display = "block";
+    } catch (error) {
+        hideWaitingBox();
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+    }
+}
+
+export async function signOfflineTxnSend(quantumWallet: Wallet): Promise<void> {
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    const selectedValue = ddlCoinTokenToSend.value;
+    if (selectedValue === "Q") {
+        // fall through to coin signing below
+    } else {
+        await signOfflineTxnSendToken(quantumWallet);
+        return;
+    }
+    const sendAddress = inputById("txtSendAddress").value;
+    const sendQuantity = inputById("txtSendQuantity").value;
+    const currentNonce = inputById("txtCurrentNonce").value;
+
+    try {
+        const result = await offlineSignCoinTransaction({
+            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            toAddress: sendAddress,
+            amount: sendQuantity,
+            nonce: parseInt(currentNonce),
+            gasLimit: parseInt(resolveGasForTx(COIN_SEND_GAS).gasLimit, 10),
+            privateKey: await quantumWallet.getPrivateKey(),
+            publicKey: await quantumWallet.getPublicKey(),
+            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
+        });
+
+        if (!result || !result.success || !result.txData) {
+            hideWaitingBox();
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.unexpectedError));
+            return;
+        }
+
+        hideWaitingBox();
+        inputById("txtSignedSendTransaction").value = result.txData;
+        byId("SendScreen").style.display = "none";
+        byId("OfflineSignScreen").style.display = "block";
+    } catch (error) {
+        hideWaitingBox();
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+    }
+}
+
+export async function copySignedSendTransaction(): Promise<void> {
+    await WriteTextToClipboard(inputById("txtSignedSendTransaction").value);
+}
+
+export async function openOfflineTxnSigningUrl(): Promise<boolean> {
+    await OpenUrl("https://QuantumCoin.org/offline-transaction-signing.html");
+    return false;
+}
+
+export async function sendCoins(): Promise<boolean> {
+    const sendAddress = inputById("txtSendAddress").value;
+    const sendQuantity = inputById("txtSendQuantity").value;
+    const sendPassword = inputById("pwdSend").value;
+    const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
+    let CoinTokenToSendName = ddlCoinTokenToSend.options[ddlCoinTokenToSend.selectedIndex].text;
+    const contractAddress = byId("divCoinTokenToSend").textContent as string;
+    let quantityToSend: string | null = "";
+
+    if (sendAddress == null || sendAddress.length < ADDRESS_LENGTH_CHECK || await IsValidAddress(sendAddress) == false) {
+        showWarnAlert(langJson.errors.quantumAddr);
+        return false;
+    }
+
+    if (sendQuantity == null || sendQuantity.length < 1) {
+        showWarnAlert(langJson.errors.enterAmount);
+        return false;
+    }
+
+    // Preserved legacy behavior: see signOfflineSend for the same double-call pattern.
+    const okQuantity = await isValidEther(sendQuantity);
+    if ((isValidEther(okQuantity as unknown as string) as unknown as boolean) == false) {
+        showWarnAlert(langJson.errors.enterAmount);
+        return false;
+    }
+
+    if (contractAddress === QuantumCoin) {
+        quantityToSend = App.currentBalance;
+        CoinTokenToSendName = langJson.langValues.coins;
+    } else {
+        quantityToSend = getTokenBalance(contractAddress);
+        CoinTokenToSendName = langJson.langValues.tokens;
+    }
+    void CoinTokenToSendName;
+
+    if (quantityToSend == null || quantityToSend === "") {
+        await refreshAccountBalance();
+        if (contractAddress === QuantumCoin) {
+            quantityToSend = App.currentBalance;
+        } else {
+            quantityToSend = getTokenBalance(contractAddress);
+        }
+    }
+
+    if (quantityToSend == null || quantityToSend === "") {
+        showWarnAlert(langJson.errors.amountLarge);
+        return false;
+    }
+
+    const compareResult = await compareEther(sendQuantity, quantityToSend);
+    if (compareResult == 1) {
+        showWarnAlert(langJson.errors.amountLarge);
+        return false;
+    }
+
+    if (sendPassword == null || sendPassword.length < 2) {
+        showWarnAlert(langJson.errors.enterQuantumPassword);
+        return false;
+    }
+
+    const isCoin = (contractAddress === QuantumCoin);
+    const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
+    const gasLimit = parseInt(resolved.gasLimit, 10);
+    const gasFee = resolved.gasFee;
+
+    const review: TransactionReview = {
+        asset: getSendAssetSymbol(contractAddress, isCoin),
+        contractAddress: isCoin ? null : contractAddress,
+        fromAddress: App.currentWalletAddress,
+        toAddress: sendAddress,
+        quantityLabelKey: "send-quantity",
+        quantityValue: sendQuantity,
+        gasLimit: String(gasLimit),
+        gasFee: gasFee,
+        nonce: null,
+        networkText: txReviewNetworkText(),
+        requirePassword: false,
+        submitLabelKey: "ok",
+        onSubmit: onSendCoinsConfirm,
+    };
+    showTransactionReviewDialog(review);
+    return false;
+}
+
+export async function onSendCoinsConfirm(): Promise<void> {
+    showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletSend);
+}
+
+export async function decryptAndUnlockWalletSend(): Promise<boolean> {
+    const password = inputById("pwdSend").value;
+    try {
+        const quantumWallet = await walletGetByAddress(password, App.currentWalletAddress);
+        if (quantumWallet == null) {
+            hideWaitingBox();
+            showWarnAlert(getGenericError(""));
+            return false;
+        }
+        sendCoinsSubmit(quantumWallet);
+    } catch (error) {
+        hideWaitingBox();
+        showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, App.STORAGE_PATH) + " " + error);
+        return false;
+    }
+    return false;
+}
+
+export async function sendCoinsSubmit(quantumWallet: Wallet): Promise<void> {
+    const coinTokenToSend = byId("divCoinTokenToSend").textContent;
+    if (coinTokenToSend !== QuantumCoin) {
+        await sendTokensSubmit(quantumWallet);
+        return;
+    }
+
+    updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
+    const sendAddress = inputById("txtSendAddress").value;
+    const sendQuantity = inputById("txtSendQuantity").value;
+    const resolved = resolveGasForTx(COIN_SEND_GAS);
+    const gasLimit = parseInt(resolved.gasLimit, 10);
+
+    try {
+        const currentDate = new Date();
+        const result = await submitSendCoins({
+            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            toAddress: sendAddress,
+            amount: sendQuantity,
+            privateKey: await quantumWallet.getPrivateKey(),
+            publicKey: await quantumWallet.getPublicKey(),
+            gasLimit: gasLimit,
+            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
+        });
+
+        if (!result || !result.success || !result.txHash) {
+            hideWaitingBox();
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.invalidApiResponse));
+            return;
+        }
+
+        const pendingTxn = new TransactionDetails(result.txHash, currentDate, quantumWallet.address, sendAddress, sendQuantity, true);
+        App.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (App.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
+
+        setTimeout(() => {
+            hideWaitingBox();
+            showSendCompletedDialog(result.txHash, showWalletScreen);
+        }, 1000);
+    } catch (error) {
+        hideWaitingBox();
+
+        if (isNetworkError(error as { message: string })) {
+            showWarnAlert(langJson.errors.internetDisconnected);
+        } else {
+            showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+        }
+    }
+}
+
+export async function sendTokensSubmit(quantumWallet: Wallet): Promise<void> {
+    updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
+
+    try {
+        const sendAddress = inputById("txtSendAddress").value;
+        const sendQuantity = inputById("txtSendQuantity").value;
+        const contractAddress = byId("divCoinTokenToSend").textContent as string;
+        const resolvedTok = resolveGasForTx(TOKEN_SEND_GAS);
+        const gasLimitTok = parseInt(resolvedTok.gasLimit, 10);
+
+        const currentDate = new Date();
+        const result = await submitSendTokens({
+            rpcEndpoint: (App.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
+            chainId: parseInt(String((App.currentBlockchainNetwork as { networkId: number }).networkId), 10),
+            toAddress: sendAddress,
+            amount: sendQuantity,
+            contractAddress: contractAddress,
+            fromDecimals: getSwapTokenDecimals(contractAddress),
+            privateKey: await quantumWallet.getPrivateKey(),
+            publicKey: await quantumWallet.getPublicKey(),
+            gasLimit: gasLimitTok,
+            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
+        });
+
+        if (!result || !result.success || !result.txHash) {
+            hideWaitingBox();
+            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.invalidApiResponse));
+            return;
+        }
+
+        const pendingTxn = new TransactionDetails(result.txHash, currentDate, quantumWallet.address, contractAddress, "0", true);
+        App.pendingTransactionsMap.set(quantumWallet.address.toLowerCase() + (App.currentBlockchainNetwork as { index: number }).index.toString(), pendingTxn);
+
+        setTimeout(() => {
+            hideWaitingBox();
+            showSendCompletedDialog(result.txHash, showWalletScreen);
+        }, 1000);
+    } catch (error) {
+        hideWaitingBox();
+
+        if (isNetworkError(error as { message: string })) {
+            showWarnAlert(langJson.errors.internetDisconnected);
+        } else {
+            showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+        }
+    }
+}
+
+let sendCompletedPollingId: ReturnType<typeof setInterval> | null = null;
+let sendCompletedStatusRotateId: ReturnType<typeof setInterval> | null = null;
+let sendCompletedStatusStartTime = 0;
+let sendCompletedOnClose: (() => unknown) | null = null;
+let sendCompletedLastTxHash: string | null = null;
+const SEND_STATUS_MESSAGES = ["send-status-checking", "send-status-waiting", "send-status-checking-short"];
+const SEND_STATUS_ROTATE_MS = 3600;
+
+export function showSendCompletedDialog(txHash: string, onClose?: (() => unknown) | null): void {
+    sendCompletedLastTxHash = txHash;
+    sendCompletedOnClose = (typeof onClose === "function") ? onClose : null;
+
+    byId("pSendCompletedMessage").textContent =
+        (langJson && langJson.langValues && langJson.langValues["send-transaction-send-message-description"]) || "Your transaction has been submitted. It can take upto a minute to process the transaction. You may close this dialog now.";
+    byId("pSendCompletedTxHash").textContent = txHash || "";
+    const copyEl = byId("divSendCompletedCopy");
+    const explEl = byId("divSendCompletedExplorer");
+    if (copyEl) copyEl.title = (langJson && langJson.langValues && langJson.langValues["copy"]) || "Copy";
+    if (explEl) explEl.title = (langJson && langJson.langValues && langJson.langValues["block-explorer"]) || "Block Explorer";
+
+    setSendCompletedPending();
+
+    const dlg = byId<HTMLDialogElement>("modalSendCompleted");
+    dlg.style.display = "block";
+    dlg.showModal();
+
+    sendCompletedStatusStartTime = Date.now();
+    updateSendCompletedStatusText();
+    if (sendCompletedStatusRotateId) clearInterval(sendCompletedStatusRotateId);
+    sendCompletedStatusRotateId = setInterval(updateSendCompletedStatusText, SEND_STATUS_ROTATE_MS);
+    if (sendCompletedPollingId) clearInterval(sendCompletedPollingId);
+    sendCompletedPollingId = setInterval(pollSendCompletedStatus, 9000);
+    pollSendCompletedStatus();
+}
+
+export function setSendCompletedPending(): void {
+    byId<HTMLImageElement>("imgSendCompletedStatus").src = "assets/icons/loading.gif";
+    byId<HTMLImageElement>("imgSendCompletedStatus").alt = "Loading";
+    updateSendCompletedStatusText();
+}
+
+export function setSendCompletedSucceeded(): void {
+    byId<HTMLImageElement>("imgSendCompletedStatus").src = "assets/svg/checkmark-circle-outline.svg";
+    byId<HTMLImageElement>("imgSendCompletedStatus").alt = "Success";
+    byId("spanSendCompletedStatus").textContent =
+        (langJson && langJson.langValues && langJson.langValues["send-transaction-succeeded"]) || "Transaction completed successfully.";
+}
+
+export function setSendCompletedFailed(errorText: string): void {
+    byId<HTMLImageElement>("imgSendCompletedStatus").src = "assets/svg/alert-outline.svg";
+    byId<HTMLImageElement>("imgSendCompletedStatus").alt = "Failed";
+    const base = (langJson && langJson.langValues && langJson.langValues["send-transaction-failed"]) || "Transaction failed.";
+    byId("spanSendCompletedStatus").textContent = errorText ? (base + " " + errorText) : base;
+}
+
+export function updateSendCompletedStatusText(): void {
+    if (byId<HTMLImageElement>("imgSendCompletedStatus").alt !== "Loading") return;
+    const idx = Math.floor((Date.now() - sendCompletedStatusStartTime) / SEND_STATUS_ROTATE_MS) % SEND_STATUS_MESSAGES.length;
+    const key = SEND_STATUS_MESSAGES[idx];
+    const text = (langJson && langJson.langValues && langJson.langValues[key]) || key;
+    byId("spanSendCompletedStatus").textContent = text;
+}
+
+export async function pollSendCompletedStatus(): Promise<void> {
+    if (!sendCompletedLastTxHash || !App.currentBlockchainNetwork) return;
+    try {
+        const res = await getTransactionStatusByHash(App.currentBlockchainNetwork.scanApiDomain, App.currentWalletAddress, sendCompletedLastTxHash);
+        if (res.status === "succeeded") {
+            stopSendCompletedTimers();
+            setSendCompletedSucceeded();
+            await refreshAccountBalance();
+        } else if (res.status === "failed") {
+            stopSendCompletedTimers();
+            setSendCompletedFailed(res.error || "");
+        }
+    } catch {
+        /* keep polling */
+    }
+}
+
+export function stopSendCompletedTimers(): void {
+    if (sendCompletedPollingId) { clearInterval(sendCompletedPollingId); sendCompletedPollingId = null; }
+    if (sendCompletedStatusRotateId) { clearInterval(sendCompletedStatusRotateId); sendCompletedStatusRotateId = null; }
+}
+
+export function closeSendCompletedDialog(): void {
+    stopSendCompletedTimers();
+    sendCompletedLastTxHash = null;
+    const dlg = byId<HTMLDialogElement>("modalSendCompleted");
+    dlg.style.display = "none";
+    dlg.close();
+    const cb = sendCompletedOnClose;
+    sendCompletedOnClose = null;
+    if (cb) cb();
+}
+
+export async function copySendCompletedTxHash(): Promise<void> {
+    if (sendCompletedLastTxHash) await WriteTextToClipboard(sendCompletedLastTxHash);
+}
+
+export async function openSendCompletedInExplorer(): Promise<void> {
+    if (sendCompletedLastTxHash) await OpenScanTxn(sendCompletedLastTxHash);
+}
+
+// The old send.js bound these at script-eval time (after the static body existed).
+export function initSend(): void {
+    byId("btnSendCompletedOk").addEventListener("click", function () { closeSendCompletedDialog(); });
+    byId("divSendCompletedCopy").addEventListener("click", function (event) { const el = event.currentTarget as HTMLElement; copySendCompletedTxHash().then(function () { el.blur(); }); });
+    byId("divSendCompletedExplorer").addEventListener("click", function (event) { const el = event.currentTarget as HTMLElement; openSendCompletedInExplorer().then(function () { el.blur(); }); });
+}
