@@ -83,7 +83,18 @@ export async function getSwapQuoteAmountsIn(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SwapQuoteGetAmountsIn", payload);
 }
 
-export async function getSwapCheckPairExists(payload: unknown): Promise<any> {
+// Route check result: `exists` is true when a direct pair OR a multi-hop route
+// exists. `path` is the address route ([from, ...hops, to]) and `pathSymbols`
+// the on-chain symbol per path token (null entries when the lookup failed).
+// Symbols are untrusted RPC data; sanitize before display.
+export interface SwapCheckPairExistsResult {
+    exists: boolean;
+    path: string[] | null;
+    pathSymbols: (string | null)[] | null;
+    error: string | null;
+}
+
+export async function getSwapCheckPairExists(payload: unknown): Promise<SwapCheckPairExistsResult> {
     return await SwapQuoteApi.send("SwapQuoteCheckPairExists", payload);
 }
 

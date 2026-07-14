@@ -11,6 +11,7 @@ import {
     submitSwapSwap,
     weiToEtherFormatted,
     WriteTextToClipboard,
+    SwapCheckPairExistsResult,
 } from "../lib/bridge";
 import { htmlEncode } from "../lib/util";
 import { langJson } from "../lib/i18n";
@@ -295,6 +296,84 @@ export function getSwapCachedSymbol(value: string): string {
     return swapTokenSymbolCache[value] != null ? swapTokenSymbolCache[value] : getSwapSymbolFromValue(value);
 }
 
+// ---- Multi-hop swap route display ----
+// Current route as returned by the route check: array of { address, symbol }.
+export interface SwapRouteEntry {
+    address: string;
+    symbol: string | null;
+}
+
+let swapCurrentRoute: SwapRouteEntry[] | null = null;
+const SWAP_ROUTE_SYMBOL_MAX_LENGTH = 12;
+
+// Sanitize an untrusted token symbol for display: strip spoofing Unicode
+// (bidi/zero-width/control) and HTML-special characters (harmless via
+// textContent, removed for defense in depth), then cap the length. Returns ""
+// when nothing displayable remains.
+export function sanitizeSwapSymbolForDisplay(raw: unknown): string {
+    if (raw == null) return "";
+    const s = String(raw)
+        // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+        .replace(/[\u202A-\u202E\u2066-\u2069\u200B-\u200D\u2060\uFEFF\u0000-\u001F\u007F-\u009F]/g, "")
+        .replace(/[<>&"'`]/g, "");
+    return s.substring(0, SWAP_ROUTE_SYMBOL_MAX_LENGTH).trim();
+}
+
+// Display text for one route token. Prefers the wallet's own (already filtered)
+// symbol; otherwise the on-chain symbol returned by the route check. Both are
+// untrusted, so the value is sanitized (spoofing/HTML-special characters
+// stripped, length-capped); only when no displayable symbol remains does the
+// shortened contract address appear. Rendered via textContent only.
+export function getSwapRouteDisplaySymbol(address: string, symbol: string | null): string {
+    const addrLower = String(address || "").toLowerCase();
+    let candidate: string | null = null;
+    if (tokenStore.currentWalletTokenList != null) {
+        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
+            const t = tokenStore.currentWalletTokenList[i];
+            if (t.contractAddress && String(t.contractAddress).toLowerCase() === addrLower && t.symbol) {
+                candidate = t.symbol;
+                break;
+            }
+        }
+    }
+    if (candidate == null && symbol != null) candidate = symbol;
+    const s = sanitizeSwapSymbolForDisplay(candidate);
+    if (s !== "") return s;
+    const addr = String(address || "");
+    return addr.length >= 12 ? addr.substring(0, 6) + "..." + addr.slice(-4) : addr;
+}
+
+export function updateSwapRoutePathDisplay(route: SwapRouteEntry[] | null): void {
+    swapCurrentRoute = (route && route.length >= 2) ? route : null;
+    const container = byId("divSwapRoutePath");
+    const span = byId("spanSwapRoutePath");
+    if (!container || !span) return;
+    if (!swapCurrentRoute) {
+        span.textContent = "";
+        container.style.display = "none";
+        return;
+    }
+    const parts: string[] = [];
+    for (let i = 0; i < swapCurrentRoute.length; i++) {
+        parts.push(getSwapRouteDisplaySymbol(swapCurrentRoute[i].address, swapCurrentRoute[i].symbol));
+    }
+    span.textContent = parts.join(" -> ");
+    container.style.display = "block";
+}
+
+// Build the { address, symbol } route list from a SwapQuoteCheckPairExists result.
+export function buildSwapRouteFromCheckResult(result: SwapCheckPairExistsResult | null): SwapRouteEntry[] | null {
+    if (!result || result.exists !== true || !result.path || result.path.length < 2) return null;
+    const route: SwapRouteEntry[] = [];
+    for (let i = 0; i < result.path.length; i++) {
+        route.push({
+            address: result.path[i],
+            symbol: (result.pathSymbols && result.pathSymbols[i] != null) ? result.pathSymbols[i] : null,
+        });
+    }
+    return route;
+}
+
 let swapQuantityUpdating = false;
 let swapQuoteFromDebounceId: ReturnType<typeof setTimeout> | null = null;
 let swapLastChanged: "from" | "to" = "from"; // which quantity the user last edited
@@ -434,9 +513,11 @@ export function debouncedUpdateFromQuantityFromTo(): void {
 }
 
 export async function updateSwapScreenInfo(): Promise<boolean> {
-    // Runs when either "from" or "to" token dropdown is changed. Check pair and show same error if pair doesn't exist.
+    // Runs when either "from" or "to" token dropdown is changed. Find a swap route
+    // (direct pair or multi-hop) and show an error when no route exists.
     inputById("txtSwapFromQuantity").value = "";
     inputById("txtSwapToQuantity").value = "";
+    updateSwapRoutePathDisplay(null);
     updateSwapBalanceLabels();
     const fromValue = selectById("ddlSwapFromToken").value;
     const toValue = selectById("ddlSwapToToken").value;
@@ -454,11 +535,13 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
         };
         const result = await getSwapCheckPairExists(payload);
         pairExists = result && result.exists === true;
-        if (!pairExists) {
+        if (pairExists) {
+            updateSwapRoutePathDisplay(buildSwapRouteFromCheckResult(result));
+        } else {
             if (result && result.error) {
                 showWarnAlert(result.error);
             } else {
-                showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]) || "No pair has been created for these two tokens");
+                showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]) || "No swap route exists between these two tokens (max 3 hops)");
             }
             inputById("txtSwapToQuantity").value = "";
         }
@@ -492,6 +575,7 @@ export function openSwapScreen(): boolean {
     populateSwapTokenDropdowns();
     inputById("txtSwapFromQuantity").value = "";
     inputById("txtSwapToQuantity").value = "";
+    updateSwapRoutePathDisplay(null);
     inputById("txtSwapFromQuantity").focus();
     updateSwapBalanceLabels();
     resetCurrentGasConfig();
@@ -606,6 +690,7 @@ export async function onSwapNextClick(): Promise<boolean> {
         const result = await getSwapCheckPairExists(payload);
         pairExists = result && result.exists === true;
         if (!pairExists) {
+            updateSwapRoutePathDisplay(null);
             if (result && result.error) {
                 showWarnAlert(result.error);
             } else {
@@ -613,6 +698,7 @@ export async function onSwapNextClick(): Promise<boolean> {
             }
             return false;
         }
+        updateSwapRoutePathDisplay(buildSwapRouteFromCheckResult(result));
     } catch (e: any) {
         showWarnAlert((e && e.message) ? e.message : String(e));
         return false;
@@ -989,10 +1075,21 @@ export function showSwapExecuteConfirmDialog(): void {
     const toValue = selectById("ddlSwapToToken").value;
     const fromAmt = (inputById("txtSwapFromQuantity").value || "").trim();
     const toAmt = (inputById("txtSwapToQuantity").value || "").trim();
-    function sym(v: string): string { return v === "Q" ? "Q" : (String(v).length > 10 ? String(v).slice(0, 6) + "..." + String(v).slice(-4) : v); }
+    // Prefer the wallet's own token symbol, falling back to the shortened
+    // address only when no symbol is available.
+    function sym(v: string): string { return v === "Q" ? "Q" : getSwapRouteDisplaySymbol(v, null); }
     const resolved = resolveGasForTx(SWAP_DEFAULT_GAS);
+    // Show the full multi-hop route when one was resolved, otherwise from -> to.
+    let assetText = sym(fromValue) + " -> " + sym(toValue);
+    if (swapCurrentRoute && swapCurrentRoute.length >= 2) {
+        const routeParts: string[] = [];
+        for (let ri = 0; ri < swapCurrentRoute.length; ri++) {
+            routeParts.push(getSwapRouteDisplaySymbol(swapCurrentRoute[ri].address, swapCurrentRoute[ri].symbol));
+        }
+        assetText = routeParts.join(" -> ");
+    }
     const review: TransactionReview = {
-        asset: sym(fromValue) + " -> " + sym(toValue),
+        asset: assetText,
         contractAddress: getSwapContractAddress(fromValue),
         toAddress: walletStore.currentWalletAddress,
         quantityLabelKey: "send-quantity",

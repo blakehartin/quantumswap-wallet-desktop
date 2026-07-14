@@ -104,6 +104,11 @@ function buildSwapMainPanel(): HTMLElement {
             }),
             el("div", { class: "divider" }),
         ]),
+        el("div", { id: "divSwapRoutePath", style: "display: none; font-size: 0.85em; color: #372339; margin-top:6px; word-break: break-all;" }, [
+            el("span", { "data-lang-key": "swap-route" }, ["Route"]),
+            ": ",
+            el("span", { id: "spanSwapRoutePath" }),
+        ]),
         el("div", { style: "display: flex; align-items: center; justify-content: flex-end; gap: 10px;margin-top:10px;" }, [
             el("div", { id: "divSwapQuoteLoading", style: "display: none;" }, [
                 el("img", { src: "assets/icons/loading.gif", alt: "Loading", style: "width:30px; height:30px;" }),

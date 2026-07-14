@@ -3,7 +3,6 @@ import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk"
 import {
     SWAP_WQ_CONTRACT_ADDRESS,
     SWAP_ROUTER_V2_CONTRACT_ADDRESS,
-    SWAP_FACTORY_CONTRACT_ADDRESS,
     createQuantumRpcProvider,
     initRpcUrlForConfig,
     sanitizeSwapError,
@@ -12,12 +11,13 @@ import {
     normalizeAmountString,
     signingOverrides,
 } from "../rpc";
+import { findSwapPath, getSwapPathSymbols, mapSwapTokenValue, resolveSwapPath } from "../swap-routing";
 
 export function registerSwapHandlers(): void {
     ipcMain.handle("SwapQuoteGetAmountsOut", async (_event, data) => {
         try {
             const { Initialize, Config } = loadQuantumCoinConfig();
-            const { parseUnits, formatUnits, getAddress } = loadQuantumCoin();
+            const { parseUnits, formatUnits } = loadQuantumCoin();
             const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
@@ -29,9 +29,7 @@ export function registerSwapHandlers(): void {
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
             const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
 
-            const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const path = [getAddress(fromAddr), getAddress(toAddr)];
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
 
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
@@ -47,38 +45,40 @@ export function registerSwapHandlers(): void {
         }
     });
 
+    // Route check: `exists` is true when a direct pair OR a multi-hop route (max
+    // 3 intermediates) exists. `path` is the address route and `pathSymbols` the
+    // on-chain symbol for each path token (null entries when the lookup failed).
+    // Symbols are untrusted; the UI sanitizes before display.
     ipcMain.handle("SwapQuoteCheckPairExists", async (_event, data) => {
         try {
             const { Initialize, Config } = loadQuantumCoinConfig();
-            const { getAddress, ZeroAddress } = loadQuantumCoin();
-            const { QuantumSwapV2Factory } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
-            if (!Number.isInteger(chainId)) return { exists: false, error: "Invalid chain ID" };
+            if (!Number.isInteger(chainId)) return { exists: false, path: null, pathSymbols: null, error: "Invalid chain ID" };
 
             const provider = createQuantumRpcProvider(data.rpcEndpoint, chainId);
-            if (!provider) return { exists: false, error: "Invalid RPC endpoint" };
+            if (!provider) return { exists: false, path: null, pathSymbols: null, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const factory = QuantumSwapV2Factory.connect(SWAP_FACTORY_CONTRACT_ADDRESS, provider);
+            const path = await findSwapPath(
+                provider,
+                chainId,
+                mapSwapTokenValue(data.fromTokenValue),
+                mapSwapTokenValue(data.toTokenValue)
+            );
+            if (!path) return { exists: false, path: null, pathSymbols: null, error: null };
 
-            const tokenA = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const tokenB = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const pairAddr = await factory.getPair(getAddress(tokenA), getAddress(tokenB));
-            const pairAddrStr = typeof pairAddr === "string" ? pairAddr : String(pairAddr);
-            const zeroAddr = ZeroAddress || "0x0000000000000000000000000000000000000000000000000000000000000000";
-            const exists = !!(pairAddrStr && pairAddrStr !== zeroAddr && pairAddrStr !== "0x" + "0".repeat(64));
-
-            return { exists, error: null };
+            const pathSymbols = await getSwapPathSymbols(provider, chainId, path);
+            return { exists: true, path, pathSymbols, error: null };
         } catch (err) {
-            return { exists: false, error: sanitizeSwapError(err) };
+            return { exists: false, path: null, pathSymbols: null, error: sanitizeSwapError(err) };
         }
     });
 
     ipcMain.handle("SwapQuoteGetAmountsIn", async (_event, data) => {
         try {
             const { Initialize, Config } = loadQuantumCoinConfig();
-            const { parseUnits, formatUnits, getAddress } = loadQuantumCoin();
+            const { parseUnits, formatUnits } = loadQuantumCoin();
             const { QuantumSwapV2Router02 } = loadQuantumSwap();
 
             const chainId = Number(data.chainId);
@@ -90,9 +90,7 @@ export function registerSwapHandlers(): void {
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
             const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
 
-            const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const path = [getAddress(fromAddr), getAddress(toAddr)];
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
 
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
@@ -123,9 +121,7 @@ export function registerSwapHandlers(): void {
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
             const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
 
-            const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const path = [getAddress(fromAddr), getAddress(toAddr)];
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const toAddress = data.recipientAddress || data.toAddress;
@@ -251,9 +247,7 @@ export function registerSwapHandlers(): void {
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
             const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
 
-            const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const path = [getAddress(fromAddr), getAddress(toAddr)];
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const deadline = await getSwapTxDeadline(provider, 1200);
@@ -369,9 +363,7 @@ export function registerSwapHandlers(): void {
             const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
 
             const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, wallet);
-            const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-            const path = [getAddress(fromAddr), getAddress(toAddr)];
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const deadline = await getSwapTxDeadline(provider, 1200);

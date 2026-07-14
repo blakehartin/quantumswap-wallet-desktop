@@ -9,6 +9,7 @@ import {
     normalizeAmountString,
 } from "../rpc";
 import { STAKING_CONTRACT_ADDRESS, STAKING_ABI_JSON, STAKING_ALLOWED_METHODS, prepareStakingMethodArgs } from "../stakingAbi";
+import { resolveSwapPath } from "../swap-routing";
 
 const GAS_ESTIMATE_BUFFER_PERCENT = 10;
 const WEI_PER_ETH = 1000000000000000000n;
@@ -94,9 +95,7 @@ async function buildEstimateGasTx(data: any, provider: any): Promise<Record<stri
 
     if (txKind === "swap") {
         const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
-        const fromAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-        const toAddr = data.toTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.toTokenValue;
-        const path = [getAddress(fromAddr), getAddress(toAddr)];
+        const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
         const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
         const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
         const toAddress = data.recipientAddress || data.toAddress;
