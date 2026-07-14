@@ -17,9 +17,9 @@
   "license": "MIT",
   "dependencies": {
     "electron-squirrel-startup": "^1.0.0",
-    "quantumcoin": "^7.0.15",
-    "quantumswap": "^0.0.9",
-    "seed-words": "^1.0.2",
+    "quantumcoin": "^8.0.2",
+    "quantumswap": "^1.0.2",
+    "seed-words": "^1.1.1",
     "sjcl": "^1.0.8"
   },
   "devDependencies": {
