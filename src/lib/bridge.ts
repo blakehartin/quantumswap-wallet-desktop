@@ -122,8 +122,8 @@ export async function getSwapApproveContractData(payload: unknown): Promise<any>
     return await SwapQuoteApi.send("SwapQuoteGetApproveContractData", payload);
 }
 
-export async function getSwapRouterAddress(): Promise<any> {
-    return await SwapQuoteApi.send("SwapQuoteGetRouterAddress", {});
+export async function getSwapRouterAddress(payload: unknown = {}): Promise<any> {
+    return await SwapQuoteApi.send("SwapQuoteGetRouterAddress", payload);
 }
 
 export async function getSwapSwapContractData(payload: unknown): Promise<any> {

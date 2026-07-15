@@ -40,6 +40,19 @@ export function showYesNoConfirm(txt: string, onConfirm: () => void): void {
     modalYesNoDialog.showModal();
 }
 
+// Release-switch password prompt: the default swap release index is stored
+// encrypted with the wallet main key, so switching requires the password.
+let modalReleasePassword: HTMLDialogElement;
+let onReleasePasswordOk: ((password: string) => void) | null = null;
+
+export function showReleasePasswordDialog(onOk: (password: string) => void): void {
+    inputById("pwdReleasePassword").value = "";
+    onReleasePasswordOk = onOk;
+    modalReleasePassword.style.display = "block";
+    modalReleasePassword.showModal();
+    inputById("pwdReleasePassword").focus();
+}
+
 //Gas configuration
 let modalGasConfig: HTMLDialogElement;
 let onGasConfigOk: ((result: { gasLimit: string; gasFee: string }) => void) | null = null;
@@ -409,6 +422,10 @@ export function initDialogs(): void {
     const btnGasConfigOk = byId("btnGasConfigOk");
     const btnGasConfigCancel = byId("btnGasConfigCancel");
 
+    modalReleasePassword = byId<HTMLDialogElement>("modalReleasePassword");
+    const btnReleasePasswordOk = byId("btnReleasePasswordOk");
+    const btnReleasePasswordCancel = byId("btnReleasePasswordCancel");
+
     modalNetwork = byId<HTMLDialogElement>("modalNetworkDialog");
     const spanNetwork = document.getElementsByClassName("oknetwork")[0] as HTMLElement;
     const spanCancelNetwork = byId("divCancelNetwork");
@@ -471,6 +488,29 @@ export function initDialogs(): void {
         modalGasConfig.style.display = "none";
         modalGasConfig.close();
         onGasConfigOk = null;
+    };
+
+    btnReleasePasswordOk.onclick = function () {
+        const password = inputById("pwdReleasePassword").value;
+        if (password == null || password === "") {
+            showWarnAlert(langJson.errors.enterWalletPassord);
+            return;
+        }
+        modalReleasePassword.style.display = "none";
+        modalReleasePassword.close();
+        inputById("pwdReleasePassword").value = "";
+        const cb = onReleasePasswordOk;
+        onReleasePasswordOk = null;
+        if (cb != null) {
+            cb(password);
+        }
+    };
+
+    btnReleasePasswordCancel.onclick = function () {
+        modalReleasePassword.style.display = "none";
+        modalReleasePassword.close();
+        inputById("pwdReleasePassword").value = "";
+        onReleasePasswordOk = null;
     };
 
     span.onclick = function () {
@@ -629,7 +669,7 @@ export function initDialogs(): void {
     // Click on the dialog backdrop closes the open modal (same target checks as
     // the old window.onclick handler).
     window.onclick = function (event: MouseEvent) {
-        if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalSubmit || event.target == modalTransactionReview || event.target == modalSendCompleted || event.target == modalGasConfig) {
+        if (event.target == modalOkDialog || event.target == modalConfirm || event.target == modalYesNoDialog || event.target == modalNetwork || event.target == modaOfflineTxnSigning || event.target == modalAdvancedSigning || event.target == modalOfflineSignature || event.target == modalSwapApprovalSubmit || event.target == modalTransactionReview || event.target == modalSendCompleted || event.target == modalGasConfig || event.target == modalReleasePassword) {
             if (modalOkDialog.style.display !== "none") {
                 modalNetwork.style.display = "none";
                 modalNetwork.close();
@@ -677,6 +717,12 @@ export function initDialogs(): void {
                 modalGasConfig.style.display = "none";
                 modalGasConfig.close();
                 onGasConfigOk = null;
+            }
+            if (modalReleasePassword && modalReleasePassword.style.display !== "none") {
+                modalReleasePassword.style.display = "none";
+                modalReleasePassword.close();
+                inputById("pwdReleasePassword").value = "";
+                onReleasePasswordOk = null;
             }
         }
     };

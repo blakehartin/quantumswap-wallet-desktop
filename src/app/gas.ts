@@ -5,6 +5,7 @@ import { estimateGas, estimateGasFee } from "../lib/bridge";
 import { byId, GasState, networkStore, TxContext, walletStore } from "./state";
 import { showGasConfigDialog } from "./dialog";
 import { advancedSigningGetDefaultValue, offlineTxnSigningGetDefaultValue } from "./settings";
+import { applySwapReleaseToPayload } from "./release";
 
 export const SWAP_GAS_FEE_RATE = 1000 / 21000;
 
@@ -127,6 +128,9 @@ export function buildEstimateGasPayload(ctx: TxContext): Record<string, unknown>
     if (ctx.methodArgs) payload.methodArgs = ctx.methodArgs;
     if (ctx.value != null) payload.value = ctx.value;
     if (ctx.bufferPercent != null) payload.bufferPercent = ctx.bufferPercent;
+    if (ctx.txKind === "swap" || ctx.txKind === "approve") {
+        applySwapReleaseToPayload(payload);
+    }
     return payload;
 }
 

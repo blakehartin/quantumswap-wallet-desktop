@@ -319,6 +319,40 @@ function buildGasConfigDialog(): HTMLElement {
     ]);
 }
 
+// Small wallet-password prompt used when switching the default swap release:
+// the default index is stored encrypted with the wallet main key, so every
+// switch needs the password.
+function buildReleasePasswordDialog(): HTMLElement {
+    return el("dialog", { id: "modalReleasePassword", class: "modal", tabindex: "-1", role: "dialog" }, [
+        el("div", { class: "modal-content", style: "margin:10% auto; max-width:460px;" }, [
+            el("h3", { "data-lang-key": "release-password-title", style: "margin-top:0;" }, ["Switch Release"]),
+            el("div", { class: "input_container", style: "margin-top:10px;" }, [
+                el("div", { class: "heading medium", "data-lang-key": "enter-wallet-password" }, ["Enter Quantum Wallet Password"]),
+                el("div", { style: "width:100%;display:flex;align-items:center;" }, [
+                    el("div", { style: "width: 80%;" }, [
+                        el("input", {
+                            class: "tab-name qs-input-strong",
+                            type: "password", autocomplete: "off", id: "pwdReleasePassword", name: "password",
+                            "data-placeholder-key": "password", placeholder: "Enter the password", tabindex: "1",
+                        }),
+                    ]),
+                    el("div", {}, [
+                        el("img", {
+                            src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye",
+                            role: "button", tabindex: "2",
+                            onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "pwdReleasePassword"),
+                        }),
+                    ]),
+                ]),
+            ]),
+            el("div", { style: "margin-top:20px; display:flex; gap:15px; justify-content:flex-end;" }, [
+                el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "4", id: "btnReleasePasswordCancel" }, ["Cancel"]),
+                el("button", { class: "proceed", "data-lang-key": "ok", role: "button", tabindex: "3", id: "btnReleasePasswordOk" }, ["Ok"]),
+            ]),
+        ]),
+    ]);
+}
+
 function buildGasToast(): HTMLElement {
     return el("div", { id: "divGasToast", class: "gas-toast", role: "status", "aria-live": "polite" });
 }
@@ -360,6 +394,7 @@ export const dialogModules: ScreenModule[] = [
     { parentId: null, build: buildOfflineSignatureDialog },
     { parentId: null, build: buildTransactionReviewDialog },
     { parentId: null, build: buildGasConfigDialog },
+    { parentId: null, build: buildReleasePasswordDialog },
     { parentId: null, build: buildGasToast },
     { parentId: null, build: buildSendCompletedDialog },
 ];

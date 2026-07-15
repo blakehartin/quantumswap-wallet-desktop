@@ -45,3 +45,43 @@ img.qs-eye {
     cursor: pointer;
     width: 20px;
 }
+
+/* Standout warning strip shown just below the logo whenever a non-built-in
+   swap release is active (see updateCustomReleaseBanner in app/release.ts).
+   Kept thin (small font, minimal padding) so on the home screen it ends above
+   the address row of the wallet card that overlaps the header band. */
+.custom-release-banner {
+    width: 100%;
+    box-sizing: border-box;
+    background: #ff9800;
+    color: #1a1a1a;
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1.3;
+    letter-spacing: 0.06em;
+    text-align: center;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-bottom: 1px solid #b26500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The banner must paint above the wallet cards (.tabs-content /
+   .tabs-wallet-content, z-index 11), which deliberately overlap the band's
+   bottom edge. The quantum theme's .gradient { z-index: 10 } would create a
+   stacking context that traps the banner beneath the cards, so relax it to
+   auto: the band still paints above the ambient orbs (z 0, earlier in the
+   DOM) and still sits below the cards, but the banner's own z-index now wins. */
+.gradient {
+    z-index: auto;
+}
+
+/* Release banner (when shown) takes its own full row below the logo row. */
+.gradient .custom-release-banner {
+    flex: 1 0 100%;
+    order: 1;
+    position: relative;
+    z-index: 12;
+}

@@ -4,7 +4,7 @@
 // hop candidates (wrapped Q + the recognized tokens), with at most
 // SWAP_MAX_INTERMEDIATE_HOPS tokens between the from- and to-token.
 import { loadQuantumCoin, loadQuantumSwap } from "./sdk";
-import { SWAP_WQ_CONTRACT_ADDRESS, SWAP_FACTORY_CONTRACT_ADDRESS } from "./rpc";
+import { SwapReleaseAddresses } from "./rpc";
 import { searchSwapPath, SWAP_NO_ROUTE_ERROR } from "./swap-path-search";
 
 export { SWAP_NO_ROUTE_ERROR };
@@ -17,8 +17,8 @@ export const RECOGNIZED_TOKEN_CONTRACT_ADDRESSES = [
     "0xa8036870874fbed790ed4d3bbd41b2f390b9858ff021f2993e90c6d1cbb167c7", // Y2Q
 ];
 
-function swapHopCandidateAddresses(): string[] {
-    return [SWAP_WQ_CONTRACT_ADDRESS, ...RECOGNIZED_TOKEN_CONTRACT_ADDRESSES];
+function swapHopCandidateAddresses(release: SwapReleaseAddresses): string[] {
+    return [release.wq, ...RECOGNIZED_TOKEN_CONTRACT_ADDRESSES];
 }
 
 // Route + symbol caches. Pairs rarely change, so a short TTL avoids re-querying
@@ -27,8 +27,8 @@ const SWAP_ROUTE_CACHE_TTL_MS = 60000;
 const swapRouteCache = new Map<string, { path: string[] | null; at: number }>();
 const swapPathSymbolCache = new Map<string, string>();
 
-export function mapSwapTokenValue(value: string): string {
-    return value === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : value;
+export function mapSwapTokenValue(value: string, release: SwapReleaseAddresses): string {
+    return value === "Q" ? release.wq : value;
 }
 
 async function factoryPairExists(factory: any, tokenA: string, tokenB: string): Promise<boolean> {
@@ -54,18 +54,19 @@ export async function findSwapPath(
     chainId: number,
     fromAddrRaw: string,
     toAddrRaw: string,
+    release: SwapReleaseAddresses,
 ): Promise<string[] | null> {
     const { getAddress } = loadQuantumCoin();
     const { QuantumSwapV2Factory } = loadQuantumSwap();
 
     const fromAddr = getAddress(fromAddrRaw);
     const toAddr = getAddress(toAddrRaw);
-    // The factory address is part of the key so a route cached for one pair set
-    // is never served for another (mirrors the extension's per-release keying).
+    // The release's factory address is part of the key so a route cached for
+    // one release is never served for another.
     const cacheKey =
         chainId +
         "|" +
-        SWAP_FACTORY_CONTRACT_ADDRESS.toLowerCase() +
+        release.factory.toLowerCase() +
         "|" +
         fromAddr.toLowerCase() +
         "|" +
@@ -73,10 +74,10 @@ export async function findSwapPath(
     const cached = swapRouteCache.get(cacheKey);
     if (cached && Date.now() - cached.at < SWAP_ROUTE_CACHE_TTL_MS) return cached.path;
 
-    const factory = QuantumSwapV2Factory.connect(SWAP_FACTORY_CONTRACT_ADDRESS, provider);
+    const factory = QuantumSwapV2Factory.connect(release.factory, provider);
     const seen = new Set([fromAddr.toLowerCase(), toAddr.toLowerCase()]);
     const hops: string[] = [];
-    for (const h of swapHopCandidateAddresses()) {
+    for (const h of swapHopCandidateAddresses(release)) {
         const addr = getAddress(h);
         if (seen.has(addr.toLowerCase())) continue;
         seen.add(addr.toLowerCase());
@@ -99,12 +100,14 @@ export async function resolveSwapPath(
     chainId: number,
     fromTokenValue: string,
     toTokenValue: string,
+    release: SwapReleaseAddresses,
 ): Promise<string[]> {
     const path = await findSwapPath(
         provider,
         chainId,
-        mapSwapTokenValue(fromTokenValue),
-        mapSwapTokenValue(toTokenValue),
+        mapSwapTokenValue(fromTokenValue, release),
+        mapSwapTokenValue(toTokenValue, release),
+        release,
     );
     if (!path) throw new Error(SWAP_NO_ROUTE_ERROR);
     return path;

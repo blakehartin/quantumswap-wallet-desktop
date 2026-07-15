@@ -56,6 +56,7 @@ import {
 } from "./dialog";
 import { getGenericError, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
 import { showSendCompletedDialog } from "./send";
+import { applySwapReleaseToPayload } from "./release";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
 
@@ -157,14 +158,14 @@ export async function updateSwapFromAllowanceDisplay(): Promise<void> {
         return;
     }
     try {
-        const allowancePayload = {
+        const allowancePayload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
             ownerAddress: walletStore.currentWalletAddress,
             requiredAmount: "0",
             fromDecimals: getSwapTokenDecimals(fromValue),
-        };
+        });
         const result = await getSwapCheckAllowance(allowancePayload);
         if (!result || !result.success || !result.allowance) {
             row.style.display = "none";
@@ -419,7 +420,7 @@ export async function updateToQuantityFromFrom(): Promise<void> {
     swapQuantityUpdating = true;
     showSwapQuoteLoading(true);
     try {
-        const payload = {
+        const payload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10) || 123123,
             amountIn: fromQtyStr,
@@ -427,7 +428,7 @@ export async function updateToQuantityFromFrom(): Promise<void> {
             toTokenValue: toValue,
             fromDecimals: getSwapTokenDecimals(fromValue),
             toDecimals: getSwapTokenDecimals(toValue),
-        };
+        });
         const result = await getSwapQuoteAmountsOut(payload);
         if (result && result.success && result.amountOut != null) {
             const outStr = String(result.amountOut).replace(/\.?0+$/, "") || result.amountOut;
@@ -476,7 +477,7 @@ export async function updateFromQuantityFromTo(): Promise<void> {
     swapQuantityUpdating = true;
     showSwapQuoteLoading(true);
     try {
-        const payload = {
+        const payload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             amountOut: toQtyStr,
@@ -484,7 +485,7 @@ export async function updateFromQuantityFromTo(): Promise<void> {
             toTokenValue: toValue,
             fromDecimals: getSwapTokenDecimals(fromValue),
             toDecimals: getSwapTokenDecimals(toValue),
-        };
+        });
         const result = await getSwapQuoteAmountsIn(payload);
         if (result && result.success && result.amountIn != null) {
             const inStr = String(result.amountIn).replace(/\.?0+$/, "") || result.amountIn;
@@ -527,12 +528,12 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
     if (!networkStore.currentBlockchainNetwork) return false;
     let pairExists = false;
     try {
-        const payload = {
+        const payload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10) || 123123,
             fromTokenValue: fromValue,
             toTokenValue: toValue,
-        };
+        });
         const result = await getSwapCheckPairExists(payload);
         pairExists = result && result.exists === true;
         if (pairExists) {
@@ -681,12 +682,12 @@ export async function onSwapNextClick(): Promise<boolean> {
     if (!networkStore.currentBlockchainNetwork) return false;
     let pairExists = false;
     try {
-        const payload = {
+        const payload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
             toTokenValue: toValue,
-        };
+        });
         const result = await getSwapCheckPairExists(payload);
         pairExists = result && result.exists === true;
         if (!pairExists) {
@@ -706,14 +707,14 @@ export async function onSwapNextClick(): Promise<boolean> {
     byId("divSwapScreenInner").style.display = "none";
     setSwapConfirmPanelLoading(true);
     try {
-        const allowancePayload = {
+        const allowancePayload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
             chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
             fromTokenValue: fromValue,
             ownerAddress: walletStore.currentWalletAddress,
             requiredAmount: fromQty,
             fromDecimals: getSwapTokenDecimals(fromValue),
-        };
+        });
         const allowanceResult = await getSwapCheckAllowance(allowancePayload);
         if (!allowanceResult || !allowanceResult.success) {
             showWarnAlert((allowanceResult && allowanceResult.error) ? allowanceResult.error : "Failed to check approval");
@@ -838,7 +839,7 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
     const slippagePercent = parseFloat(inputById("txtSwapSlippage").value) || 1;
     const gas = parseInt(resolveGasForTx(SWAP_DEFAULT_GAS).gasLimit, 10);
     try {
-        const result = await submitSwapSwap({
+        const result = await submitSwapSwap(applySwapReleaseToPayload({
             rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
             chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
@@ -854,7 +855,7 @@ export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void
             publicKey: await quantumWallet.getPublicKey(),
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        });
+        }));
         hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setSwapConfirmPanelWaitingForApprovalTx(false);
@@ -874,7 +875,7 @@ export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): P
     const fromValue = selectById("ddlSwapFromToken").value;
     const gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
     try {
-        const result = await submitSwapRemoveAllowance({
+        const result = await submitSwapRemoveAllowance(applySwapReleaseToPayload({
             rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
             chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
@@ -882,7 +883,7 @@ export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): P
             publicKey: await quantumWallet.getPublicKey(),
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        });
+        }));
         hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setRemoveAllowancePanelWaiting(false);
@@ -916,7 +917,7 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
         return;
     }
     try {
-        const result = await submitSwapAddAllowance({
+        const result = await submitSwapAddAllowance(applySwapReleaseToPayload({
             rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
             chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             fromTokenValue: fromValue,
@@ -926,7 +927,7 @@ export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Prom
             publicKey: await quantumWallet.getPublicKey(),
             gasLimit: gas,
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        });
+        }));
         hideWaitingBox();
         if (!result || !result.success || !result.txHash) {
             setAddAllowancePanelWaiting(false);

@@ -1,15 +1,14 @@
 import { ipcMain } from "electron";
 import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk";
 import {
-    SWAP_WQ_CONTRACT_ADDRESS,
-    SWAP_ROUTER_V2_CONTRACT_ADDRESS,
     createQuantumRpcProvider,
     initRpcUrlForConfig,
+    resolveSwapReleaseAddresses,
     getSwapTxDeadline,
     normalizeAmountString,
 } from "../rpc";
 import { STAKING_CONTRACT_ADDRESS, STAKING_ABI_JSON, STAKING_ALLOWED_METHODS, prepareStakingMethodArgs } from "../stakingAbi";
-import { resolveSwapPath } from "../swap-routing";
+import { mapSwapTokenValue, resolveSwapPath } from "../swap-routing";
 
 const GAS_ESTIMATE_BUFFER_PERCENT = 10;
 const WEI_PER_ETH = 1000000000000000000n;
@@ -84,8 +83,9 @@ async function buildEstimateGasTx(data: any, provider: any): Promise<Record<stri
     }
 
     if (txKind === "approve") {
-        const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-        const spenderAddr = SWAP_ROUTER_V2_CONTRACT_ADDRESS;
+        const release = resolveSwapReleaseAddresses(data);
+        const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
+        const spenderAddr = release.router;
         const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
         const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
         const token = IERC20.connect(getAddress(tokenAddr), provider);
@@ -94,8 +94,9 @@ async function buildEstimateGasTx(data: any, provider: any): Promise<Record<stri
     }
 
     if (txKind === "swap") {
-        const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
-        const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+        const release = resolveSwapReleaseAddresses(data);
+        const router = QuantumSwapV2Router02.connect(release.router, provider);
+        const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
         const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
         const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
         const toAddress = data.recipientAddress || data.toAddress;

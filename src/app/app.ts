@@ -82,6 +82,8 @@ import {
 } from "./dialog";
 import { syncSendScreenTokenList } from "./send";
 import { openSwapScreen } from "./swap";
+import { swapReleasesInit, swapReleasesLoadAll } from "../lib/release";
+import { refreshCurrentSwapRelease, setCustomReleaseBannerAllowed } from "./release";
 
 export function checkDuplicateIds(): void {
     const nodes = document.querySelectorAll("[id]");
@@ -242,7 +244,11 @@ export function resizeBoxes(): void {
 // card overlaps it by ~100px; "compact" fits just the logo row so content
 // (back button first) starts right below the band.
 export function setHeaderBand(mode: "home" | "compact"): void {
-    byId("gradient").style.height = mode === "home" ? "168px" : "64px";
+    // min-height rather than height so the band can grow by one row when the
+    // custom-release banner (a full-width flex row inside #gradient) is shown.
+    const gradient = byId("gradient");
+    gradient.style.height = "auto";
+    gradient.style.minHeight = mode === "home" ? "168px" : "64px";
     byId("main-content").style.marginTop = mode === "home" ? "-100px" : "25px";
 }
 
@@ -256,6 +262,16 @@ export async function resumePostEula(): Promise<void> {
 
     await blockchainNetworksInit();
     await showBlockchainNetworks();
+}
+
+// Seed (first run), decrypt and cache the swap releases, then refresh the
+// active-release state + banner. Requires the wallet password (release entries
+// are encrypted like wallets), so this runs at unlock and after the first
+// wallet is created - never at boot.
+export async function loadSwapReleases(password: string): Promise<void> {
+    await swapReleasesInit(password);
+    await swapReleasesLoadAll(password);
+    await refreshCurrentSwapRelease();
 }
 
 export async function showBlockchainNetworks(): Promise<void> {
@@ -850,6 +866,10 @@ export async function saveWallet(): Promise<boolean> {
             return false;
         }
 
+        // The main key now exists; seed/load the encrypted release store so
+        // the first-wallet path gets the same state unlock would produce.
+        await loadSwapReleases(onboardingStore.tempPassword);
+
         walletStore.currentWalletAddress = walletStore.currentWallet.address;
 
         hideWaitingBox();
@@ -1344,6 +1364,9 @@ export async function decryptAndUnlockWallet(): Promise<boolean | void> {
         }
         const walletReverseMap = walletGetCachedIndexToAddressMap();
         const walletAddress = walletReverseMap.get(0) as string;
+        // Decrypt the release store with the same password before the wallet
+        // screen shows, so the custom-release banner state is correct.
+        await loadSwapReleases(password);
         hideWaitingBox();
         byId("unlockScreen").style.display = "none";
         onboardingStore.additionalWalletMode = true;
@@ -1399,6 +1422,8 @@ export function showSettingsScreen(): boolean {
     byId("revealSeedScreen").style.display = "none";
     byId("backupSpecificWalletScreen").style.display = "none";
     byId("networkListScreen").style.display = "none";
+    byId("releaseListScreen").style.display = "none";
+    byId("releaseAddScreen").style.display = "none";
     byId("divNetworkDropdown").style.display = "none";
     byId("ValidatorScreen").style.display = "none";
 
@@ -1412,6 +1437,9 @@ export function showSettingsScreen(): boolean {
 // (which implies at least one wallet exists); locking or returning to
 // onboarding hides it again.
 export function setWalletMenuEnabled(enabled: boolean): void {
+    // The custom-release banner follows the same visibility: hidden on the
+    // unlock/onboarding screens, shown once a wallet is unlocked.
+    setCustomReleaseBannerAllowed(enabled);
     const menu = document.getElementById("burgerMenu");
     if (!menu) return;
     menu.style.display = enabled ? "block" : "none";

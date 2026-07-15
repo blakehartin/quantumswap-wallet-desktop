@@ -16,6 +16,32 @@ export function sanitizeSwapError(err: unknown): string {
     return String(msg).replace(/uniswap/gi, "").trim();
 }
 
+export interface SwapReleaseAddresses {
+    wq: string;
+    factory: string;
+    router: string;
+}
+
+// Swap payloads may carry `releaseWq` / `releaseFactory` / `releaseRouter` to
+// target a user-selected release (custom deployment of the three core
+// contracts). Each present field must be a valid address (getAddress throws
+// otherwise, and the handler's catch surfaces the error rather than silently
+// swapping against the wrong deployment); absent fields fall back to the
+// built-in release constants above.
+export function resolveSwapReleaseAddresses(data: unknown): SwapReleaseAddresses {
+    const { getAddress } = loadQuantumCoin();
+    function pick(raw: unknown, fallback: string): string {
+        if (raw == null || typeof raw !== "string" || raw.trim() === "") return fallback;
+        return getAddress(raw.trim());
+    }
+    const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+    return {
+        wq: pick(d.releaseWq, SWAP_WQ_CONTRACT_ADDRESS),
+        factory: pick(d.releaseFactory, SWAP_FACTORY_CONTRACT_ADDRESS),
+        router: pick(d.releaseRouter, SWAP_ROUTER_V2_CONTRACT_ADDRESS),
+    };
+}
+
 function expandTildeInIpcPath(p: unknown): string {
     const t = String(p).trim();
     if (t.startsWith("~/")) {

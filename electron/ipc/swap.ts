@@ -1,10 +1,9 @@
 import { ipcMain } from "electron";
 import { loadQuantumCoin, loadQuantumCoinConfig, loadQuantumSwap } from "../sdk";
 import {
-    SWAP_WQ_CONTRACT_ADDRESS,
-    SWAP_ROUTER_V2_CONTRACT_ADDRESS,
     createQuantumRpcProvider,
     initRpcUrlForConfig,
+    resolveSwapReleaseAddresses,
     sanitizeSwapError,
     formatSwapRouterRevertError,
     getSwapTxDeadline,
@@ -27,9 +26,10 @@ export function registerSwapHandlers(): void {
             if (!provider) return { success: false, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
+            const release = resolveSwapReleaseAddresses(data);
+            const router = QuantumSwapV2Router02.connect(release.router, provider);
 
-            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
 
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
@@ -60,11 +60,13 @@ export function registerSwapHandlers(): void {
             if (!provider) return { exists: false, path: null, pathSymbols: null, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
+            const release = resolveSwapReleaseAddresses(data);
             const path = await findSwapPath(
                 provider,
                 chainId,
-                mapSwapTokenValue(data.fromTokenValue),
-                mapSwapTokenValue(data.toTokenValue)
+                mapSwapTokenValue(data.fromTokenValue, release),
+                mapSwapTokenValue(data.toTokenValue, release),
+                release
             );
             if (!path) return { exists: false, path: null, pathSymbols: null, error: null };
 
@@ -88,9 +90,10 @@ export function registerSwapHandlers(): void {
             if (!provider) return { success: false, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
+            const release = resolveSwapReleaseAddresses(data);
+            const router = QuantumSwapV2Router02.connect(release.router, provider);
 
-            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
 
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
@@ -119,9 +122,10 @@ export function registerSwapHandlers(): void {
             if (!provider) return { success: false, gasLimit: null, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
+            const release = resolveSwapReleaseAddresses(data);
+            const router = QuantumSwapV2Router02.connect(release.router, provider);
 
-            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const toAddress = data.recipientAddress || data.toAddress;
@@ -173,8 +177,9 @@ export function registerSwapHandlers(): void {
             if (!data.ownerAddress) return { success: false, sufficient: false, error: "Owner address required" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const spenderAddr = SWAP_ROUTER_V2_CONTRACT_ADDRESS;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
+            const spenderAddr = release.router;
             const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const requiredWei = parseUnits(normalizeAmountString(data.requiredAmount), decimals);
             const token = IERC20.connect(getAddress(tokenAddr), provider);
@@ -210,8 +215,9 @@ export function registerSwapHandlers(): void {
             if (!data.fromAddress) return { success: false, gasLimit: null, error: "From address required" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const spenderAddr = SWAP_ROUTER_V2_CONTRACT_ADDRESS;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
+            const spenderAddr = release.router;
             const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
 
@@ -226,8 +232,14 @@ export function registerSwapHandlers(): void {
         }
     });
 
-    ipcMain.handle("SwapQuoteGetRouterAddress", async () => {
-        return { success: true, routerAddress: SWAP_ROUTER_V2_CONTRACT_ADDRESS, error: null };
+    // Returns the active release's router (payload may carry release overrides).
+    ipcMain.handle("SwapQuoteGetRouterAddress", async (_event, data) => {
+        try {
+            const release = resolveSwapReleaseAddresses(data);
+            return { success: true, routerAddress: release.router, error: null };
+        } catch (err) {
+            return { success: false, routerAddress: null, error: sanitizeSwapError(err) };
+        }
     });
 
     ipcMain.handle("SwapQuoteGetSwapContractData", async (_event, data) => {
@@ -245,9 +257,10 @@ export function registerSwapHandlers(): void {
             if (!toAddress) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "Recipient address required" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, provider);
+            const release = resolveSwapReleaseAddresses(data);
+            const router = QuantumSwapV2Router02.connect(release.router, provider);
 
-            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const deadline = await getSwapTxDeadline(provider, 1200);
@@ -277,7 +290,7 @@ export function registerSwapHandlers(): void {
             const dataHex = tx && tx.data ? (typeof tx.data === "string" ? tx.data : String(tx.data)) : null;
             if (!dataHex) return { success: false, dataHex: null, toAddress: null, valueHex: null, error: "No contract data" };
             const valueHex = tx.value != null && tx.value !== 0n ? "0x" + tx.value.toString(16) : "0x0";
-            return { success: true, dataHex, toAddress: SWAP_ROUTER_V2_CONTRACT_ADDRESS, valueHex, error: null };
+            return { success: true, dataHex, toAddress: release.router, valueHex, error: null };
         } catch (err) {
             return { success: false, dataHex: null, toAddress: null, valueHex: null, error: formatSwapRouterRevertError(err) };
         }
@@ -296,8 +309,9 @@ export function registerSwapHandlers(): void {
             if (!provider) return { success: false, dataHex: null, error: "Invalid RPC endpoint" };
 
             await Initialize(new Config(chainId, initRpcUrlForConfig(data.rpcEndpoint)));
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
-            const spenderAddr = SWAP_ROUTER_V2_CONTRACT_ADDRESS;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
+            const spenderAddr = release.router;
             const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
 
@@ -329,13 +343,14 @@ export function registerSwapHandlers(): void {
             const pubBytes = Buffer.from(data.publicKey, "base64");
             const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
 
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
             const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
             const gasLimit = Number(data.gasLimit) || 84000;
 
             const token = IERC20.connect(getAddress(tokenAddr), wallet);
-            const tx = await token.approve(getAddress(SWAP_ROUTER_V2_CONTRACT_ADDRESS), amountWei, signingOverrides(wallet, data, { gasLimit }));
+            const tx = await token.approve(getAddress(release.router), amountWei, signingOverrides(wallet, data, { gasLimit }));
             return { success: true, txHash: tx.hash, error: null };
         } catch (err) {
             return { success: false, txHash: null, error: sanitizeSwapError(err) };
@@ -362,8 +377,9 @@ export function registerSwapHandlers(): void {
             const pubBytes = Buffer.from(data.publicKey, "base64");
             const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
 
-            const router = QuantumSwapV2Router02.connect(SWAP_ROUTER_V2_CONTRACT_ADDRESS, wallet);
-            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue);
+            const release = resolveSwapReleaseAddresses(data);
+            const router = QuantumSwapV2Router02.connect(release.router, wallet);
+            const path = await resolveSwapPath(provider, chainId, data.fromTokenValue, data.toTokenValue, release);
             const fromDecimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const toDecimals = typeof data.toDecimals === "number" ? data.toDecimals : 18;
             const deadline = await getSwapTxDeadline(provider, 1200);
@@ -417,11 +433,12 @@ export function registerSwapHandlers(): void {
             const pubBytes = Buffer.from(data.publicKey, "base64");
             const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
 
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
             const gasLimit = Number(data.gasLimit) || 84000;
 
             const token = IERC20.connect(getAddress(tokenAddr), wallet);
-            const tx = await token.approve(getAddress(SWAP_ROUTER_V2_CONTRACT_ADDRESS), 0n, signingOverrides(wallet, data, { gasLimit }));
+            const tx = await token.approve(getAddress(release.router), 0n, signingOverrides(wallet, data, { gasLimit }));
             return { success: true, txHash: tx.hash, error: null };
         } catch (err) {
             return { success: false, txHash: null, error: sanitizeSwapError(err) };
@@ -446,13 +463,14 @@ export function registerSwapHandlers(): void {
             const pubBytes = Buffer.from(data.publicKey, "base64");
             const wallet = Wallet.fromKeys(privBytes, pubBytes, provider);
 
-            const tokenAddr = data.fromTokenValue === "Q" ? SWAP_WQ_CONTRACT_ADDRESS : data.fromTokenValue;
+            const release = resolveSwapReleaseAddresses(data);
+            const tokenAddr = mapSwapTokenValue(data.fromTokenValue, release);
             const decimals = typeof data.fromDecimals === "number" ? data.fromDecimals : 18;
             const amountWei = parseUnits(normalizeAmountString(data.amount), decimals);
             const gasLimit = Number(data.gasLimit) || 84000;
 
             const token = IERC20.connect(getAddress(tokenAddr), wallet);
-            const tx = await token.approve(getAddress(SWAP_ROUTER_V2_CONTRACT_ADDRESS), amountWei, signingOverrides(wallet, data, { gasLimit }));
+            const tx = await token.approve(getAddress(release.router), amountWei, signingOverrides(wallet, data, { gasLimit }));
             return { success: true, txHash: tx.hash, error: null };
         } catch (err) {
             return { success: false, txHash: null, error: sanitizeSwapError(err) };

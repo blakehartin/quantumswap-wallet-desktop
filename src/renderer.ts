@@ -13,6 +13,7 @@ import { validatorScreenModule } from "./screens/validator";
 import { receiveScreenModule } from "./screens/receive";
 import { transactionsScreenModule } from "./screens/transactions";
 import { settingsScreenModules } from "./screens/settings";
+import { releaseScreenModules } from "./screens/releases";
 import { walletsScreenModules } from "./screens/wallets";
 import { initDialogs, showErrorAndLockup } from "./app/dialog";
 import { initSend } from "./app/send";
@@ -35,6 +36,7 @@ async function bootstrap(): Promise<void> {
     mountScreenModules([homeScreenModule, ...sendScreenModules, swapScreenModule, validatorScreenModule]);
     mountScreenModules([receiveScreenModule, transactionsScreenModule]);
     mountScreenModules(settingsScreenModules);
+    mountScreenModules(releaseScreenModules);
     mountScreenModules(walletsScreenModules);
     mountScreenModules(dialogModules);
 

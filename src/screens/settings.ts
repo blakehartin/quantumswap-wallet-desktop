@@ -5,6 +5,7 @@ import type { ScreenModule } from "../ui/screens";
 import { addNetwork, showAddNetworkScreen, showNetworksScreen, showSettingsScreen, showWalletPath, showWalletScreen } from "../app/app";
 import { showAdvancedSigningSettingDialog, showOfflineTxnSettingDialog } from "../app/dialog";
 import { showValidatorScreen } from "../app/validator";
+import { showReleasesScreen } from "../app/release";
 
 type MenuAction = () => unknown;
 
@@ -32,6 +33,8 @@ function buildSettingsScreen(): HTMLElement {
                             menuLink("wallet-path", "Wallet Path", "4000", showWalletPath, "ahrefWalletPath"),
                             el("div", { class: "divider" }),
                             menuLink("networks", "Networks", "4001", showNetworksScreen),
+                            el("div", { class: "divider" }),
+                            menuLink("releases", "Releases", "4005", showReleasesScreen),
                             el("div", { class: "divider" }),
                             menuLink("offline-txn-signing", "Offline Transaction Signing", "4002", showOfflineTxnSettingDialog),
                             el("div", { class: "divider" }),
