@@ -1424,6 +1424,10 @@ export function showSettingsScreen(): boolean {
     byId("networkListScreen").style.display = "none";
     byId("releaseListScreen").style.display = "none";
     byId("releaseAddScreen").style.display = "none";
+    byId("advancedScreen").style.display = "none";
+    byId("tokenCreateScreen").style.display = "none";
+    byId("poolsScreen").style.display = "none";
+    byId("liquidityScreen").style.display = "none";
     byId("divNetworkDropdown").style.display = "none";
     byId("ValidatorScreen").style.display = "none";
 

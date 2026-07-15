@@ -319,6 +319,35 @@ function buildGasConfigDialog(): HTMLElement {
     ]);
 }
 
+// Numbered multi-step transaction progress dialog (approve -> submit flows on
+// the Tokens / Liquidity / Pools screens). Ported from the web app's txSteps
+// component: each row shows a number badge that becomes a spinner while the
+// step's transaction confirms, then a check (done) or cross (failed). Rows are
+// built at runtime by src/app/txsteps.ts.
+function buildTxStepsDialog(): HTMLElement {
+    return el("dialog", { id: "modalTxSteps", class: "modal", tabindex: "-1", role: "dialog" }, [
+        el("div", { class: "modal-content", style: "margin:10% auto; max-width:520px;" }, [
+            el("h3", { id: "h3TxStepsTitle", style: "margin-top:0;" }),
+            el("ol", { id: "olTxStepsList", class: "tx-step-list" }),
+            el("div", { id: "divTxStepsHashRow", style: "display:none; margin-top:12px;" }, [
+                el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
+                    el("label", { "data-lang-key": "transaction-id", style: "font-weight:bold;" }, ["Transaction ID"]),
+                    el("div", { style: "display:flex; align-items:center; gap:12px;" }, [
+                        el("div", { class: "copy-container", role: "button", id: "divTxStepsCopy", title: "Copy", tabindex: "2" }),
+                        el("div", { class: "scan-container", role: "button", id: "divTxStepsExplorer", title: "Block Explorer", tabindex: "3" }),
+                    ]),
+                ]),
+                el("p", { id: "pTxStepsTxHash", style: "font-family:monospace; word-break:break-all; margin-top:4px;" }),
+            ]),
+            el("div", { id: "divTxStepsResult", style: "display:none; margin-top:12px; word-break:break-word;" }),
+            el("p", { id: "pTxStepsError", class: "tx-steps-error", style: "display:none; margin-top:12px; word-break:break-word;" }),
+            el("div", { style: "margin-top:20px; display:flex; justify-content:flex-end;" }, [
+                el("button", { class: "proceed", role: "button", tabindex: "1", id: "btnTxStepsClose" }, ["Close"]),
+            ]),
+        ]),
+    ]);
+}
+
 // Small wallet-password prompt used when switching the default swap release:
 // the default index is stored encrypted with the wallet main key, so every
 // switch needs the password.
@@ -394,6 +423,7 @@ export const dialogModules: ScreenModule[] = [
     { parentId: null, build: buildOfflineSignatureDialog },
     { parentId: null, build: buildTransactionReviewDialog },
     { parentId: null, build: buildGasConfigDialog },
+    { parentId: null, build: buildTxStepsDialog },
     { parentId: null, build: buildReleasePasswordDialog },
     { parentId: null, build: buildGasToast },
     { parentId: null, build: buildSendCompletedDialog },

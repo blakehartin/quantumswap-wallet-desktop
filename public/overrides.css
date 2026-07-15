@@ -85,3 +85,105 @@ img.qs-eye {
     position: relative;
     z-index: 12;
 }
+
+/* Numbered multi-step transaction dialog (modalTxSteps, see app/txsteps.ts).
+   Ported from the web app's txSteps styles, adapted to the light modal. */
+.tx-step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tx-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid transparent;
+    font-size: 14px;
+    color: rgba(0, 0, 0, 0.65);
+    text-align: left;
+}
+
+.tx-step .tx-badge {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    background: rgba(0, 0, 0, 0.08);
+    color: rgba(0, 0, 0, 0.7);
+}
+
+.tx-step .tx-label {
+    flex: 1;
+    word-break: break-word;
+}
+
+.tx-step .tx-substatus {
+    color: rgba(0, 0, 0, 0.5);
+    font-size: 12px;
+}
+
+.tx-step.s-active,
+.tx-step.s-confirming {
+    background: rgba(114, 78, 219, 0.10);
+    border-color: rgba(114, 78, 219, 0.55);
+    color: #1a1a1a;
+}
+
+.tx-step.s-active .tx-badge,
+.tx-step.s-confirming .tx-badge {
+    background: rgba(114, 78, 219, 0.30);
+    color: #1a1a1a;
+}
+
+.tx-step.s-done {
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.tx-step.s-done .tx-badge {
+    background: rgba(22, 163, 74, 0.18);
+    color: #16a34a;
+}
+
+.tx-step.s-failed .tx-badge {
+    background: rgba(220, 38, 38, 0.18);
+    color: #dc2626;
+}
+
+.tx-step.s-failed .tx-label {
+    color: #dc2626;
+}
+
+.tx-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.18);
+    border-top-color: #724edb;
+    animation: qs-tx-spin 0.9s linear infinite;
+    pointer-events: none;
+    vertical-align: middle;
+}
+
+@keyframes qs-tx-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.tx-steps-error {
+    color: #dc2626;
+    text-align: left;
+}

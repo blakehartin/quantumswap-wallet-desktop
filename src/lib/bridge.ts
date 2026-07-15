@@ -146,6 +146,74 @@ export async function submitSwapAddAllowance(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SwapSubmitAddAllowance", payload);
 }
 
+// Liquidity / pools / token creation (Settings -> Advanced screens).
+
+// Snapshot of a factory pair as returned by the main process. Reserve /
+// supply values are base-unit (wei) strings; symbols are untrusted on-chain
+// data and must be sanitized before display.
+export interface LiquidityPairSnapshot {
+    pairAddress: string;
+    token0: string;
+    token1: string;
+    symbol0: string | null;
+    symbol1: string | null;
+    decimals0: number;
+    decimals1: number;
+    reserve0: string;
+    reserve1: string;
+    totalSupply: string;
+}
+
+export interface LiquidityPositionSnapshot extends LiquidityPairSnapshot {
+    lpBalance: string;
+}
+
+export async function getLiquidityPools(payload: unknown): Promise<{ success: boolean; pools: LiquidityPairSnapshot[] | null; error: string | null }> {
+    return await SwapQuoteApi.send("LiquidityListPools", payload);
+}
+
+export async function getLiquidityPositions(payload: unknown): Promise<{ success: boolean; positions: LiquidityPositionSnapshot[] | null; error: string | null }> {
+    return await SwapQuoteApi.send("LiquidityListPositions", payload);
+}
+
+export interface LiquidityPairInfoResult {
+    success: boolean;
+    exists: boolean;
+    tokenAAddress?: string;
+    tokenBAddress?: string;
+    pair?: LiquidityPairSnapshot | null;
+    lpBalance?: string | null;
+    error: string | null;
+}
+
+export async function getLiquidityPairInfo(payload: unknown): Promise<LiquidityPairInfoResult> {
+    return await SwapQuoteApi.send("LiquidityGetPairInfo", payload);
+}
+
+export async function getLiquidityCheckAllowance(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("LiquidityCheckAllowance", payload);
+}
+
+export async function submitLiquidityApprove(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("LiquiditySubmitApprove", payload);
+}
+
+export async function submitLiquidityAdd(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("LiquiditySubmitAdd", payload);
+}
+
+export async function submitLiquidityRemove(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("LiquiditySubmitRemove", payload);
+}
+
+export async function submitPoolsCreatePair(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("PoolsSubmitCreatePair", payload);
+}
+
+export async function submitTokenCreate(payload: unknown): Promise<any> {
+    return await SwapQuoteApi.send("TokenSubmitCreate", payload);
+}
+
 export async function submitSendCoins(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SendCoinsSubmit", payload);
 }

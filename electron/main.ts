@@ -5,6 +5,7 @@ import { registerSeedWordsHandlers } from "./ipc/seedwords";
 import { registerCryptoHandlers } from "./ipc/crypto";
 import { registerFormatHandlers } from "./ipc/format";
 import { registerSwapHandlers } from "./ipc/swap";
+import { registerLiquidityHandlers } from "./ipc/liquidity";
 import { registerGasHandlers } from "./ipc/gas";
 import { registerSendHandlers } from "./ipc/send";
 import { registerStakingHandlers } from "./ipc/staking";
@@ -85,6 +86,7 @@ app.whenReady().then(() => {
     registerCryptoHandlers();
     registerFormatHandlers();
     registerSwapHandlers();
+    registerLiquidityHandlers();
     registerGasHandlers();
     registerSendHandlers();
     registerStakingHandlers();

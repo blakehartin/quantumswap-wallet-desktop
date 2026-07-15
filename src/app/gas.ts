@@ -128,7 +128,26 @@ export function buildEstimateGasPayload(ctx: TxContext): Record<string, unknown>
     if (ctx.methodArgs) payload.methodArgs = ctx.methodArgs;
     if (ctx.value != null) payload.value = ctx.value;
     if (ctx.bufferPercent != null) payload.bufferPercent = ctx.bufferPercent;
-    if (ctx.txKind === "swap" || ctx.txKind === "approve") {
+    // Liquidity / pools / token-creation fields (Settings -> Advanced).
+    if (ctx.tokenAValue) payload.tokenAValue = ctx.tokenAValue;
+    if (ctx.tokenBValue) payload.tokenBValue = ctx.tokenBValue;
+    if (ctx.amountA != null) payload.amountA = ctx.amountA;
+    if (ctx.amountB != null) payload.amountB = ctx.amountB;
+    if (ctx.decimalsA != null) payload.decimalsA = ctx.decimalsA;
+    if (ctx.decimalsB != null) payload.decimalsB = ctx.decimalsB;
+    if (ctx.ownerAddress) payload.ownerAddress = ctx.ownerAddress;
+    if (ctx.tokenAddress) payload.tokenAddress = ctx.tokenAddress;
+    if (ctx.tokenAAddress) payload.tokenAAddress = ctx.tokenAAddress;
+    if (ctx.tokenBAddress) payload.tokenBAddress = ctx.tokenBAddress;
+    if (ctx.liquidityWei != null) payload.liquidityWei = ctx.liquidityWei;
+    if (ctx.amountAMinWei != null) payload.amountAMinWei = ctx.amountAMinWei;
+    if (ctx.amountBMinWei != null) payload.amountBMinWei = ctx.amountBMinWei;
+    if (ctx.name != null) payload.name = ctx.name;
+    if (ctx.symbol != null) payload.symbol = ctx.symbol;
+    if (ctx.decimals != null) payload.decimals = ctx.decimals;
+    if (ctx.totalSupply != null) payload.totalSupply = ctx.totalSupply;
+    const releaseStampedKinds = ["swap", "approve", "approveToken", "addLiquidity", "removeLiquidity", "createPair"];
+    if (releaseStampedKinds.indexOf(ctx.txKind) !== -1) {
         applySwapReleaseToPayload(payload);
     }
     return payload;

@@ -4,6 +4,7 @@
 import { el } from "../ui/dom";
 import type { ScreenModule } from "../ui/screens";
 import { closeBurgerMenu, showSettingsScreen, showWalletListScreen, toggleBurgerMenu } from "../app/app";
+import { showAdvancedScreen } from "../app/advanced";
 import { showNetworkDialog } from "../app/dialog";
 import { DROPDOWN_TEXT, networkStore } from "../app/state";
 
@@ -61,6 +62,7 @@ function buildHeader(): HTMLElement {
             el("div", { class: "burger-dropdown", id: "burgerDropdown", style: "display:none;" }, [
                 burgerItem("tab1", "10", "assets/svg/wallet-outline.svg", "Wallets Icon", "wallets", "Wallets", showWalletListScreen),
                 burgerItem("tab4", "11", "assets/svg/settings.svg", "Settings Icon", "settings", "Settings", showSettingsScreen),
+                burgerItem("tab5", "12", "assets/svg/keypad.svg", "Advanced Icon", "advanced", "Advanced", showAdvancedScreen),
             ]),
         ]),
         el("div", { class: "dropdown", id: "divNetworkDropdown", role: "button", tabindex: "1000", style: "display:none;", onclick: () => { void showNetworkDialog(); } }, [

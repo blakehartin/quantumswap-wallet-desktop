@@ -97,6 +97,24 @@ export interface TxContext {
     value?: string;
     bufferPercent?: number;
     toDecimals?: number;
+    // Liquidity / pools / token-creation contexts (Settings -> Advanced).
+    tokenAValue?: string;
+    tokenBValue?: string;
+    amountA?: string;
+    amountB?: string;
+    decimalsA?: number;
+    decimalsB?: number;
+    ownerAddress?: string;
+    tokenAddress?: string;
+    tokenAAddress?: string;
+    tokenBAddress?: string;
+    liquidityWei?: string;
+    amountAMinWei?: string;
+    amountBMinWei?: string;
+    name?: string;
+    symbol?: string;
+    decimals?: number;
+    totalSupply?: string;
 }
 
 // Static row templates captured once at startup (the old app captured outerHTML

@@ -9,6 +9,7 @@ import {
 } from "../rpc";
 import { STAKING_CONTRACT_ADDRESS, STAKING_ABI_JSON, STAKING_ALLOWED_METHODS, prepareStakingMethodArgs } from "../stakingAbi";
 import { mapSwapTokenValue, resolveSwapPath } from "../swap-routing";
+import { buildAddLiquidityCall, buildRemoveLiquidityCall, buildDeployTokenTx, parseDeployTokenInputs } from "../liquidity-tx";
 
 const GAS_ESTIMATE_BUFFER_PERCENT = 10;
 const WEI_PER_ETH = 1000000000000000000n;
@@ -119,6 +120,51 @@ async function buildEstimateGasTx(data: any, provider: any): Promise<Record<stri
             amountInWei, amountOutMinWei, path, getAddress(toAddress), deadline
         );
         return { ...tx, from: getAddress(toAddress) };
+    }
+
+    // Max-amount approval of an arbitrary token (ERC20 or LP pair token)
+    // toward the release router, matching LiquiditySubmitApprove.
+    if (txKind === "approveToken") {
+        const { MaxUint256 } = loadQuantumCoin();
+        const release = resolveSwapReleaseAddresses(data);
+        const token = IERC20.connect(getAddress(data.tokenAddress), provider);
+        const tx = await token.populateTransaction.approve(getAddress(release.router), MaxUint256);
+        return { ...tx, from: getAddress(fromAddress) };
+    }
+
+    if (txKind === "addLiquidity") {
+        const release = resolveSwapReleaseAddresses(data);
+        const router: any = QuantumSwapV2Router02.connect(release.router, provider);
+        const call = await buildAddLiquidityCall(data, release, provider);
+        const tx = await router.populateTransaction[call.method](...call.args);
+        const out: Record<string, unknown> = { ...tx, from: getAddress(fromAddress) };
+        if (call.value > 0n) out.value = call.value;
+        return out;
+    }
+
+    if (txKind === "removeLiquidity") {
+        const release = resolveSwapReleaseAddresses(data);
+        const router: any = QuantumSwapV2Router02.connect(release.router, provider);
+        const call = await buildRemoveLiquidityCall(data, release, provider);
+        const tx = await router.populateTransaction[call.method](...call.args);
+        return { ...tx, from: getAddress(fromAddress) };
+    }
+
+    if (txKind === "createPair") {
+        const { QuantumSwapV2Factory } = loadQuantumSwap();
+        const release = resolveSwapReleaseAddresses(data);
+        const factory = QuantumSwapV2Factory.connect(release.factory, provider);
+        const tx = await factory.populateTransaction.createPair(
+            getAddress(mapSwapTokenValue(String(data.tokenAValue), release)),
+            getAddress(mapSwapTokenValue(String(data.tokenBValue), release))
+        );
+        return { ...tx, from: getAddress(fromAddress) };
+    }
+
+    if (txKind === "deployToken") {
+        const inputs = parseDeployTokenInputs(data);
+        const tx = buildDeployTokenTx(inputs, null);
+        return { ...tx, from: getAddress(fromAddress) };
     }
 
     // Staking contract methods

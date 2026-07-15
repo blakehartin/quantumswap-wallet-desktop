@@ -14,6 +14,7 @@ import { receiveScreenModule } from "./screens/receive";
 import { transactionsScreenModule } from "./screens/transactions";
 import { settingsScreenModules } from "./screens/settings";
 import { releaseScreenModules } from "./screens/releases";
+import { advancedScreenModules } from "./screens/advanced";
 import { walletsScreenModules } from "./screens/wallets";
 import { initDialogs, showErrorAndLockup } from "./app/dialog";
 import { initSend } from "./app/send";
@@ -37,6 +38,7 @@ async function bootstrap(): Promise<void> {
     mountScreenModules([receiveScreenModule, transactionsScreenModule]);
     mountScreenModules(settingsScreenModules);
     mountScreenModules(releaseScreenModules);
+    mountScreenModules(advancedScreenModules);
     mountScreenModules(walletsScreenModules);
     mountScreenModules(dialogModules);
 
