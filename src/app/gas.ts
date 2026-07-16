@@ -42,10 +42,6 @@ export const currentGasConfig: GasState = { gasLimit: null, gasFee: null, overri
 let gasEstimateTimerId: ReturnType<typeof setTimeout> | null = null;
 let gasEstimateToken = 0;
 
-// Additional gas-state objects for the swap sub-flows (approve/remove/add use their
-// own context so they don't clash with the swap-execute estimate).
-export const swapApproveGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
-
 // Format the gas fee as a number string with no trailing zeros (LSB only).
 // Decimals are shown only when present: 110 -> "110", 0.5 -> "0.5", 0.0476 -> "0.0476".
 export function formatGasFeeNumber(value: unknown): string {

@@ -7,7 +7,6 @@ import {
     getSwapQuoteAmountsOut,
     OpenUrl,
     submitSwapAddAllowance,
-    submitSwapRemoveAllowance,
     submitSwapSwap,
     weiToEtherFormatted,
     WriteTextToClipboard,
@@ -15,13 +14,11 @@ import {
 } from "../lib/bridge";
 import { htmlEncode } from "../lib/util";
 import { langJson } from "../lib/i18n";
-import { walletGetByAddress, Wallet } from "../lib/wallet";
 import {
     ADDRESS_TEMPLATE,
     BLOCK_EXPLORER_ACCOUNT_TEMPLATE,
     BLOCK_EXPLORER_DOMAIN_TEMPLATE,
     QuantumCoin,
-    TxContext,
     byId,
     inputById,
     networkStore,
@@ -34,29 +31,16 @@ import {
     APPROVE_DEFAULT_GAS,
     SWAP_DEFAULT_GAS,
     SWAP_GAS_FEE_RATE,
+    estimateGasForContext,
     formatGasFeeQ,
-    onGasIconClick,
-    resetCurrentGasConfig,
-    resolveGasForTx,
-    scheduleGasEstimation,
-    setGasFeeLabel,
-    swapApproveGasState,
 } from "./gas";
-import { advancedSigningGetDefaultValue } from "./settings";
-import {
-    closeTransactionReviewDialog,
-    hideWaitingBox,
-    showAlertAndExecuteOnClose,
-    showLoadingAndExecuteAsync,
-    showTransactionReviewDialog,
-    showWarnAlert,
-    txReviewNetworkText,
-    updateWaitingBox,
-    TransactionReview,
-} from "./dialog";
-import { getGenericError, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
-import { showSendCompletedDialog } from "./send";
-import { applySwapReleaseToPayload } from "./release";
+import { TxStepDefinition } from "./txsteps";
+import { requireTxHash, showReviewThenSteps } from "./txflow";
+import { createSwapWorkflowStepPlan } from "./swap-flow";
+import { showWarnAlert } from "./dialog";
+import { OpenScanTxn, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
+import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
+import { BUILTIN_SWAP_RELEASES } from "../lib/release";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
 let swapShowUnrecognizedTokens = false;
@@ -97,20 +81,17 @@ export function updateSwapContractLabels(): void {
     const showToContract = toValue && toValue !== "Q";
     byId("divSwapFromContractRow").style.display = showFromContract ? "flex" : "none";
     byId("divSwapToContractRow").style.display = showToContract ? "flex" : "none";
-    const explorerBase = networkStore.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, networkStore.currentBlockchainNetwork.blockExplorerDomain) : "";
     if (showFromContract) {
         const fromAddr = fromValue;
-        const aFrom = byId<HTMLAnchorElement>("aSwapFromContract");
+        const aFrom = byId("aSwapFromContract");
         aFrom.textContent = fromAddr;
         aFrom.setAttribute("data-contract-address", fromAddr);
-        aFrom.href = explorerBase.replace(ADDRESS_TEMPLATE, fromAddr);
     }
     if (showToContract) {
         const toAddr = toValue;
-        const aTo = byId<HTMLAnchorElement>("aSwapToContract");
+        const aTo = byId("aSwapToContract");
         aTo.textContent = toAddr;
         aTo.setAttribute("data-contract-address", toAddr);
-        aTo.href = explorerBase.replace(ADDRESS_TEMPLATE, toAddr);
     }
 }
 
@@ -136,55 +117,6 @@ export async function copySwapToContractAddress(): Promise<void> {
     await WriteTextToClipboard(addr);
 }
 
-export function formatTokenAmount(weiStr: string | null | undefined, decimals: unknown): string {
-    if (!weiStr || String(weiStr).trim() === "" || weiStr === "0") return "0";
-    const d = Math.max(0, parseInt(String(decimals), 10) || 18);
-    const div = Math.pow(10, d);
-    const big = BigInt(String(weiStr).trim());
-    const divBig = BigInt(div);
-    const intPart = big / divBig;
-    const fracPart = big % divBig;
-    const fracStr = fracPart.toString().padStart(d, "0").replace(/0+$/, "");
-    if (fracStr === "") return intPart.toString();
-    return intPart.toString() + "." + fracStr;
-}
-
-export async function updateSwapFromAllowanceDisplay(): Promise<void> {
-    const row = byId("divSwapFromAllowanceRow");
-    const span = byId("spanSwapFromAllowance");
-    if (!row || !span) return;
-    const fromValue = selectById("ddlSwapFromToken").value;
-    if (!fromValue || !networkStore.currentBlockchainNetwork) {
-        row.style.display = "none";
-        return;
-    }
-    try {
-        const allowancePayload = applySwapReleaseToPayload({
-            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
-            fromTokenValue: fromValue,
-            ownerAddress: walletStore.currentWalletAddress,
-            requiredAmount: "0",
-            fromDecimals: getSwapTokenDecimals(fromValue),
-        });
-        const result = await getSwapCheckAllowance(allowancePayload);
-        if (!result || !result.success || !result.allowance) {
-            row.style.display = "none";
-            return;
-        }
-        const allowanceWei = String(result.allowance).trim();
-        if (allowanceWei === "" || allowanceWei === "0" || BigInt(allowanceWei) === BigInt(0)) {
-            row.style.display = "none";
-            return;
-        }
-        const decimals = getSwapTokenDecimals(fromValue);
-        span.textContent = formatTokenAmount(allowanceWei, decimals);
-        row.style.display = "block";
-    } catch {
-        row.style.display = "none";
-    }
-}
-
 export async function updateSwapBalanceLabels(): Promise<void> {
     const fromSymbol = selectById("ddlSwapFromToken").value;
     const toSymbol = selectById("ddlSwapToToken").value;
@@ -193,7 +125,6 @@ export async function updateSwapBalanceLabels(): Promise<void> {
     byId("spanSwapFromBalance").textContent = fromBal;
     byId("spanSwapToBalance").textContent = toBal;
     updateSwapContractLabels();
-    await updateSwapFromAllowanceDisplay();
 }
 
 export function normalizeAmountForNumberInput(value: unknown): string {
@@ -579,9 +510,6 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
     if (pairExists) {
         updateToQuantityFromFrom();
     }
-    resetCurrentGasConfig();
-    setGasFeeLabel("spanSwapGasFee", "");
-    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
 }
 
@@ -596,9 +524,7 @@ export function openSwapScreen(): boolean {
     setHeaderBand("compact");
 
     byId("divSwapScreenInner").style.display = "block";
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "none";
+    byId("divSwapSuccessPanel").style.display = "none";
     swapShowUnrecognizedTokens = false;
     inputById("chkSwapShowUnrecognized").checked = false;
     populateSwapTokenDropdowns();
@@ -607,87 +533,7 @@ export function openSwapScreen(): boolean {
     updateSwapRoutePathDisplay(null);
     inputById("txtSwapFromQuantity").focus();
     updateSwapBalanceLabels();
-    resetCurrentGasConfig();
-    setGasFeeLabel("spanSwapGasFee", "");
-    attachSwapGasListeners();
-    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
-}
-
-export function attachSwapGasListeners(): void {
-    const fromQty = inputById("txtSwapFromQuantity");
-    const toQty = inputById("txtSwapToQuantity");
-    if (fromQty && !fromQty.dataset.gasBound) { fromQty.addEventListener("input", function () { scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee"); }); fromQty.dataset.gasBound = "1"; }
-    if (toQty && !toQty.dataset.gasBound) { toQty.addEventListener("input", function () { scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee"); }); toQty.dataset.gasBound = "1"; }
-}
-
-export function getSwapExecuteTxContext(): TxContext | null {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    const toValue = selectById("ddlSwapToToken").value;
-    const fromQty = (inputById("txtSwapFromQuantity").value || "").trim();
-    const toQty = (inputById("txtSwapToQuantity").value || "").trim();
-    if (!fromValue || !toValue || !fromQty || !toQty) return null;
-    return {
-        txKind: "swap",
-        fromTokenValue: fromValue,
-        toTokenValue: toValue,
-        amountIn: fromQty,
-        amountOut: toQty,
-        lastChanged: swapLastChanged || "from",
-        slippagePercent: parseFloat(inputById("txtSwapSlippage").value) || 1,
-        fromDecimals: getSwapTokenDecimals(fromValue),
-        toDecimals: getSwapTokenDecimals(toValue),
-        recipientAddress: walletStore.currentWalletAddress,
-        defaultGasLimit: SWAP_DEFAULT_GAS,
-    };
-}
-
-export function getSwapApproveTxContext(amount: string): TxContext | null {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    if (!fromValue) return null;
-    return {
-        txKind: "approve",
-        fromTokenValue: fromValue,
-        amount: amount,
-        fromDecimals: getSwapTokenDecimals(fromValue),
-        defaultGasLimit: APPROVE_DEFAULT_GAS,
-    };
-}
-
-export function onSwapGasIconClick(): boolean {
-    return onGasIconClick("spanSwapGasFee", null, getSwapExecuteTxContext);
-}
-
-export function onSwapConfirmGasIconClick(): boolean {
-    return onGasIconClick("spanSwapConfirmGasFee", null, getSwapExecuteTxContext);
-}
-
-export function onRemoveAllowanceGasIconClick(): boolean {
-    return onGasIconClick("spanRemoveAllowanceGasFee", swapApproveGasState, function () { return getSwapApproveTxContext("0"); });
-}
-
-export function onAddAllowanceGasIconClick(): boolean {
-    return onGasIconClick("spanAddAllowanceGasFee", swapApproveGasState, function () {
-        const amt = (inputById("txtAddAllowanceQuantity").value || "").trim();
-        if (!amt) return null;
-        return getSwapApproveTxContext(amt);
-    });
-}
-
-export function scheduleSwapExecuteGasEstimation(iconId: string, labelId: string): void {
-    scheduleGasEstimation(getSwapExecuteTxContext, iconId, labelId);
-}
-
-export function setSwapConfirmPanelLoading(show: boolean): void {
-    const loadingEl = byId("divSwapConfirmLoading");
-    const backEl = byId("divBackSwapScreen");
-    const slippageInput = inputById("txtSwapSlippage");
-    const btnNext = byId<HTMLButtonElement>("btnSwapConfirmNext");
-    if (loadingEl) loadingEl.style.display = show ? "block" : "none";
-    const disabled = !!show;
-    if (backEl) { backEl.style.pointerEvents = disabled ? "none" : ""; backEl.setAttribute("aria-disabled", disabled ? "true" : "false"); }
-    if (slippageInput) slippageInput.disabled = disabled;
-    if (btnNext) { btnNext.disabled = disabled; btnNext.style.pointerEvents = disabled ? "none" : ""; }
 }
 
 export async function onSwapNextClick(): Promise<boolean> {
@@ -695,6 +541,7 @@ export async function onSwapNextClick(): Promise<boolean> {
     const toValue = selectById("ddlSwapToToken").value;
     const fromQty = (inputById("txtSwapFromQuantity").value || "").trim();
     const toQty = (inputById("txtSwapToQuantity").value || "").trim();
+    const slippagePercent = parseFloat(inputById("txtSwapSlippage").value);
     if (!fromQty || parseFloat(fromQty) <= 0) {
         showWarnAlert((langJson.langValues["swap-from-quantity"] || "From quantity") + " " + (langJson.errors && langJson.errors.invalidValue ? langJson.errors.invalidValue : "is required"));
         return false;
@@ -707,8 +554,12 @@ export async function onSwapNextClick(): Promise<boolean> {
         showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]));
         return false;
     }
+    if (!Number.isFinite(slippagePercent) || slippagePercent < 0 || slippagePercent > 100) {
+        showWarnAlert((langJson.langValues.slippage || "Slippage") + " " + (langJson.errors.invalidValue || "is invalid"));
+        return false;
+    }
     if (!networkStore.currentBlockchainNetwork) return false;
-    let pairExists = false;
+
     try {
         const payload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
@@ -717,8 +568,7 @@ export async function onSwapNextClick(): Promise<boolean> {
             toTokenValue: toValue,
         });
         const result = await getSwapCheckPairExists(payload);
-        pairExists = result && result.exists === true;
-        if (!pairExists) {
+        if (!result || result.exists !== true) {
             updateSwapRoutePathDisplay(null);
             if (result && result.error) {
                 showWarnAlert(result.error);
@@ -732,8 +582,7 @@ export async function onSwapNextClick(): Promise<boolean> {
         showWarnAlert((e && e.message) ? e.message : String(e));
         return false;
     }
-    byId("divSwapScreenInner").style.display = "none";
-    setSwapConfirmPanelLoading(true);
+
     try {
         const allowancePayload = applySwapReleaseToPayload({
             rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
@@ -746,254 +595,204 @@ export async function onSwapNextClick(): Promise<boolean> {
         const allowanceResult = await getSwapCheckAllowance(allowancePayload);
         if (!allowanceResult || !allowanceResult.success) {
             showWarnAlert((allowanceResult && allowanceResult.error) ? allowanceResult.error : "Failed to check approval");
-            setSwapConfirmPanelLoading(false);
             byId("divSwapScreenInner").style.display = "block";
             return false;
         }
-        if (allowanceResult.sufficient) {
-            swapSuccessFromToken = fromValue;
-            swapSuccessToToken = toValue;
-            swapSuccessFromBefore = await getSwapBalanceForSymbol(fromValue);
-            swapSuccessToBefore = await getSwapBalanceForSymbol(toValue);
-            byId("divSwapConfirmPanel").style.display = "block";
-            byId("divSwapRemoveAllowancePanel").style.display = "none";
-            byId("divSwapAddAllowancePanel").style.display = "none";
-            inputById("txtSwapSlippage").value = "1";
-            const slippageRow = byId("divSwapSlippageRow");
-            const btnConfirmNext = byId("btnSwapConfirmNext");
-            slippageRow.style.display = "block";
-            btnConfirmNext.textContent = (langJson && langJson.langValues && langJson.langValues["swap"]) ? langJson.langValues["swap"] : "Swap";
-            // Refresh the gas estimate for the confirm panel using the common gas flow.
-            resetCurrentGasConfig();
-            setGasFeeLabel("spanSwapConfirmGasFee", "");
-            scheduleSwapExecuteGasEstimation("divSwapConfirmGasIcon", "spanSwapConfirmGasFee");
-        } else {
-            showAddAllowancePanel(fromValue, fromQty);
+
+        swapSuccessFromToken = fromValue;
+        swapSuccessToToken = toValue;
+        swapSuccessFromBefore = await getSwapBalanceForSymbol(fromValue);
+        swapSuccessToBefore = await getSwapBalanceForSymbol(toValue);
+        swapSuccessWorkflowCompleted = false;
+        swapSuccessTxHash = null;
+        let submittedGasLimit = 0;
+
+        // Picker symbols are cached when the dropdowns are populated, so step
+        // labels do not fall back to shortened contract addresses if the
+        // network token-list refresh is unavailable later.
+        const fromSymbol = getSwapCachedSymbol(fromValue);
+        const toSymbol = getSwapCachedSymbol(toValue);
+        const routerAddress = currentSwapRelease
+            ? currentSwapRelease.router
+            : BUILTIN_SWAP_RELEASES[0].router;
+        let routeText = fromSymbol + " -> " + toSymbol;
+        if (swapCurrentRoute && swapCurrentRoute.length >= 2) {
+            routeText = swapCurrentRoute
+                .map((entry) => getSwapRouteDisplaySymbol(entry.address, entry.symbol))
+                .join(" -> ");
         }
+        const stepPlan = createSwapWorkflowStepPlan(
+            !allowanceResult.sufficient,
+            fromSymbol,
+            toSymbol,
+            langJson.langValues["step-approve"] || "Approve",
+            langJson.langValues.swap || "Swap",
+        );
+
+        showReviewThenSteps({
+            review: {
+                asset: routeText,
+                contractAddress: routerAddress,
+                toAddress: routerAddress,
+                quantityLabelKey: "send-quantity",
+                quantityValue: fromQty + " " + fromSymbol + " for " + toQty + " " + toSymbol,
+            },
+            stepsTitle: langJson.langValues.swap || "Swap",
+            interactive: true,
+            buildSteps: (privateKey, publicKey, advancedSigningEnabled) => {
+                const steps: TxStepDefinition[] = [];
+                if (!allowanceResult.sufficient) {
+                    steps.push({
+                        label: stepPlan[0].label,
+                        prepare: async () => estimateGasForContext({
+                            txKind: "approve",
+                            fromTokenValue: fromValue,
+                            amount: fromQty,
+                            fromDecimals: getSwapTokenDecimals(fromValue),
+                            defaultGasLimit: APPROVE_DEFAULT_GAS,
+                        }),
+                        run: async (gasLimit) => {
+                            const limit = gasLimit || APPROVE_DEFAULT_GAS;
+                            const txHash = requireTxHash(await submitSwapAddAllowance(applySwapReleaseToPayload({
+                                rpcEndpoint: networkStore.currentBlockchainNetwork!.rpcEndpoint,
+                                chainId: parseInt(String(networkStore.currentBlockchainNetwork!.networkId), 10),
+                                fromTokenValue: fromValue,
+                                amount: fromQty,
+                                fromDecimals: getSwapTokenDecimals(fromValue),
+                                privateKey,
+                                publicKey,
+                                gasLimit: limit,
+                                advancedSigningEnabled,
+                            })));
+                            submittedGasLimit += limit;
+                            return txHash;
+                        },
+                    });
+                }
+                const swapPlan = stepPlan[stepPlan.length - 1];
+                steps.push({
+                    label: swapPlan.label,
+                    prepare: async () => estimateGasForContext({
+                        txKind: "swap",
+                        fromTokenValue: fromValue,
+                        toTokenValue: toValue,
+                        amountIn: fromQty,
+                        amountOut: toQty,
+                        lastChanged: swapLastChanged || "from",
+                        slippagePercent,
+                        fromDecimals: getSwapTokenDecimals(fromValue),
+                        toDecimals: getSwapTokenDecimals(toValue),
+                        recipientAddress: walletStore.currentWalletAddress,
+                        defaultGasLimit: SWAP_DEFAULT_GAS,
+                    }),
+                    run: async (gasLimit) => {
+                        const limit = gasLimit || SWAP_DEFAULT_GAS;
+                        const txHash = requireTxHash(await submitSwapSwap(applySwapReleaseToPayload({
+                            rpcEndpoint: networkStore.currentBlockchainNetwork!.rpcEndpoint,
+                            chainId: parseInt(String(networkStore.currentBlockchainNetwork!.networkId), 10),
+                            fromTokenValue: fromValue,
+                            toTokenValue: toValue,
+                            amountIn: fromQty,
+                            amountOut: toQty,
+                            lastChanged: swapLastChanged || "from",
+                            slippagePercent,
+                            fromDecimals: getSwapTokenDecimals(fromValue),
+                            toDecimals: getSwapTokenDecimals(toValue),
+                            recipientAddress: walletStore.currentWalletAddress,
+                            privateKey,
+                            publicKey,
+                            gasLimit: limit,
+                            advancedSigningEnabled,
+                        })));
+                        submittedGasLimit += limit;
+                        swapSuccessTxHash = txHash;
+                        return txHash;
+                    },
+                });
+                return steps;
+            },
+            onAllDone: () => {
+                swapSuccessWorkflowCompleted = true;
+                swapSuccessGasLimit = submittedGasLimit;
+            },
+            onClose: () => {
+                if (swapSuccessWorkflowCompleted) {
+                    void finalizeSequentialSwapSuccess();
+                }
+            },
+        });
     } catch (e: any) {
         showWarnAlert((e && e.message) ? e.message : String(e));
         byId("divSwapScreenInner").style.display = "block";
     }
-    setSwapConfirmPanelLoading(false);
-    return false;
-}
-
-export function showAddAllowancePanel(fromValue: string, fromQty: string): void {
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "block";
-    const contractAddr = getSwapContractAddress(fromValue);
-    const aEl = byId("aAddAllowanceContract");
-    if (aEl) { aEl.textContent = contractAddr; aEl.setAttribute("data-contract-address", contractAddr); }
-    const fromQtyNum = parseFloat(normalizeAmountForNumberInput(fromQty)) || 0;
-    const defaultApprovalQty = Math.ceil(fromQtyNum) || 1;
-    inputById("txtAddAllowanceQuantity").value = defaultApprovalQty.toString();
-    byId("divAddAllowanceError").style.display = "none";
-    byId("divAddAllowanceError").textContent = "";
-    setAddAllowancePanelWaiting(false);
-    resetCurrentGasConfig(swapApproveGasState);
-    setGasFeeLabel("spanAddAllowanceGasFee", "");
-    scheduleGasEstimation(function () {
-        const amount = (inputById("txtAddAllowanceQuantity").value || "").trim();
-        if (!amount || parseFloat(amount) <= 0) return null;
-        return getSwapApproveTxContext(amount);
-    }, "divAddAllowanceGasIcon", "spanAddAllowanceGasFee", swapApproveGasState);
-}
-
-export function showSwapMainPanel(): boolean {
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "none";
-    byId("divSwapScreenInner").style.display = "block";
-    updateSwapFromAllowanceDisplay();
-    setGasFeeLabel("spanSwapGasFee", "");
-    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
     return false;
 }
 
 export function onSwapScreenBackClick(): boolean {
-    if (byId("divSwapRemoveAllowancePanel").style.display !== "none" || byId("divSwapAddAllowancePanel").style.display !== "none" || byId("divSwapSuccessPanel").style.display !== "none") {
+    if (byId("divSwapSuccessPanel").style.display !== "none") {
         goToFirstSwapScreen();
-        return false;
-    }
-    if (byId("divSwapConfirmPanel").style.display !== "none") {
-        showSwapMainPanel();
         return false;
     }
     showWalletScreen();
     return false;
 }
 
-export function setSwapConfirmPanelWaitingForApprovalTx(waiting: boolean): void {
-    const slippageInput = inputById("txtSwapSlippage");
-    const btnNext = byId<HTMLButtonElement>("btnSwapConfirmNext");
-    const errDiv = byId("divSwapConfirmApprovalTxError");
-    const disabled = !!waiting;
-    if (slippageInput) { slippageInput.disabled = disabled; slippageInput.style.opacity = disabled ? "0.6" : ""; }
-    const pwdInput = inputById("pwdSwapConfirm");
-    if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
-    if (btnNext) { btnNext.disabled = disabled; btnNext.style.pointerEvents = disabled ? "none" : ""; btnNext.style.opacity = disabled ? "0.6" : ""; }
-    if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-}
-
-// On swap-execute success: show the before/after success panel. On failure: re-enable
-// the confirm panel so the user stays on the transaction dialog (closes the status via OK).
-export function onSwapSubmitCompletedDialogClose(): void {
-    const alt = byId<HTMLImageElement>("imgSendCompletedStatus");
-    const status = alt ? alt.alt : "";
-    if (status === "Success") {
-        (async function () {
-            await refreshAccountBalance();
-            const fromAfter = await getSwapBalanceForSymbol(swapSuccessFromToken as string);
-            const toAfter = await getSwapBalanceForSymbol(swapSuccessToToken as string);
-            const gasFeeCoins = swapSuccessGasLimit != null ? formatGasFeeQ(swapSuccessGasLimit * SWAP_GAS_FEE_RATE) : "0";
-            showSwapSuccessPanel(swapSuccessFromToken as string, swapSuccessToToken as string, swapSuccessFromBefore, swapSuccessToBefore, fromAfter, toAfter, gasFeeCoins);
-            swapSuccessFromToken = null;
-            swapSuccessToToken = null;
-            swapSuccessFromBefore = null;
-            swapSuccessToBefore = null;
-            swapSuccessGasLimit = null;
-        })();
-    } else {
-        setSwapConfirmPanelWaitingForApprovalTx(false);
-    }
-}
-
-export async function submitSwapTransaction(quantumWallet: Wallet): Promise<void> {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    const toValue = selectById("ddlSwapToToken").value;
-    const fromQty = (inputById("txtSwapFromQuantity").value || "").trim();
-    const toQty = (inputById("txtSwapToQuantity").value || "").trim();
-    const slippagePercent = parseFloat(inputById("txtSwapSlippage").value) || 1;
-    const gas = parseInt(resolveGasForTx(SWAP_DEFAULT_GAS).gasLimit, 10);
-    try {
-        const result = await submitSwapSwap(applySwapReleaseToPayload({
-            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
-            fromTokenValue: fromValue,
-            toTokenValue: toValue,
-            amountIn: fromQty,
-            amountOut: toQty,
-            lastChanged: swapLastChanged || "from",
-            slippagePercent: slippagePercent,
-            fromDecimals: getSwapTokenDecimals(fromValue),
-            toDecimals: getSwapTokenDecimals(toValue),
-            recipientAddress: walletStore.currentWalletAddress,
-            privateKey: await quantumWallet.getPrivateKey(),
-            publicKey: await quantumWallet.getPublicKey(),
-            gasLimit: gas,
-            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        }));
-        hideWaitingBox();
-        if (!result || !result.success || !result.txHash) {
-            setSwapConfirmPanelWaitingForApprovalTx(false);
-            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
-            return;
-        }
-        swapSuccessGasLimit = gas;
-        showSendCompletedDialog(result.txHash, onSwapSubmitCompletedDialogClose);
-    } catch (err: any) {
-        hideWaitingBox();
-        setSwapConfirmPanelWaitingForApprovalTx(false);
-        showWarnAlert((err && err.message) ? String(err.message) : String(err));
-    }
-}
-
-export async function submitRemoveAllowanceTransaction(quantumWallet: Wallet): Promise<void> {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    const gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
-    try {
-        const result = await submitSwapRemoveAllowance(applySwapReleaseToPayload({
-            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
-            fromTokenValue: fromValue,
-            privateKey: await quantumWallet.getPrivateKey(),
-            publicKey: await quantumWallet.getPublicKey(),
-            gasLimit: gas,
-            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        }));
-        hideWaitingBox();
-        if (!result || !result.success || !result.txHash) {
-            setRemoveAllowancePanelWaiting(false);
-            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
-            return;
-        }
-        showSendCompletedDialog(result.txHash, function () {
-            const alt = byId<HTMLImageElement>("imgSendCompletedStatus");
-            if (alt && alt.alt === "Success") {
-                const msg = (langJson && langJson.langValues && langJson.langValues["remove-allowance-succeeded"]) ? langJson.langValues["remove-allowance-succeeded"] : "Remove allowance succeeded.";
-                showAlertAndExecuteOnClose(msg, goToFirstSwapScreen);
-            } else {
-                setRemoveAllowancePanelWaiting(false);
-            }
-        });
-    } catch (err: any) {
-        hideWaitingBox();
-        setRemoveAllowancePanelWaiting(false);
-        showWarnAlert((err && err.message) ? String(err.message) : String(err));
-    }
-}
-
-export async function submitAddAllowanceTransaction(quantumWallet: Wallet): Promise<void> {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    const approvalAmount = (inputById("txtAddAllowanceQuantity").value || "").trim();
-    const gas = parseInt(resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState).gasLimit, 10);
-    if (!approvalAmount || parseFloat(approvalAmount) <= 0) {
-        hideWaitingBox();
-        setAddAllowancePanelWaiting(false);
-        showWarnAlert(langJson.errors.approvalQuantityRequired || "Approval quantity is required.");
-        return;
-    }
-    try {
-        const result = await submitSwapAddAllowance(applySwapReleaseToPayload({
-            rpcEndpoint: (networkStore.currentBlockchainNetwork as { rpcEndpoint: string }).rpcEndpoint,
-            chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
-            fromTokenValue: fromValue,
-            amount: approvalAmount,
-            fromDecimals: getSwapTokenDecimals(fromValue),
-            privateKey: await quantumWallet.getPrivateKey(),
-            publicKey: await quantumWallet.getPublicKey(),
-            gasLimit: gas,
-            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
-        }));
-        hideWaitingBox();
-        if (!result || !result.success || !result.txHash) {
-            setAddAllowancePanelWaiting(false);
-            showWarnAlert((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
-            return;
-        }
-        showSendCompletedDialog(result.txHash, function () {
-            const alt = byId<HTMLImageElement>("imgSendCompletedStatus");
-            if (alt && alt.alt === "Success") {
-                const msg = (langJson && langJson.langValues && langJson.langValues["add-allowance-succeeded"]) ? langJson.langValues["add-allowance-succeeded"] : "Add allowance succeeded.";
-                showAlertAndExecuteOnClose(msg, goToFirstSwapScreen);
-            } else {
-                setAddAllowancePanelWaiting(false);
-            }
-        });
-    } catch (err: any) {
-        hideWaitingBox();
-        setAddAllowancePanelWaiting(false);
-        showWarnAlert((err && err.message) ? String(err.message) : String(err));
-    }
-}
-
-let allowanceConfirmMode: string | null = null;
 let swapSuccessFromToken: string | null = null;
 let swapSuccessToToken: string | null = null;
 let swapSuccessFromBefore: string | null = null;
 let swapSuccessToBefore: string | null = null;
 let swapSuccessGasLimit: number | null = null;
+let swapSuccessWorkflowCompleted = false;
+let swapSuccessTxHash: string | null = null;
+
+async function finalizeSequentialSwapSuccess(): Promise<void> {
+    const fromToken = swapSuccessFromToken;
+    const toToken = swapSuccessToToken;
+    if (fromToken == null || toToken == null) return;
+    const gasFeeCoins = swapSuccessGasLimit != null
+        ? formatGasFeeQ(swapSuccessGasLimit * SWAP_GAS_FEE_RATE)
+        : "0";
+    // Keep the existing Before/After result panel as the immediate post-send
+    // view; refresh its After values silently when account data arrives.
+    showSwapSuccessPanel(
+        fromToken,
+        toToken,
+        swapSuccessFromBefore,
+        swapSuccessToBefore,
+        swapSuccessFromBefore,
+        swapSuccessToBefore,
+        gasFeeCoins,
+    );
+    try {
+        await refreshAccountBalance();
+        const fromAfter = await getSwapBalanceForSymbol(fromToken);
+        const toAfter = await getSwapBalanceForSymbol(toToken);
+        showSwapSuccessPanel(
+            fromToken,
+            toToken,
+            swapSuccessFromBefore,
+            swapSuccessToBefore,
+            fromAfter,
+            toAfter,
+            gasFeeCoins,
+        );
+    } catch {
+        // The swap is already confirmed. Keep the result panel visible with
+        // its last known balances if the post-send refresh is unavailable.
+    }
+    swapSuccessFromToken = null;
+    swapSuccessToToken = null;
+    swapSuccessFromBefore = null;
+    swapSuccessToBefore = null;
+    swapSuccessGasLimit = null;
+    swapSuccessWorkflowCompleted = false;
+}
 
 export function goToFirstSwapScreen(): void {
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "none";
     byId("divSwapSuccessPanel").style.display = "none";
     byId("divSwapScreenInner").style.display = "block";
-    updateSwapFromAllowanceDisplay();
-    setGasFeeLabel("spanSwapGasFee", "");
-    scheduleSwapExecuteGasEstimation("divSwapGasIcon", "spanSwapGasFee");
+    swapSuccessWorkflowCompleted = false;
+    swapSuccessTxHash = null;
 }
 
 export function setSwapSuccessSymbolAndLink(container: HTMLElement | null, symbol: string, explorerUrl: string, shortAddr: string): void {
@@ -1016,9 +815,6 @@ export function setSwapSuccessSymbolAndLink(container: HTMLElement | null, symbo
 
 export function showSwapSuccessPanel(fromToken: string, toToken: string, fromBefore: string | null, toBefore: string | null, fromAfter: string | null, toAfter: string | null, gasFeeCoins: string | null): void {
     byId("divSwapScreenInner").style.display = "none";
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "none";
     byId("divSwapSuccessPanel").style.display = "block";
 
     const explorerBase = networkStore.currentBlockchainNetwork ? BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, networkStore.currentBlockchainNetwork.blockExplorerDomain) : "";
@@ -1040,6 +836,15 @@ export function showSwapSuccessPanel(fromToken: string, toToken: string, fromBef
     byId("tdSwapSuccessToBefore").textContent = toBefore != null ? String(toBefore) : "0";
     byId("tdSwapSuccessToAfter").textContent = toAfter != null ? String(toAfter) : "0";
     byId("spanSwapSuccessGasFee").textContent = gasFeeCoins != null ? String(gasFeeCoins) : "0";
+    byId("pSwapSuccessTxHash").textContent = swapSuccessTxHash || "";
+}
+
+export async function copySwapSuccessTransactionHash(): Promise<void> {
+    if (swapSuccessTxHash) await WriteTextToClipboard(swapSuccessTxHash);
+}
+
+export async function openSwapSuccessTransactionInExplorer(): Promise<void> {
+    if (swapSuccessTxHash) await OpenScanTxn(swapSuccessTxHash);
 }
 
 export function onSwapSuccessOkClick(): boolean {
@@ -1048,205 +853,3 @@ export function onSwapSuccessOkClick(): boolean {
     return false;
 }
 
-export function setRemoveAllowancePanelWaiting(waiting: boolean): void {
-    const btn = byId<HTMLButtonElement>("btnRemoveAllowanceRemove");
-    const errDiv = byId("divRemoveAllowanceError");
-    const disabled = !!waiting;
-    const pwdInput = inputById("pwdRemoveAllowance");
-    if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
-    if (btn) { btn.disabled = disabled; btn.style.pointerEvents = disabled ? "none" : ""; btn.style.opacity = disabled ? "0.6" : ""; }
-    if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-}
-
-export function setAddAllowancePanelWaiting(waiting: boolean): void {
-    const qtyInput = inputById("txtAddAllowanceQuantity");
-    // The legacy selector matched the "max" link via its inline onclick attribute;
-    // the codegen preserves no on* attributes, so match the link inside the row.
-    const maxLink = document.querySelector<HTMLElement>("#divAddAllowanceQuantityRow a");
-    const btn = byId<HTMLButtonElement>("btnAddAllowanceAdd");
-    const errDiv = byId("divAddAllowanceError");
-    const disabled = !!waiting;
-    if (qtyInput) { qtyInput.disabled = disabled; qtyInput.style.opacity = disabled ? "0.6" : ""; }
-    const pwdInput = inputById("pwdAddAllowance");
-    if (pwdInput) { pwdInput.disabled = disabled; pwdInput.style.opacity = disabled ? "0.6" : ""; }
-    if (maxLink) { maxLink.style.pointerEvents = disabled ? "none" : ""; maxLink.style.opacity = disabled ? "0.6" : ""; }
-    if (btn) { btn.disabled = disabled; btn.style.pointerEvents = disabled ? "none" : ""; btn.style.opacity = disabled ? "0.6" : ""; }
-    if (errDiv) { errDiv.style.display = "none"; errDiv.textContent = ""; }
-}
-
-export async function openRemoveAllowanceContractInExplorer(): Promise<void> {
-    const addr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
-    await OpenUrl(url);
-}
-
-export async function openAddAllowanceContractInExplorer(): Promise<void> {
-    const addr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const url = BLOCK_EXPLORER_ACCOUNT_TEMPLATE.replace(BLOCK_EXPLORER_DOMAIN_TEMPLATE, (networkStore.currentBlockchainNetwork as { blockExplorerDomain: string }).blockExplorerDomain).replace(ADDRESS_TEMPLATE, addr);
-    await OpenUrl(url);
-}
-
-export function showSwapApprovalTransactionReview(review: TransactionReview, mode: string): void {
-    allowanceConfirmMode = mode;
-    review.requirePassword = false;
-    review.submitLabelKey = "submit";
-    review.nonce = null;
-    review.networkText = txReviewNetworkText();
-    review.fromAddress = walletStore.currentWalletAddress;
-    review.onSubmit = function () {
-        showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletForSwapApproval);
-    };
-    showTransactionReviewDialog(review);
-}
-
-export function showSwapExecuteConfirmDialog(): void {
-    const fromValue = selectById("ddlSwapFromToken").value;
-    const toValue = selectById("ddlSwapToToken").value;
-    const fromAmt = (inputById("txtSwapFromQuantity").value || "").trim();
-    const toAmt = (inputById("txtSwapToQuantity").value || "").trim();
-    // Prefer the wallet's own token symbol, falling back to the shortened
-    // address only when no symbol is available.
-    function sym(v: string): string { return v === "Q" ? "Q" : getSwapRouteDisplaySymbol(v, null); }
-    const resolved = resolveGasForTx(SWAP_DEFAULT_GAS);
-    // Show the full multi-hop route when one was resolved, otherwise from -> to.
-    let assetText = sym(fromValue) + " -> " + sym(toValue);
-    if (swapCurrentRoute && swapCurrentRoute.length >= 2) {
-        const routeParts: string[] = [];
-        for (let ri = 0; ri < swapCurrentRoute.length; ri++) {
-            routeParts.push(getSwapRouteDisplaySymbol(swapCurrentRoute[ri].address, swapCurrentRoute[ri].symbol));
-        }
-        assetText = routeParts.join(" -> ");
-    }
-    const review: TransactionReview = {
-        asset: assetText,
-        contractAddress: getSwapContractAddress(fromValue),
-        toAddress: walletStore.currentWalletAddress,
-        quantityLabelKey: "send-quantity",
-        quantityValue: fromAmt + " " + sym(fromValue) + " for " + toAmt + " " + sym(toValue),
-        gasLimit: resolved.gasLimit,
-        gasFee: resolved.gasFee,
-    };
-    showSwapApprovalTransactionReview(review, "swapExecute");
-}
-
-export async function decryptAndUnlockWalletForSwapApproval(): Promise<void> {
-    let pwdId = "pwdSwapConfirm";
-    if (allowanceConfirmMode === "remove") pwdId = "pwdRemoveAllowance";
-    else if (allowanceConfirmMode === "add") pwdId = "pwdAddAllowance";
-    const password = (inputById(pwdId).value || "").trim();
-    try {
-        const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
-        if (quantumWallet == null) {
-            hideWaitingBox();
-            showWarnAlert(getGenericError(""));
-            return;
-        }
-        closeTransactionReviewDialog();
-        // Keep the waiting box up while the transaction is submitted, so there is
-        // no dialog-less gap before the status dialog appears. The submit
-        // functions hide it right before showing the status dialog or an error.
-        updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
-        if (allowanceConfirmMode === "remove") {
-            allowanceConfirmMode = null;
-            setRemoveAllowancePanelWaiting(true);
-            await submitRemoveAllowanceTransaction(quantumWallet);
-        } else if (allowanceConfirmMode === "add") {
-            allowanceConfirmMode = null;
-            setAddAllowancePanelWaiting(true);
-            await submitAddAllowanceTransaction(quantumWallet);
-        } else if (allowanceConfirmMode === "swapExecute") {
-            allowanceConfirmMode = null;
-            setSwapConfirmPanelWaitingForApprovalTx(true);
-            await submitSwapTransaction(quantumWallet);
-        }
-    } catch (err: any) {
-        hideWaitingBox();
-        showWarnAlert((err && err.message) ? err.message : String(err));
-    }
-}
-
-export function onRemoveSwapAllowanceClick(): boolean {
-    if (!networkStore.currentBlockchainNetwork) return false;
-    const fromValue = selectById("ddlSwapFromToken").value;
-    if (!fromValue) return false;
-    byId("divSwapScreenInner").style.display = "none";
-    byId("divSwapConfirmPanel").style.display = "none";
-    byId("divSwapAddAllowancePanel").style.display = "none";
-    byId("divSwapRemoveAllowancePanel").style.display = "block";
-    const contractAddr = getSwapContractAddress(fromValue);
-    const aEl = byId("aRemoveAllowanceContract");
-    if (aEl) { aEl.textContent = contractAddr; aEl.setAttribute("data-contract-address", contractAddr); }
-    byId("divRemoveAllowanceError").style.display = "none";
-    byId("divRemoveAllowanceError").textContent = "";
-    setRemoveAllowancePanelWaiting(false);
-    resetCurrentGasConfig(swapApproveGasState);
-    setGasFeeLabel("spanRemoveAllowanceGasFee", "");
-    scheduleGasEstimation(function () { return getSwapApproveTxContext("0"); }, "divRemoveAllowanceGasIcon", "spanRemoveAllowanceGasFee", swapApproveGasState);
-    return false;
-}
-
-export function onRemoveAllowanceRemoveClick(): boolean {
-    const password = inputById("pwdRemoveAllowance").value;
-    if (password == null || password.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
-    const contractAddr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const resolved = resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState);
-    const review: TransactionReview = {
-        asset: langJson.langValues["remove-allowance-title"] || "Remove allowance",
-        contractAddress: contractAddr,
-        toAddress: contractAddr,
-        quantityLabelKey: "approval-quantity",
-        quantityValue: "0",
-        gasLimit: resolved.gasLimit,
-        gasFee: resolved.gasFee,
-    };
-    showSwapApprovalTransactionReview(review, "remove");
-    return false;
-}
-
-export function setAddAllowanceQuantityToMax(): boolean {
-    inputById("txtAddAllowanceQuantity").value = "999999999999999999";
-    onAddAllowanceQuantityInput();
-    return false;
-}
-
-export function onAddAllowanceQuantityInput(): void {
-    if (!networkStore.currentBlockchainNetwork) return;
-    const amount = (inputById("txtAddAllowanceQuantity").value || "").trim();
-    if (!amount || parseFloat(amount) <= 0) return;
-    scheduleGasEstimation(function () { return getSwapApproveTxContext(amount); }, "divAddAllowanceGasIcon", "spanAddAllowanceGasFee", swapApproveGasState);
-}
-
-export function onAddAllowanceAddClick(): boolean {
-    const password = inputById("pwdAddAllowance").value;
-    if (password == null || password.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
-    const contractAddr = getSwapContractAddress(selectById("ddlSwapFromToken").value);
-    const approvalQty = (inputById("txtAddAllowanceQuantity").value || "").trim();
-    const resolved = resolveGasForTx(APPROVE_DEFAULT_GAS, swapApproveGasState);
-    const review: TransactionReview = {
-        asset: langJson.langValues["add-allowance-title"] || "Add allowance",
-        contractAddress: contractAddr,
-        toAddress: contractAddr,
-        quantityLabelKey: "approval-quantity",
-        quantityValue: approvalQty,
-        gasLimit: resolved.gasLimit,
-        gasFee: resolved.gasFee,
-    };
-    showSwapApprovalTransactionReview(review, "add");
-    return false;
-}
-
-export function onSwapConfirmNextClick(): boolean {
-    const password = inputById("pwdSwapConfirm").value;
-    if (password == null || password.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
-    showSwapExecuteConfirmDialog();
-    return false;
-}

@@ -7,7 +7,6 @@
 import { langJson } from "../lib/i18n";
 import { htmlEncode, containsUnsafeDisplayText } from "../lib/util";
 import { impersonatesStablecoin } from "../lib/tokenfilter";
-import { walletGetByAddress } from "../lib/wallet";
 import {
     LiquidityPairInfoResult,
     LiquidityPairSnapshot,
@@ -47,15 +46,12 @@ import {
     walletStore,
 } from "./state";
 import {
-    TransactionReview,
     hideWaitingBox,
     showLoadingAndExecuteAsync,
-    showWaitingBox,
-    showTransactionReviewDialog,
     showWarnAlert,
-    txReviewNetworkText,
 } from "./dialog";
-import { TxStepDefinition, showTxStepsDialog } from "./txsteps";
+import { TxStepDefinition } from "./txsteps";
+import { requireTxHash, showReviewThenSteps } from "./txflow";
 import {
     APPROVE_DEFAULT_GAS,
     estimateGasForContext,
@@ -65,9 +61,8 @@ import {
     scheduleGasEstimation,
     setGasFeeLabel,
 } from "./gas";
-import { getGenericError, OpenScanAddress, removeOptions, setHeaderBand } from "./app";
+import { OpenScanAddress, removeOptions, setHeaderBand } from "./app";
 import { getSwapBalanceForSymbol, getSwapRouteDisplaySymbol, getSwapTokenDecimals, getSwapTokenListFromWallet } from "./swap";
-import { advancedSigningGetDefaultValue } from "./settings";
 import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
 import { BUILTIN_SWAP_RELEASES } from "../lib/release";
 
@@ -309,87 +304,6 @@ async function updatePickerInfoRows(suffix: string, value: string): Promise<void
     const balance = await getSwapBalanceForSymbol(value);
     byId("spanAdvBalance" + suffix).textContent = balance;
     balanceRow.style.display = "block";
-}
-
-// Shared review-dialog -> steps-dialog handoff: the review collects the typed
-// "i agree" + wallet password once; the wallet keys are decrypted once and the
-// steps then run automatically or wait for user-driven per-step actions.
-interface ReviewedStepsFlow {
-    review: TransactionReview;
-    stepsTitle: string;
-    progressText?: string;
-    interactive?: boolean;
-    buildSteps: (privateKey: string, publicKey: string, advancedSigningEnabled: boolean) => TxStepDefinition[];
-    onAllDone?: () => HTMLElement | null | void;
-    onClose?: () => unknown;
-}
-
-function showReviewThenSteps(flow: ReviewedStepsFlow): void {
-    const review = flow.review;
-    review.requirePassword = true;
-    review.submitLabelKey = "submit";
-    review.nonce = null;
-    review.networkText = txReviewNetworkText();
-    review.fromAddress = walletStore.currentWalletAddress;
-    if (flow.interactive) review.showGas = false;
-    review.onSubmit = async function (): Promise<boolean> {
-        showWaitingBox(langJson.langValues.waitWalletOpen);
-        try {
-            const password = (inputById("txtTxReviewPassword").value || "").trim();
-            const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
-            if (quantumWallet == null) {
-                showWarnAlert(getGenericError(""));
-                return false;
-            }
-            const privateKey = await quantumWallet.getPrivateKey();
-            const publicKey = await quantumWallet.getPublicKey();
-            const advancedSigningEnabled = await advancedSigningGetDefaultValue();
-            const steps = flow.buildSteps(privateKey, publicKey, advancedSigningEnabled === true);
-            // Close the decrypt wait dialog now; open the status UI on the next
-            // turn so the review dialog can finish closing first (avoids Close
-            // overlapping unpainted step labels).
-            hideWaitingBox();
-            const stepsTitle = flow.stepsTitle;
-            const progressText = flow.progressText;
-            const onAllDone = flow.onAllDone;
-            const onClose = flow.onClose;
-            const clearStepSecretsAndClose = function (): void {
-                // Sever closures that capture decrypted keys as soon as the
-                // workflow dialog closes.
-                for (const step of steps) {
-                    step.prepare = undefined;
-                    step.run = async () => { throw new Error("Workflow closed."); };
-                }
-                if (onClose) void onClose();
-            };
-            setTimeout(function () {
-                showTxStepsDialog({
-                    title: stepsTitle,
-                    steps,
-                    progressText,
-                    interactive: flow.interactive,
-                    onAllDone,
-                    onClose: clearStepSecretsAndClose,
-                });
-            }, 0);
-            return true;
-        } catch (err: any) {
-            showWarnAlert((err && err.message) ? String(err.message) : String(err));
-            return false;
-        } finally {
-            hideWaitingBox();
-        }
-    };
-    showTransactionReviewDialog(review);
-}
-
-// Throwing wrapper around a submit-IPC result: the tx-steps dialog surfaces
-// the thrown message on the failed step row.
-function requireTxHash(result: any): string {
-    if (!result || !result.success || !result.txHash) {
-        throw new Error((result && result.error) ? String(result.error) : (langJson.errors.transactionSubmissionFailed || "Transaction submission failed."));
-    }
-    return String(result.txHash);
 }
 
 function approveStep(label: string, tokenAddress: string, privateKey: string, publicKey: string, advancedSigningEnabled: boolean): TxStepDefinition {
