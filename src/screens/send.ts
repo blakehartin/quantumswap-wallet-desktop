@@ -43,8 +43,7 @@ function buildSendScreen(): HTMLElement {
                     el("div", { class: "selectwrapper" }, [
                         el("select", { id: "ddlCoinTokenToSend", class: "selectbox", tabindex: "303", onchange: () => { void updateInfoSendScreen(); } }, [
                             el("option", { value: "Q" }, ["Q"]),
-                            el("option", { value: "Y2Q" }, ["Y2Q"]),
-                            el("option", { value: "hei" }, ["Heisen"]),
+                            el("option", { value: "other" }, ["(token)"]),
                         ]),
                     ]),
                     el("input", {

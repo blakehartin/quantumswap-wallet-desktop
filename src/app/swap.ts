@@ -59,6 +59,7 @@ import { showSendCompletedDialog } from "./send";
 import { applySwapReleaseToPayload } from "./release";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
+let swapShowUnrecognizedTokens = false;
 
 export function getSwapSymbolFromValue(value: string): string {
     if (!value || value === "Q") return "Q";
@@ -231,14 +232,20 @@ export function getSwapDropdownDisplayText(tokenName: string, tokenSymbol: strin
     return namePart + " (" + symbolPart + ") " + addrPart;
 }
 
-export function getSwapTokenListFromWallet(): { value: string; displayText: string }[] {
+export function getSwapTokenListFromWallet(includeUnrecognized = true): { value: string; displayText: string }[] {
     const list: { value: string; displayText: string }[] = [];
     if (SWAP_SHOW_NATIVE_COIN) {
         list.push({ value: "Q", displayText: QuantumCoin + " (Q)" });
     }
-    if (tokenStore.currentWalletTokenList != null && tokenStore.currentWalletTokenList.length > 0) {
-        for (let i = 0; i < tokenStore.currentWalletTokenList.length; i++) {
-            const t = tokenStore.currentWalletTokenList[i];
+    // These lists are already filtered upstream to exclude stablecoin
+    // impersonators. Recognized contracts are always shown; unrecognized
+    // contracts are opt-in on the Swap screen.
+    const walletTokens = tokenStore.currentWalletRecognizedTokens.concat(
+        includeUnrecognized ? tokenStore.currentWalletUnrecognizedTokens : [],
+    );
+    if (walletTokens.length > 0) {
+        for (let i = 0; i < walletTokens.length; i++) {
+            const t = walletTokens[i];
             if (!t.symbol || !t.name || !t.contractAddress) continue;
             if (htmlEncode(t.name) !== t.name || htmlEncode(t.symbol) !== t.symbol) continue;
             list.push({
@@ -251,7 +258,7 @@ export function getSwapTokenListFromWallet(): { value: string; displayText: stri
 }
 
 export function populateSwapTokenDropdowns(): void {
-    const swapTokenList = getSwapTokenListFromWallet();
+    const swapTokenList = getSwapTokenListFromWallet(swapShowUnrecognizedTokens);
     const ddlFrom = selectById("ddlSwapFromToken");
     const ddlTo = selectById("ddlSwapToToken");
     removeOptions(ddlFrom);
@@ -277,7 +284,26 @@ export function populateSwapTokenDropdowns(): void {
     }
     ddlFrom.selectedIndex = 0;
     ddlTo.selectedIndex = 0;
+    byId("divSwapShowUnrecognized").style.display =
+        tokenStore.currentWalletUnrecognizedTokens.length > 0 ? "" : "none";
     updateSwapTokenSymbolCache();
+}
+
+export function onToggleSwapUnrecognized(): void {
+    const ddlFrom = selectById("ddlSwapFromToken");
+    const ddlTo = selectById("ddlSwapToToken");
+    const previousFrom = ddlFrom.value;
+    const previousTo = ddlTo.value;
+    swapShowUnrecognizedTokens = inputById("chkSwapShowUnrecognized").checked === true;
+    populateSwapTokenDropdowns();
+
+    if (Array.from(ddlFrom.options).some((option) => option.value === previousFrom)) {
+        ddlFrom.value = previousFrom;
+    }
+    if (Array.from(ddlTo.options).some((option) => option.value === previousTo)) {
+        ddlTo.value = previousTo;
+    }
+    void updateSwapScreenInfo();
 }
 
 let swapTokenSymbolCache: Record<string, string> = {};
@@ -573,6 +599,8 @@ export function openSwapScreen(): boolean {
     byId("divSwapConfirmPanel").style.display = "none";
     byId("divSwapRemoveAllowancePanel").style.display = "none";
     byId("divSwapAddAllowancePanel").style.display = "none";
+    swapShowUnrecognizedTokens = false;
+    inputById("chkSwapShowUnrecognized").checked = false;
     populateSwapTokenDropdowns();
     inputById("txtSwapFromQuantity").value = "";
     inputById("txtSwapToQuantity").value = "";

@@ -20,6 +20,7 @@ import {
     onSwapNextClick,
     onSwapScreenBackClick,
     onSwapSuccessOkClick,
+    onToggleSwapUnrecognized,
     openAddAllowanceContractInExplorer,
     openRemoveAllowanceContractInExplorer,
     openSwapFromContractInExplorer,
@@ -42,7 +43,7 @@ function passwordEye(passwordBoxId: string, tabindex: string): HTMLElement {
 }
 
 function buildSwapMainPanel(): HTMLElement {
-    return el("div", { id: "divSwapScreenInner", class: "roundex-box scrollbar", style: "padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto;max-height:590px;" }, [
+    return el("div", { id: "divSwapScreenInner", class: "roundex-box scrollbar", style: "padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:690px;" }, [
         el("div", { class: "gas-header-row" }, [
             el("div", { class: "heading bold", "data-lang-key": "swap" }, ["Swap"]),
             el("div", { class: "gas-header-right" }, [
@@ -51,10 +52,23 @@ function buildSwapMainPanel(): HTMLElement {
             ]),
         ]),
         el("div", { class: "divider" }),
+        el("div", { id: "divSwapShowUnrecognized", style: "display:none; text-align:left; margin-bottom:8px;" }, [
+            el("input", { type: "checkbox", id: "chkSwapShowUnrecognized", tabindex: "320", onchange: () => onToggleSwapUnrecognized() }),
+            el("label", {
+                for: "chkSwapShowUnrecognized", tabindex: "0", "data-lang-key": "show-unrecognized-tokens", style: "cursor:pointer; color:black;",
+                onkeydown: (event: Event) => {
+                    const key = (event as KeyboardEvent).key;
+                    if (key === "Enter" || key === " ") {
+                        event.preventDefault();
+                        (document.getElementById("chkSwapShowUnrecognized") as HTMLInputElement).click();
+                    }
+                },
+            }, ["Show unrecognized tokens"]),
+        ]),
         el("div", { class: "input_container", style: "gap:2px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "swap-from-token", style: "margin-top: 3px;" }, ["From token"]),
-            el("div", { class: "selectwrapper" }, [
-                el("select", { id: "ddlSwapFromToken", class: "selectbox", tabindex: "321", onchange: () => { void updateSwapScreenInfo(); } }),
+            el("div", { class: "selectwrapper", style: "width:100%; height:40px; box-sizing:border-box;" }, [
+                el("select", { id: "ddlSwapFromToken", class: "selectbox", style: "height:100%; box-sizing:border-box; padding:7px 10px;", tabindex: "321", onchange: () => { void updateSwapScreenInfo(); } }),
             ]),
             el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
                 el("div", { style: "font-size: 0.85em; color: #372339;" }, [
@@ -83,8 +97,8 @@ function buildSwapMainPanel(): HTMLElement {
         ]),
         el("div", { class: "input_container", style: "gap:2px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "swap-to-token", style: "margin-top: 3px;" }, ["To token"]),
-            el("div", { class: "selectwrapper" }, [
-                el("select", { id: "ddlSwapToToken", class: "selectbox", tabindex: "326", onchange: () => { void updateSwapScreenInfo(); } }),
+            el("div", { class: "selectwrapper", style: "width:100%; height:40px; box-sizing:border-box;" }, [
+                el("select", { id: "ddlSwapToToken", class: "selectbox", style: "height:100%; box-sizing:border-box; padding:7px 10px;", tabindex: "326", onchange: () => { void updateSwapScreenInfo(); } }),
             ]),
             el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
                 el("div", { style: "font-size: 0.85em; color: #372339;" }, [
@@ -104,7 +118,7 @@ function buildSwapMainPanel(): HTMLElement {
             }),
             el("div", { class: "divider" }),
         ]),
-        el("div", { id: "divSwapRoutePath", style: "display: none; font-size: 0.85em; color: #372339; margin-top:6px; word-break: break-all;" }, [
+        el("div", { id: "divSwapRoutePath", style: "display: none; font-size: 0.85em; color: #ffffff; margin-top:6px; word-break: break-all;" }, [
             el("span", { "data-lang-key": "swap-route" }, ["Route"]),
             ": ",
             el("span", { id: "spanSwapRoutePath" }),
