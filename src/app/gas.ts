@@ -42,10 +42,6 @@ export const currentGasConfig: GasState = { gasLimit: null, gasFee: null, overri
 let gasEstimateTimerId: ReturnType<typeof setTimeout> | null = null;
 let gasEstimateToken = 0;
 
-// Additional gas-state objects for the swap sub-flows (approve/remove/add use their
-// own context so they don't clash with the swap-execute estimate).
-export const swapApproveGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
-
 // Format the gas fee as a number string with no trailing zeros (LSB only).
 // Decimals are shown only when present: 110 -> "110", 0.5 -> "0.5", 0.0476 -> "0.0476".
 export function formatGasFeeNumber(value: unknown): string {
@@ -155,6 +151,82 @@ export function buildEstimateGasPayload(ctx: TxContext): Record<string, unknown>
 
 export type TxContextProvider = TxContext | null | (() => TxContext | null);
 
+export interface PerTransactionGasEstimate {
+    gasLimit: string;
+    gasFee: string;
+    feePerGas: number;
+    usedFallback: boolean;
+    error: string | null;
+}
+
+// Estimate one transaction against the current chain state. Compound flows
+// call this only when a step becomes current, after prior receipts succeeded.
+export async function estimateGasForContext(ctx: TxContext): Promise<PerTransactionGasEstimate> {
+    const payload = buildEstimateGasPayload(ctx);
+    if (!payload) throw new Error("Gas estimation is unavailable.");
+
+    let usedFallback = false;
+    let error: string | null = null;
+    let gasLimit: string | null = null;
+    try {
+        const est = await estimateGas(payload);
+        if (est && est.success && est.gasLimit) {
+            gasLimit = String(est.gasLimit);
+        } else {
+            usedFallback = true;
+            error = est && est.error ? String(est.error) : null;
+        }
+    } catch (err: any) {
+        usedFallback = true;
+        error = (err && err.message) ? String(err.message) : String(err);
+    }
+
+    if (gasLimit == null) {
+        if (!ctx.defaultGasLimit) throw new Error(error || "Gas estimation failed.");
+        gasLimit = String(ctx.defaultGasLimit);
+    }
+
+    const fullSign = await advancedSigningGetDefaultValue();
+    const keyType = getWalletKeyType();
+    let gasFee: string | null = null;
+    try {
+        const feeRes = await estimateGasFee({
+            rpcEndpoint: networkStore.currentBlockchainNetwork!.rpcEndpoint,
+            chainId: parseInt(String(networkStore.currentBlockchainNetwork!.networkId), 10),
+            gasLimit,
+            keyType,
+            fullSign: fullSign === true,
+        });
+        if (feeRes && feeRes.success && feeRes.gasFeeEth != null) {
+            gasFee = String(feeRes.gasFeeEth);
+            if (feeRes.usedFallback === true) {
+                usedFallback = true;
+                if (feeRes.error) error = String(feeRes.error);
+            }
+        } else {
+            usedFallback = true;
+            if (feeRes && feeRes.error) error = String(feeRes.error);
+        }
+    } catch (err: any) {
+        usedFallback = true;
+        error = (err && err.message) ? String(err.message) : String(err);
+    }
+
+    if (gasFee == null) {
+        gasFee = String(Number(gasLimit) * SWAP_GAS_FEE_RATE);
+        usedFallback = true;
+    }
+    const limitNumber = Number(gasLimit);
+    const feeNumber = Number(gasFee);
+    return {
+        gasLimit,
+        gasFee,
+        feePerGas: limitNumber > 0 && Number.isFinite(feeNumber) ? feeNumber / limitNumber : SWAP_GAS_FEE_RATE,
+        usedFallback,
+        error,
+    };
+}
+
 // Schedule a debounced gas estimation. `ctxProvider` returns the tx context (or null to skip),
 // `iconId`/`labelId` identify the UI elements. `state` is the gas-state object to update
 // (defaults to the global currentGasConfig). Respects offline mode (no network lookup).
@@ -205,84 +277,30 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         return;
     }
 
-    const payload = buildEstimateGasPayload(ctx);
-    if (!payload) return;
-
     setGasIconPulse(iconId, true);
     if (labelId) setGasFeeLabel(labelId, "");
-
-    // Track whether any RPC call failed and the (sanitized at render time) error detail,
-    // so the caller can surface a transient toast.
-    let rpcError = false;
-    let rpcErrorMessage: string | null = null;
-
-    let gasLimit: string | null = null;
     try {
-        const est = await estimateGas(payload);
+        const result = await estimateGasForContext(ctx);
         if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
-        if (est && est.success && est.gasLimit) {
-            gasLimit = est.gasLimit;
-        } else {
-            rpcError = true;
-            if (est && est.error) rpcErrorMessage = est.error;
+        if (!s.overridden) {
+            s.gasLimit = result.gasLimit;
+            s.gasFee = result.gasFee;
+            s.overridden = false;
+            if (labelId) setGasFeeLabel(labelId, s.gasFee);
         }
-    } catch (e: any) {
-        rpcError = true;
-        rpcErrorMessage = (e && e.message) ? e.message : String(e);
-    }
-
-    if (gasLimit == null) {
-        // estimateGas failed: fall back to the hardcoded default gas limit.
-        gasLimit = ctx.defaultGasLimit ? String(ctx.defaultGasLimit) : null;
-        if (gasLimit == null) {
-            setGasIconPulse(iconId, false);
-            if (rpcError && typeof onRpcError === "function") { onRpcError(rpcErrorMessage); }
-            return;
-        }
-    }
-
-    // Now compute the fee separately via getFeeData(keyType, fullSign).
-    const fullSign = await advancedSigningGetDefaultValue();
-    const keyType = getWalletKeyType();
-    let gasFee: string | number | null = null;
-    try {
-        const feeRes = await estimateGasFee({
-            rpcEndpoint: networkStore.currentBlockchainNetwork.rpcEndpoint,
-            chainId: parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
-            gasLimit: gasLimit,
-            keyType: keyType,
-            fullSign: fullSign === true,
-        });
-        if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
-        if (feeRes && feeRes.success && feeRes.gasFeeEth != null) {
-            gasFee = feeRes.gasFeeEth;
-            if (feeRes.usedFallback === true) {
-                rpcError = true;
-                if (feeRes.error) rpcErrorMessage = feeRes.error;
-            }
-        } else {
-            rpcError = true;
-            if (feeRes && feeRes.error) rpcErrorMessage = feeRes.error;
-        }
-    } catch (e: any) {
-        rpcError = true;
-        rpcErrorMessage = (e && e.message) ? e.message : String(e);
-    }
-
-    if (gasFee == null) {
-        // Network fee lookup failed: use the current default rate.
-        gasFee = (Number(gasLimit) * SWAP_GAS_FEE_RATE);
-        rpcError = true;
-    }
-
-    if (myToken === s._token && !s.overridden) {
-        s.gasLimit = String(gasLimit);
-        s.gasFee = String(gasFee);
-        s.overridden = false;
-        if (labelId) setGasFeeLabel(labelId, s.gasFee);
         setGasIconPulse(iconId, false);
-        if (rpcError && typeof onRpcError === "function") {
-            onRpcError(rpcErrorMessage);
+        if (result.usedFallback && typeof onRpcError === "function") {
+            onRpcError(result.error);
+        }
+    } catch (e: any) {
+        if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
+        s.gasLimit = null;
+        s.gasFee = null;
+        s.overridden = false;
+        if (labelId) setGasFeeLabel(labelId, "");
+        setGasIconPulse(iconId, false);
+        if (typeof onRpcError === "function") {
+            onRpcError((e && e.message) ? String(e.message) : String(e));
         }
     }
 }

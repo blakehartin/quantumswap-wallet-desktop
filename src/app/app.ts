@@ -199,7 +199,7 @@ export function resizeBoxes(): void {
     let maxHeightMiddle = "";
 
     if (screen.height >= 1024) {
-        maxHeight = "560px";
+        maxHeight = "570px";
         maxHeightMiddle = "550px";
         tokensMaxHeight = "295px";
     } else if (screen.height >= 960) {

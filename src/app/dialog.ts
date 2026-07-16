@@ -229,7 +229,7 @@ export async function showAdvancedSigningSettingDialog(f?: () => void): Promise<
 let modalSwapApprovalSubmit: HTMLDialogElement | null;
 
 let modalTransactionReview: HTMLDialogElement;
-let txReviewOnSubmit: (() => void) | null = null;
+let txReviewOnSubmit: (() => unknown) | null = null;
 let txReviewRequirePassword = false;
 
 let modalSendCompleted: HTMLDialogElement;
@@ -258,6 +258,13 @@ export function showLoadingAndExecuteAsync(txt: string, f: () => unknown): void 
     setTimeout(() => {
         f();
     }, 60);
+}
+
+export function showWaitingBox(txt: string): void {
+    const modalWaitDialog = byId<HTMLDialogElement>("modalWaitDialog");
+    modalWaitDialog.style.display = "block";
+    modalWaitDialog.showModal();
+    byId("pWaitDetails").innerText = txt;
 }
 
 export function hideWaitingBox(): void {
@@ -317,7 +324,7 @@ export function txReviewNetworkText(): string {
 export interface TransactionReview {
     asset?: string;
     fromAddress?: string;
-    toAddress?: string;
+    toAddress?: string | null;
     quantityLabelKey?: string;
     quantityValue?: string;
     gasLimit?: string;
@@ -327,18 +334,21 @@ export interface TransactionReview {
     contractAddress?: string | null;
     assetLabelKey?: string;
     requirePassword?: boolean;
+    showGas?: boolean;
     submitLabelKey?: string;
-    onSubmit?: () => void;
+    onSubmit?: () => unknown;
 }
 
 export function showTransactionReviewDialog(review: TransactionReview): boolean {
     byId("spanTxReviewAsset").textContent = review.asset || "";
     byId("spanTxReviewFrom").textContent = review.fromAddress || "";
-    byId("spanTxReviewTo").textContent = review.toAddress || "";
     byId("spanTxReviewQuantity").textContent = review.quantityValue || "";
     byId("spanTxReviewGasLimit").textContent = review.gasLimit || "";
     byId("spanTxReviewGasFee").textContent = review.gasFee || "";
     byId("spanTxReviewNetwork").textContent = review.networkText || "";
+    const showGas = review.showGas !== false;
+    byId("rowTxReviewGasLimit").style.display = showGas ? "block" : "none";
+    byId("rowTxReviewGasFee").style.display = showGas ? "block" : "none";
 
     const lblAsset = byId("lblTxReviewAsset");
     if (lblAsset) {
@@ -351,6 +361,15 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     const lblQty = byId("lblTxReviewQuantity");
     if (lblQty && review.quantityLabelKey && langJson && langJson.langValues[review.quantityLabelKey]) {
         lblQty.textContent = langJson.langValues[review.quantityLabelKey];
+    }
+
+    const toRow = byId("rowTxReviewTo");
+    if (review.toAddress != null && review.toAddress !== "") {
+        byId("spanTxReviewTo").textContent = review.toAddress;
+        toRow.style.display = "block";
+    } else {
+        byId("spanTxReviewTo").textContent = "";
+        toRow.style.display = "none";
     }
 
     const contractRow = byId("rowTxReviewContract");
@@ -374,7 +393,7 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     const pwdRow = byId("rowTxReviewPassword");
     txReviewRequirePassword = review.requirePassword === true;
     if (txReviewRequirePassword) {
-        pwdRow.style.display = "flex";
+        pwdRow.style.display = "block";
     } else {
         pwdRow.style.display = "none";
     }
@@ -637,7 +656,7 @@ export function initDialogs(): void {
         }
     };
 
-    btnTxReviewSubmit.onclick = function () {
+    btnTxReviewSubmit.onclick = async function () {
         const iagree = (inputById("txtTxReviewIAgree").value || "").trim().toLowerCase();
         const required = (langJson && langJson.langValues["i-agree-literal"]) ? langJson.langValues["i-agree-literal"].toLowerCase() : "i agree";
         if (iagree !== required) {
@@ -650,6 +669,26 @@ export function initDialogs(): void {
                 showWarnAlert(langJson.errors.enterWalletPassord);
                 return;
             }
+            const cb = txReviewOnSubmit;
+            if (cb == null) return;
+            let ok = false;
+            try {
+                const result = await cb();
+                ok = result !== false;
+            } catch {
+                ok = false;
+            }
+            if (!ok) {
+                setTimeout(function () {
+                    const pwdEl = byId("txtTxReviewPassword");
+                    if (pwdEl) { pwdEl.focus(); }
+                }, 100);
+                return;
+            }
+            modalTransactionReview.style.display = "none";
+            modalTransactionReview.close();
+            txReviewOnSubmit = null;
+            return;
         }
         const cb = txReviewOnSubmit;
         modalTransactionReview.style.display = "none";
