@@ -13,9 +13,7 @@ import {
     onCreateTokenGasIconClick,
     onCreateTokenInput,
     onAddLiquidityClick,
-    onAddLiquidityGasIconClick,
     onRemoveLiquidityClick,
-    onRemoveLiquidityGasIconClick,
     onLiquidityAmountInput,
     onLiquidityBackClick,
     onLiquiditySlippageInput,
@@ -37,8 +35,8 @@ import {
 
 const ADV_INPUT_STYLE = "text-align: left; width: 100%; border: none; outline: none; font-weight: 500; color: black;";
 const ADV_INFO_ROW_STYLE = "font-size: 0.85em; color: #ffffff; margin-top: 3px;";
-const ADV_CONTRACT_ROW_STYLE = "font-size: 0.85em; color: #ffffff; margin-top: 4px; display: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;";
-const ADV_CONTRACT_LINK_STYLE = "color: inherit; text-decoration: underline; word-break: break-all;";
+const ADV_CONTRACT_ROW_STYLE = "font-size: 0.85em; color: #ffffff; margin-top: 4px; display: none; flex-wrap: nowrap; align-items: center; gap: 6px;";
+const ADV_CONTRACT_LINK_STYLE = "color: inherit; text-decoration: underline; word-break: break-all; min-width:0; flex:1;";
 // Scrollable content areas keep a right padding so inputs / dropdowns end
 // before the overlay scrollbar instead of running under it.
 const ADV_SCROLL_PAD = "padding-right: 14px;";
@@ -56,14 +54,6 @@ function menuLink(langKey: string, textContent: string, tabindex: string, action
     ]);
 }
 
-// Spinner + "Please wait, loading..." row (shown with display:flex).
-function loadingRow(id: string): HTMLElement {
-    return el("div", { id, style: "display:none; align-items:center; gap:8px; margin:6px 0;" }, [
-        el("img", { src: "assets/icons/loading.gif", alt: "Loading", style: "width:30px; height:30px; flex-shrink:0;" }),
-        el("span", { "data-lang-key": "please-wait-loading" }, ["Please wait, loading..."]),
-    ]);
-}
-
 // Token picker: the swap screen's selectwrapper + selectbox combo so the
 // dropdown fills the row like the textboxes do.
 function tokenPicker(selectId: string, tabindex: string, onchange: () => unknown): HTMLElement {
@@ -74,8 +64,8 @@ function tokenPicker(selectId: string, tabindex: string, onchange: () => unknown
 
 // Right-aligned in-flow action button row (no float, so it always takes
 // vertical space and cannot overlap the content above or the box border).
-function actionButtonRow(buttonId: string, langKey: string, textContent: string, tabindex: string, onclick: () => unknown): HTMLElement {
-    return el("div", { style: "display:flex; justify-content:flex-end; margin-top:10px;" }, [
+function actionButtonRow(buttonId: string, langKey: string, textContent: string, tabindex: string, onclick: () => unknown, marginBottom = "0"): HTMLElement {
+    return el("div", { style: "display:flex; justify-content:flex-end; margin-top:10px; margin-bottom:" + marginBottom + ";" }, [
         el("div", { class: "large_button_container heading large", "data-lang-key": langKey, role: "button", tabindex, id: buttonId, onclick: () => { void onclick(); } }, [textContent]),
     ]);
 }
@@ -158,7 +148,7 @@ function buildTokenCreateScreen(): HTMLElement {
         el("div", { class: "center-content" }, [
             el("div", { class: "center-content-rounded-container", style: "margin-top:15px;" }, [
                 el("div", { class: "back-container", role: "button", tabindex: "7", onclick: () => { void showAdvancedScreen(); } }),
-                el("div", { class: "roundex-box", style: "padding-top: 15px; padding-bottom: 15px;" }, [
+                el("div", { class: "roundex-box", style: "padding-top:15px; padding-bottom:115px;" }, [
                     gasHeaderRow("create-token", "Create Token", "spanCreateTokenGasFee", "divCreateTokenGasIcon", "8", onCreateTokenGasIconClick),
                     el("div", { class: "divider" }),
                     el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; " + ADV_SCROLL_PAD }, [
@@ -192,14 +182,13 @@ function buildPoolsScreen(): HTMLElement {
         el("div", { class: "center-content" }, [
             el("div", { class: "center-content-rounded-container", style: "margin-top:15px;" }, [
                 el("div", { class: "back-container", role: "button", tabindex: "20", onclick: () => { void onPoolsBackClick(); } }),
-                el("div", { class: "roundex-box", style: "padding-top: 15px; padding-bottom: 15px;" }, [
-                    refreshHeaderRow("heading large", "pools", "Pools", "divPoolsRefresh", "2", () => refreshPoolsTable(true)),
+                el("div", { class: "roundex-box", style: "padding-top:15px; padding-bottom:15px; max-height:calc(100vh - 180px);" }, [
+                    refreshHeaderRow("heading large", "pools", "Pools", "divPoolsRefresh", "2", () => refreshPoolsTable()),
                     el("div", { class: "divider" }),
 
                     // Pool list (default view).
                     el("div", { id: "divPoolsListPanel" }, [
-                        el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height:300px; " + ADV_SCROLL_PAD, id: "divPoolsList", tabindex: "1" }, [
-                            loadingRow("divPoolsLoading"),
+                        el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height:470px; " + ADV_SCROLL_PAD, id: "divPoolsList", tabindex: "1" }, [
                             el("div", { id: "divPoolsListError", class: "tx-steps-error", style: "display:none;" }),
                             el("table", { class: "styled-table" }, [
                                 el("thead", {}, [
@@ -245,7 +234,7 @@ function buildLiquidityScreen(): HTMLElement {
         el("div", { class: "center-content" }, [
             el("div", { class: "center-content-rounded-container", style: "margin-top:15px;" }, [
                 el("div", { class: "back-container", role: "button", tabindex: "40", onclick: () => { void onLiquidityBackClick(); } }),
-                el("div", { class: "roundex-box", style: "padding-top: 15px; padding-bottom: 15px;" }, [
+                el("div", { class: "roundex-box", style: "padding-top:15px; padding-bottom:15px;" }, [
                     el("div", {}, [
                         el("div", { class: "heading large", style: "float:left;width:fit-content;", "data-lang-key": "liquidity" }, ["Liquidity"]),
                     ]),
@@ -253,8 +242,8 @@ function buildLiquidityScreen(): HTMLElement {
 
                     // My positions (default view).
                     el("div", { id: "divLiquidityPositionsPanel" }, [
-                        el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height:360px; " + ADV_SCROLL_PAD }, [
-                            refreshHeaderRow("heading medium bold", "my-positions", "My Positions", "divLiquidityPositionsRefresh", "2", () => refreshLiquidityPositions(true)),
+                        el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height:510px; " + ADV_SCROLL_PAD }, [
+                            refreshHeaderRow("heading medium bold", "my-positions", "My Positions", "divLiquidityPositionsRefresh", "2", () => refreshLiquidityPositions()),
                             el("div", { id: "divLiquidityPositionsError", class: "tx-steps-error", style: "display:none;" }),
                             el("div", { id: "divLiquidityPositionsEmpty", style: "display:none;", "data-lang-key": "no-positions" }, ["You have no liquidity positions."]),
                             el("div", { id: "divLiquidityPositionsList" }),
@@ -267,7 +256,7 @@ function buildLiquidityScreen(): HTMLElement {
 
                     // Add-liquidity panel.
                     el("div", { id: "divLiquidityAddPanel", style: "display:none;" }, [
-                        gasHeaderRow("add-liquidity", "Add Liquidity", "spanAddLiquidityGasFee", "divAddLiquidityGasIcon", "10", onAddLiquidityGasIconClick),
+                        el("div", { class: "heading bold", "data-lang-key": "add-liquidity" }, ["Add Liquidity"]),
                         el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; " + ADV_SCROLL_PAD }, [
                             el("div", { class: "input_container" }, [
                                 el("div", { class: "heading medium", "data-lang-key": "token-a" }, ["Token A"]),
@@ -286,13 +275,13 @@ function buildLiquidityScreen(): HTMLElement {
                                 el("div", { id: "divLiquidityFirstProviderWarn", style: "display:none;", "data-lang-key": "first-provider-warn" }, ["This pool is empty. You are the first liquidity provider: the ratio of the amounts you add sets the initial price of this pair."]),
                                 el("div", { id: "divLiquidityAddError", class: "tx-steps-error", style: "display:none;" }),
                             ]),
-                            actionButtonRow("btnLiquidityAdd", "add", "Add", "16", onAddLiquidityClick),
+                            actionButtonRow("btnLiquidityAdd", "add", "Add", "16", onAddLiquidityClick, "15px"),
                         ]),
                     ]),
 
                     // Remove-liquidity panel (opened from a position card).
                     el("div", { id: "divLiquidityRemovePanel", style: "display:none;" }, [
-                        gasHeaderRow("remove-liquidity", "Remove Liquidity", "spanRemoveLiquidityGasFee", "divRemoveLiquidityGasIcon", "25", onRemoveLiquidityGasIconClick),
+                        el("div", { class: "heading bold", "data-lang-key": "remove-liquidity" }, ["Remove Liquidity"]),
                         el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height: calc(100vh - 260px); " + ADV_SCROLL_PAD }, [
                             el("div", { class: "input_container" }, [
                                 el("div", { class: "heading medium", id: "divLiquidityRemovePair" }),

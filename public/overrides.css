@@ -149,6 +149,17 @@ img.qs-eye {
     color: #ffffff;
 }
 
+.tx-step.s-ready {
+    background: rgba(13, 148, 136, 0.28);
+    border-color: rgba(45, 212, 191, 0.72);
+    color: #ffffff;
+}
+
+.tx-step.s-ready .tx-badge {
+    background: rgba(13, 148, 136, 0.65);
+    color: #ffffff;
+}
+
 .tx-step.s-done {
     color: rgba(255, 255, 255, 0.75);
 }
@@ -199,4 +210,5 @@ img.qs-eye {
 #modalTxSteps .proceed {
     float: none;
     margin-top: 0;
+    flex-direction: row;
 }

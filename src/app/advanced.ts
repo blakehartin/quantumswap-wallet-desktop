@@ -58,6 +58,7 @@ import {
 import { TxStepDefinition, showTxStepsDialog } from "./txsteps";
 import {
     APPROVE_DEFAULT_GAS,
+    estimateGasForContext,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -102,8 +103,11 @@ function tokenValueDecimals(value: string): number {
     return value === "Q" ? 18 : getSwapTokenDecimals(value);
 }
 
+const advancedTokenSymbolCache = new Map<string, string>([["q", "Q"]]);
+
 function tokenValueSymbol(value: string): string {
-    return value === "Q" ? "Q" : getSwapRouteDisplaySymbol(value, null);
+    const cached = advancedTokenSymbolCache.get(String(value).toLowerCase());
+    return cached || (value === "Q" ? "Q" : getSwapRouteDisplaySymbol(value, null));
 }
 
 // Map an on-chain pair token address back to a picker value: the active
@@ -131,6 +135,10 @@ function populateTokenPicker(selectId: string): void {
         opt.value = item.value;
         opt.text = item.displayText;
         ddl.add(opt);
+        advancedTokenSymbolCache.set(
+            item.value.toLowerCase(),
+            item.value === "Q" ? "Q" : getSwapRouteDisplaySymbol(item.value, null),
+        );
     }
     if (previous) ddl.value = previous;
 }
@@ -202,8 +210,6 @@ function setInlineError(divId: string, message: string | null): void {
 
 export const createTokenGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
 export const createPairGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
-export const addLiquidityGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
-export const removeLiquidityGasState: GasState = { gasLimit: null, gasFee: null, overridden: false };
 
 // Tx-context providers: null until the form holds enough valid input to
 // estimate. runGasEstimation falls back to defaultGasLimit when the RPC
@@ -243,74 +249,12 @@ function getCreatePairTxContext(): TxContext | null {
     };
 }
 
-// Default for the add flow: first deposit into a missing/empty pair makes the
-// router deploy the pair contract, so it needs the create-pair budget.
-function addLiquidityDefaultGas(): number {
-    const pairExists = !!(addPairInfo && addPairInfo.exists && addPairInfo.pair != null && BigInt(addPairInfo.pair.reserve0) > 0n);
-    return pairExists ? ADD_LIQUIDITY_DEFAULT_GAS : CREATE_PAIR_DEFAULT_GAS;
-}
-
-function getAddLiquidityTxContext(): TxContext | null {
-    const a = selectById("ddlLiquidityTokenA").value;
-    const b = selectById("ddlLiquidityTokenB").value;
-    if (!a || !b || a === b) return null;
-    const amountA = (inputById("txtLiquidityAmountA").value || "").trim();
-    const amountB = (inputById("txtLiquidityAmountB").value || "").trim();
-    const decimalsA = tokenValueDecimals(a);
-    const decimalsB = tokenValueDecimals(b);
-    try {
-        if (parseBaseUnits(amountA, decimalsA) <= 0n || parseBaseUnits(amountB, decimalsB) <= 0n) return null;
-    } catch {
-        return null;
-    }
-    let slippagePercent = parseFloat(inputById("txtLiquiditySlippage").value);
-    if (isNaN(slippagePercent) || slippagePercent < 0 || slippagePercent > 50) slippagePercent = 0.5;
-    return {
-        txKind: "addLiquidity",
-        defaultGasLimit: addLiquidityDefaultGas(),
-        tokenAValue: a,
-        tokenBValue: b,
-        amountA,
-        amountB,
-        decimalsA,
-        decimalsB,
-        slippagePercent,
-        ownerAddress: walletStore.currentWalletAddress,
-    };
-}
-
-function getRemoveLiquidityTxContext(): TxContext | null {
-    if (removePosition == null) return null;
-    const est = computeRemoveEstimates();
-    if (est == null || est.burnWei <= 0n) return null;
-    let slippagePercent = parseFloat(inputById("txtLiquidityRemoveSlippage").value);
-    if (isNaN(slippagePercent) || slippagePercent < 0 || slippagePercent > 50) slippagePercent = 0.5;
-    return {
-        txKind: "removeLiquidity",
-        defaultGasLimit: REMOVE_LIQUIDITY_DEFAULT_GAS,
-        tokenAAddress: removePosition.token0,
-        tokenBAddress: removePosition.token1,
-        liquidityWei: est.burnWei.toString(),
-        amountAMinWei: minWithSlippage(est.amount0, slippagePercent).toString(),
-        amountBMinWei: minWithSlippage(est.amount1, slippagePercent).toString(),
-        ownerAddress: walletStore.currentWalletAddress,
-    };
-}
-
 function scheduleCreateTokenGas(): void {
     scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState);
 }
 
 function scheduleCreatePairGas(): void {
     scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState);
-}
-
-function scheduleAddLiquidityGas(): void {
-    scheduleGasEstimation(getAddLiquidityTxContext, "divAddLiquidityGasIcon", "spanAddLiquidityGasFee", addLiquidityGasState);
-}
-
-function scheduleRemoveLiquidityGas(): void {
-    scheduleGasEstimation(getRemoveLiquidityTxContext, "divRemoveLiquidityGasIcon", "spanRemoveLiquidityGasFee", removeLiquidityGasState);
 }
 
 export function onCreateTokenInput(): void {
@@ -320,12 +264,10 @@ export function onCreateTokenInput(): void {
 
 export function onLiquiditySlippageInput(): void {
     sanitizeNumericInput(inputById("txtLiquiditySlippage"));
-    scheduleAddLiquidityGas();
 }
 
 export function onRemoveSlippageInput(): void {
     sanitizeNumericInput(inputById("txtLiquidityRemoveSlippage"));
-    scheduleRemoveLiquidityGas();
 }
 
 export function onCreateTokenGasIconClick(): boolean {
@@ -334,14 +276,6 @@ export function onCreateTokenGasIconClick(): boolean {
 
 export function onCreatePairGasIconClick(): boolean {
     return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext);
-}
-
-export function onAddLiquidityGasIconClick(): boolean {
-    return onGasIconClick("spanAddLiquidityGasFee", addLiquidityGasState, getAddLiquidityTxContext);
-}
-
-export function onRemoveLiquidityGasIconClick(): boolean {
-    return onGasIconClick("spanRemoveLiquidityGasFee", removeLiquidityGasState, getRemoveLiquidityTxContext);
 }
 
 // ---------------- Balance / contract rows under the token pickers ----------------
@@ -379,11 +313,12 @@ async function updatePickerInfoRows(suffix: string, value: string): Promise<void
 
 // Shared review-dialog -> steps-dialog handoff: the review collects the typed
 // "i agree" + wallet password once; the wallet keys are decrypted once and the
-// steps then run automatically in sequence.
+// steps then run automatically or wait for user-driven per-step actions.
 interface ReviewedStepsFlow {
     review: TransactionReview;
     stepsTitle: string;
     progressText?: string;
+    interactive?: boolean;
     buildSteps: (privateKey: string, publicKey: string, advancedSigningEnabled: boolean) => TxStepDefinition[];
     onAllDone?: () => HTMLElement | null | void;
     onClose?: () => unknown;
@@ -396,6 +331,7 @@ function showReviewThenSteps(flow: ReviewedStepsFlow): void {
     review.nonce = null;
     review.networkText = txReviewNetworkText();
     review.fromAddress = walletStore.currentWalletAddress;
+    if (flow.interactive) review.showGas = false;
     review.onSubmit = async function (): Promise<boolean> {
         showWaitingBox(langJson.langValues.waitWalletOpen);
         try {
@@ -417,13 +353,23 @@ function showReviewThenSteps(flow: ReviewedStepsFlow): void {
             const progressText = flow.progressText;
             const onAllDone = flow.onAllDone;
             const onClose = flow.onClose;
+            const clearStepSecretsAndClose = function (): void {
+                // Sever closures that capture decrypted keys as soon as the
+                // workflow dialog closes.
+                for (const step of steps) {
+                    step.prepare = undefined;
+                    step.run = async () => { throw new Error("Workflow closed."); };
+                }
+                if (onClose) void onClose();
+            };
             setTimeout(function () {
                 showTxStepsDialog({
                     title: stepsTitle,
                     steps,
                     progressText,
+                    interactive: flow.interactive,
                     onAllDone,
-                    onClose,
+                    onClose: clearStepSecretsAndClose,
                 });
             }, 0);
             return true;
@@ -449,12 +395,17 @@ function requireTxHash(result: any): string {
 function approveStep(label: string, tokenAddress: string, privateKey: string, publicKey: string, advancedSigningEnabled: boolean): TxStepDefinition {
     return {
         label,
-        run: async () => requireTxHash(await submitLiquidityApprove({
+        prepare: async () => estimateGasForContext({
+            txKind: "approveToken",
+            defaultGasLimit: APPROVE_DEFAULT_GAS,
+            tokenAddress,
+        }),
+        run: async (gasLimit) => requireTxHash(await submitLiquidityApprove({
             ...chainPayload(),
             tokenAddress,
             privateKey,
             publicKey,
-            gasLimit: APPROVE_DEFAULT_GAS,
+            gasLimit: gasLimit || APPROVE_DEFAULT_GAS,
             advancedSigningEnabled,
         })),
     };
@@ -574,10 +525,11 @@ export function onLiquidityBackClick(): boolean {
 
 // ---------------- Pools ----------------
 
-// In-memory caches for the pool list and the user's positions: both lists are
-// expensive multi-call RPC scans, so results are reused for 2 minutes unless
-// the user hits the refresh icon or completes a liquidity-changing flow.
-const ADVANCED_CACHE_TTL_MS = 120000;
+// In-memory caches survive screen navigation. Both lists remain available for
+// 10 minutes and are rendered immediately while fresh RPC scans run in the
+// background.
+const POOLS_CACHE_TTL_MS = 10 * 60 * 1000;
+const POSITIONS_CACHE_TTL_MS = 10 * 60 * 1000;
 let poolsCache: { key: string; at: number; pools: LiquidityPairSnapshot[] } | null = null;
 let positionsCache: { key: string; at: number; positions: LiquidityPositionSnapshot[] } | null = null;
 
@@ -589,15 +541,6 @@ function advancedCacheKey(): string {
     return String(net.networkId) + "|" + factory.toLowerCase();
 }
 
-function invalidateAdvancedLiquidityCaches(): void {
-    poolsCache = null;
-    positionsCache = null;
-}
-
-function setLoadingRowVisible(divId: string, visible: boolean): void {
-    byId(divId).style.display = visible ? "flex" : "none";
-}
-
 // Swap the header refresh icon for a spinner while a fetch is in flight
 // (same pattern as the home screen's divRefreshBalance / divLoadingBalance).
 function setRefreshSpinner(refreshId: string, loading: boolean): void {
@@ -607,25 +550,28 @@ function setRefreshSpinner(refreshId: string, loading: boolean): void {
 
 let poolsRefreshToken = 0;
 
-export async function refreshPoolsTable(force = false): Promise<void> {
+export async function refreshPoolsTable(): Promise<void> {
     if (!networkStore.currentBlockchainNetwork) return;
     const myToken = ++poolsRefreshToken;
     const key = advancedCacheKey();
     setInlineError("divPoolsListError", null);
 
-    if (!force && poolsCache != null && poolsCache.key === key && (Date.now() - poolsCache.at) < ADVANCED_CACHE_TTL_MS) {
-        setLoadingRowVisible("divPoolsLoading", false);
-        renderPoolsTable(poolsCache.pools);
-        return;
+    const cachedPools =
+        poolsCache != null &&
+        poolsCache.key === key &&
+        (Date.now() - poolsCache.at) < POOLS_CACHE_TTL_MS
+            ? poolsCache.pools
+            : null;
+    if (cachedPools != null) {
+        renderPoolsTable(cachedPools);
+    } else {
+        byId("tbodyPoolsRow").textContent = "";
     }
 
-    byId("tbodyPoolsRow").textContent = "";
-    setLoadingRowVisible("divPoolsLoading", true);
     setRefreshSpinner("divPoolsRefresh", true);
 
     const res = await getLiquidityPools(chainPayload());
     if (myToken !== poolsRefreshToken) return;
-    setLoadingRowVisible("divPoolsLoading", false);
     setRefreshSpinner("divPoolsRefresh", false);
     if (!res || !res.success || res.pools == null) {
         setInlineError("divPoolsListError", (res && res.error) ? String(res.error) : t("errors-generic", "Something went wrong."));
@@ -744,7 +690,6 @@ export async function onCreatePairClick(): Promise<void> {
                     })),
                 }],
                 onClose: () => {
-                    invalidateAdvancedLiquidityCaches();
                     void showPoolsScreen();
                 },
             });
@@ -892,19 +837,27 @@ export async function showLiquidityPositionsPanel(): Promise<void> {
     await refreshLiquidityPositions();
 }
 
-export async function refreshLiquidityPositions(force = false): Promise<void> {
+export async function refreshLiquidityPositions(): Promise<void> {
     if (!networkStore.currentBlockchainNetwork) return;
     const myToken = ++positionsRefreshToken;
     const key = advancedCacheKey() + "|" + String(walletStore.currentWalletAddress).toLowerCase();
     setInlineError("divLiquidityPositionsError", null);
 
-    if (!force && positionsCache != null && positionsCache.key === key && (Date.now() - positionsCache.at) < ADVANCED_CACHE_TTL_MS) {
-        renderLiquidityPositions(positionsCache.positions);
-        return;
+    const cacheMatches = positionsCache != null && positionsCache.key === key;
+    const cacheIsFresh = cacheMatches && (Date.now() - positionsCache!.at) < POSITIONS_CACHE_TTL_MS;
+    const cachedPositions = cacheIsFresh
+        ? positionsCache!.positions
+        : null;
+    if (cachedPositions != null) {
+        // Stale-while-revalidate: keep the current list visible and refresh it
+        // silently. The top-right spinner is the only loading indicator.
+        renderLiquidityPositions(cachedPositions);
+    } else {
+        byId("divLiquidityPositionsList").textContent = "";
+        byId("divLiquidityPositionsEmpty").style.display = "none";
     }
 
-    byId("divLiquidityPositionsList").textContent = "";
-    byId("divLiquidityPositionsEmpty").style.display = "none";
+    // Every visit/explicit refresh revalidates in the background.
     setRefreshSpinner("divLiquidityPositionsRefresh", true);
 
     const res = await getLiquidityPositions({
@@ -1006,8 +959,6 @@ export async function showLiquidityAddPanel(position: LiquidityPositionSnapshot 
     inputById("txtLiquidityAmountB").value = "";
     setInlineError("divLiquidityAddError", null);
     byId("divLiquidityFirstProviderWarn").style.display = "none";
-    resetCurrentGasConfig(addLiquidityGasState);
-    setGasFeeLabel("spanAddLiquidityGasFee", "");
     if (position != null) {
         // Prefill from the position card; tokens missing from the wallet's
         // token list simply stay unselected.
@@ -1025,7 +976,6 @@ export async function onLiquidityTokenChange(): Promise<void> {
     const b = selectById("ddlLiquidityTokenB").value;
     void updatePickerInfoRows("LiquidityA", a);
     void updatePickerInfoRows("LiquidityB", b);
-    scheduleAddLiquidityGas();
     if (!a || !b || a === b || !networkStore.currentBlockchainNetwork) return;
     const myToken = ++addPairInfoToken;
     const res = await getLiquidityPairInfo({
@@ -1056,7 +1006,6 @@ function orientedAddReserves(): { reserveA: bigint; reserveB: bigint } | null {
 export function onLiquidityAmountInput(side: "A" | "B"): void {
     if (liquidityAutofillInProgress) return;
     sanitizeNumericInput(inputById(side === "A" ? "txtLiquidityAmountA" : "txtLiquidityAmountB"));
-    scheduleAddLiquidityGas();
     const reserves = orientedAddReserves();
     if (reserves == null) return;
     const a = selectById("ddlLiquidityTokenA").value;
@@ -1131,11 +1080,7 @@ export async function onAddLiquidityClick(): Promise<void> {
                 approvals.push({ tokenAddress: b, label: t("step-approve", "Approve") + " " + symB });
             }
 
-            // Use the displayed (possibly user-overridden) gas from the panel's
-            // gas icon, falling back to the flow default.
             const defaultGas = pairExists ? ADD_LIQUIDITY_DEFAULT_GAS : CREATE_PAIR_DEFAULT_GAS;
-            const resolvedGas = resolveGasForTx(defaultGas, addLiquidityGasState);
-            const gasLimit = parseInt(resolvedGas.gasLimit, 10);
             hideWaitingBox();
 
             const routerAddress = currentSwapRelease
@@ -1149,16 +1094,29 @@ export async function onAddLiquidityClick(): Promise<void> {
                     toAddress: routerAddress,
                     quantityLabelKey: "send-quantity",
                     quantityValue: amountA + " " + symA + " + " + amountB + " " + symB,
-                    gasLimit: resolvedGas.gasLimit,
-                    gasFee: resolvedGas.gasFee,
                 },
                 stepsTitle: t("add-liquidity", "Add Liquidity"),
+                interactive: true,
                 buildSteps: (privateKey, publicKey, advancedSigningEnabled) => {
                     const steps: TxStepDefinition[] = approvals.map((ap) =>
                         approveStep(ap.label, ap.tokenAddress, privateKey, publicKey, advancedSigningEnabled));
                     steps.push({
                         label: t("step-add-liquidity", "Add liquidity") + " " + symA + " / " + symB,
-                        run: async () => requireTxHash(await submitLiquidityAdd({
+                        // This estimate runs only after all approval receipts
+                        // succeeded, so the router follows its real add path.
+                        prepare: async () => estimateGasForContext({
+                            txKind: "addLiquidity",
+                            defaultGasLimit: defaultGas,
+                            tokenAValue: a,
+                            tokenBValue: b,
+                            amountA,
+                            amountB,
+                            decimalsA,
+                            decimalsB,
+                            slippagePercent,
+                            ownerAddress: walletStore.currentWalletAddress,
+                        }),
+                        run: async (gasLimit) => requireTxHash(await submitLiquidityAdd({
                             ...chainPayload(),
                             tokenAValue: a,
                             tokenBValue: b,
@@ -1170,14 +1128,16 @@ export async function onAddLiquidityClick(): Promise<void> {
                             ownerAddress: walletStore.currentWalletAddress,
                             privateKey,
                             publicKey,
-                            gasLimit,
+                            gasLimit: gasLimit || defaultGas,
                             advancedSigningEnabled,
                         })),
                     });
                     return steps;
                 },
+                onAllDone: () => {
+                    void refreshPoolsTable();
+                },
                 onClose: () => {
-                    invalidateAdvancedLiquidityCaches();
                     void showLiquidityPositionsPanel();
                 },
             });
@@ -1201,8 +1161,6 @@ export function showLiquidityRemovePanel(position: LiquidityPositionSnapshot): v
     inputById("rngLiquidityRemovePercent").value = "50";
     inputById("txtLiquidityRemoveSlippage").value = "0.5";
     setInlineError("divLiquidityRemoveError", null);
-    resetCurrentGasConfig(removeLiquidityGasState);
-    setGasFeeLabel("spanRemoveLiquidityGasFee", "");
     onRemovePercentChange();
 }
 
@@ -1226,7 +1184,6 @@ function computeRemoveEstimates(): { burnWei: bigint; amount0: bigint; amount1: 
 
 export function onRemovePercentChange(): void {
     if (removePosition == null) return;
-    scheduleRemoveLiquidityGas();
     byId("spanLiquidityRemovePercent").textContent = currentRemovePercent() + "%";
     const est = computeRemoveEstimates();
     if (est == null) return;
@@ -1265,8 +1222,6 @@ export async function onRemoveLiquidityClick(): Promise<void> {
         try {
             // The LP pair token itself must be approved toward the router.
             const needsLpApproval = await needsRouterApproval(position.pairAddress, est.burnWei);
-            const resolvedGas = resolveGasForTx(REMOVE_LIQUIDITY_DEFAULT_GAS, removeLiquidityGasState);
-            const gasLimit = parseInt(resolvedGas.gasLimit, 10);
             hideWaitingBox();
 
             const routerAddress = currentSwapRelease
@@ -1280,10 +1235,9 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                     toAddress: routerAddress,
                     quantityLabelKey: "lp-to-burn",
                     quantityValue: formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP (" + currentRemovePercent() + "%)",
-                    gasLimit: resolvedGas.gasLimit,
-                    gasFee: resolvedGas.gasFee,
                 },
                 stepsTitle: t("remove-liquidity", "Remove Liquidity"),
+                interactive: true,
                 buildSteps: (privateKey, publicKey, advancedSigningEnabled) => {
                     const steps: TxStepDefinition[] = [];
                     if (needsLpApproval) {
@@ -1293,7 +1247,17 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                     }
                     steps.push({
                         label: t("step-remove-liquidity", "Remove liquidity") + " " + sym0 + " / " + sym1,
-                        run: async () => requireTxHash(await submitLiquidityRemove({
+                        prepare: async () => estimateGasForContext({
+                            txKind: "removeLiquidity",
+                            defaultGasLimit: REMOVE_LIQUIDITY_DEFAULT_GAS,
+                            tokenAAddress: position.token0,
+                            tokenBAddress: position.token1,
+                            liquidityWei: est.burnWei.toString(),
+                            amountAMinWei: amount0Min.toString(),
+                            amountBMinWei: amount1Min.toString(),
+                            ownerAddress: walletStore.currentWalletAddress,
+                        }),
+                        run: async (gasLimit) => requireTxHash(await submitLiquidityRemove({
                             ...chainPayload(),
                             tokenAAddress: position.token0,
                             tokenBAddress: position.token1,
@@ -1303,14 +1267,16 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                             ownerAddress: walletStore.currentWalletAddress,
                             privateKey,
                             publicKey,
-                            gasLimit,
+                            gasLimit: gasLimit || REMOVE_LIQUIDITY_DEFAULT_GAS,
                             advancedSigningEnabled,
                         })),
                     });
                     return steps;
                 },
+                onAllDone: () => {
+                    void refreshPoolsTable();
+                },
                 onClose: () => {
-                    invalidateAdvancedLiquidityCaches();
                     void showLiquidityPositionsPanel();
                 },
             });

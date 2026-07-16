@@ -334,6 +334,7 @@ export interface TransactionReview {
     contractAddress?: string | null;
     assetLabelKey?: string;
     requirePassword?: boolean;
+    showGas?: boolean;
     submitLabelKey?: string;
     onSubmit?: () => unknown;
 }
@@ -345,6 +346,9 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     byId("spanTxReviewGasLimit").textContent = review.gasLimit || "";
     byId("spanTxReviewGasFee").textContent = review.gasFee || "";
     byId("spanTxReviewNetwork").textContent = review.networkText || "";
+    const showGas = review.showGas !== false;
+    byId("rowTxReviewGasLimit").style.display = showGas ? "block" : "none";
+    byId("rowTxReviewGasFee").style.display = showGas ? "block" : "none";
 
     const lblAsset = byId("lblTxReviewAsset");
     if (lblAsset) {

@@ -256,12 +256,12 @@ function buildTransactionReviewDialog(): HTMLElement {
                     " : ",
                     el("span", { id: "spanTxReviewQuantity", style: "word-break:break-all;" }),
                 ]),
-                el("div", { style: "margin-top:8px;" }, [
+                el("div", { id: "rowTxReviewGasLimit", style: "margin-top:8px;" }, [
                     el("label", { "data-lang-key": "gas-limit", style: "font-weight:bold;" }, ["Gas limit (gas-units)"]),
                     " : ",
                     el("span", { id: "spanTxReviewGasLimit" }),
                 ]),
-                el("div", { style: "margin-top:8px;" }, [
+                el("div", { id: "rowTxReviewGasFee", style: "margin-top:8px;" }, [
                     el("label", { "data-lang-key": "gas-fee", style: "font-weight:bold;" }, ["Estimated gas fee (coins)"]),
                     " : ",
                     el("span", { id: "spanTxReviewGasFee" }),
@@ -332,8 +332,28 @@ function buildGasConfigDialog(): HTMLElement {
 function buildTxStepsDialog(): HTMLElement {
     return el("dialog", { id: "modalTxSteps", class: "modal", tabindex: "-1", role: "dialog" }, [
         el("div", { class: "modal-content", style: "margin:10% auto; max-width:520px;" }, [
-            el("h3", { id: "h3TxStepsTitle", style: "margin-top:0;" }),
+            el("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:12px;" }, [
+                el("h3", { id: "h3TxStepsTitle", style: "margin:0;" }),
+                el("button", {
+                    id: "btnTxStepsDismiss", type: "button", title: "Close", "aria-label": "Close",
+                    style: "border:0; background:transparent; color:inherit; font-size:24px; line-height:1; cursor:pointer; padding:0 2px;",
+                }, ["\u00d7"]),
+            ]),
             el("ol", { id: "olTxStepsList", class: "tx-step-list" }),
+            el("div", { id: "divTxStepsGas", style: "display:none; margin-top:12px;" }, [
+                el("div", { id: "lblTxStepsGasAction", style: "font-weight:bold; margin-bottom:8px;" }),
+                el("label", { "data-lang-key": "gas-limit", style: "display:block; font-weight:bold;" }, ["Gas limit (gas-units)"]),
+                el("input", {
+                    id: "txtTxStepsGasLimit", type: "number", min: "1", step: "1",
+                    style: "width:100%; box-sizing:border-box; margin-top:4px; padding:6px; border:1px solid #ccc; border-radius:6px;",
+                }),
+                el("div", { style: "margin-top:8px;" }, [
+                    el("label", { "data-lang-key": "estimated-gas-fee", style: "font-weight:bold;" }, ["Estimated gas fee"]),
+                    " : ",
+                    el("span", { id: "spanTxStepsGasFee" }),
+                ]),
+                el("p", { id: "pTxStepsGasError", class: "tx-steps-error", style: "display:none; margin:6px 0 0;" }),
+            ]),
             el("div", { id: "divTxStepsHashRow", style: "display:none; margin-top:12px;" }, [
                 el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
                     el("label", { "data-lang-key": "transaction-id", style: "font-weight:bold;" }, ["Transaction ID"]),
