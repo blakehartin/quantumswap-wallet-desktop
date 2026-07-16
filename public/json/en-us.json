@@ -317,6 +317,8 @@
       "adv-liquidity": "Liquidity",
       "adv-pools": "Pools",
       "create-token": "Create Token",
+      "create-token-status": "Create Token Status",
+      "create-token-progress": "Creating token.",
       "token-name": "Token Name",
       "token-symbol": "Token Symbol",
       "token-decimals": "Decimals",

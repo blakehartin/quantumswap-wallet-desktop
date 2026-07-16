@@ -50,6 +50,7 @@ import {
     TransactionReview,
     hideWaitingBox,
     showLoadingAndExecuteAsync,
+    showWaitingBox,
     showTransactionReviewDialog,
     showWarnAlert,
     txReviewNetworkText,
@@ -63,7 +64,7 @@ import {
     scheduleGasEstimation,
     setGasFeeLabel,
 } from "./gas";
-import { getGenericError, removeOptions, setHeaderBand } from "./app";
+import { getGenericError, OpenScanAddress, removeOptions, setHeaderBand } from "./app";
 import { getSwapBalanceForSymbol, getSwapRouteDisplaySymbol, getSwapTokenDecimals, getSwapTokenListFromWallet } from "./swap";
 import { advancedSigningGetDefaultValue } from "./settings";
 import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
@@ -382,6 +383,7 @@ async function updatePickerInfoRows(suffix: string, value: string): Promise<void
 interface ReviewedStepsFlow {
     review: TransactionReview;
     stepsTitle: string;
+    progressText?: string;
     buildSteps: (privateKey: string, publicKey: string, advancedSigningEnabled: boolean) => TxStepDefinition[];
     onAllDone?: () => HTMLElement | null | void;
     onClose?: () => unknown;
@@ -394,32 +396,43 @@ function showReviewThenSteps(flow: ReviewedStepsFlow): void {
     review.nonce = null;
     review.networkText = txReviewNetworkText();
     review.fromAddress = walletStore.currentWalletAddress;
-    review.onSubmit = function () {
-        showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, async function () {
-            try {
-                const password = (inputById("txtTxReviewPassword").value || "").trim();
-                const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
-                if (quantumWallet == null) {
-                    hideWaitingBox();
-                    showWarnAlert(getGenericError(""));
-                    return;
-                }
-                const privateKey = await quantumWallet.getPrivateKey();
-                const publicKey = await quantumWallet.getPublicKey();
-                const advancedSigningEnabled = await advancedSigningGetDefaultValue();
-                const steps = flow.buildSteps(privateKey, publicKey, advancedSigningEnabled === true);
-                hideWaitingBox();
-                showTxStepsDialog({
-                    title: flow.stepsTitle,
-                    steps,
-                    onAllDone: flow.onAllDone,
-                    onClose: flow.onClose,
-                });
-            } catch (err: any) {
-                hideWaitingBox();
-                showWarnAlert((err && err.message) ? String(err.message) : String(err));
+    review.onSubmit = async function (): Promise<boolean> {
+        showWaitingBox(langJson.langValues.waitWalletOpen);
+        try {
+            const password = (inputById("txtTxReviewPassword").value || "").trim();
+            const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
+            if (quantumWallet == null) {
+                showWarnAlert(getGenericError(""));
+                return false;
             }
-        });
+            const privateKey = await quantumWallet.getPrivateKey();
+            const publicKey = await quantumWallet.getPublicKey();
+            const advancedSigningEnabled = await advancedSigningGetDefaultValue();
+            const steps = flow.buildSteps(privateKey, publicKey, advancedSigningEnabled === true);
+            // Close the decrypt wait dialog now; open the status UI on the next
+            // turn so the review dialog can finish closing first (avoids Close
+            // overlapping unpainted step labels).
+            hideWaitingBox();
+            const stepsTitle = flow.stepsTitle;
+            const progressText = flow.progressText;
+            const onAllDone = flow.onAllDone;
+            const onClose = flow.onClose;
+            setTimeout(function () {
+                showTxStepsDialog({
+                    title: stepsTitle,
+                    steps,
+                    progressText,
+                    onAllDone,
+                    onClose,
+                });
+            }, 0);
+            return true;
+        } catch (err: any) {
+            showWarnAlert((err && err.message) ? String(err.message) : String(err));
+            return false;
+        } finally {
+            hideWaitingBox();
+        }
     };
     showTransactionReviewDialog(review);
 }
@@ -704,11 +717,14 @@ export async function onCreatePairClick(): Promise<void> {
             const symA = tokenValueSymbol(a);
             const symB = tokenValueSymbol(b);
             const stepLabel = t("step-create-pair", "Create pair") + " " + symA + " / " + symB;
+            const factoryAddress = currentSwapRelease
+                ? currentSwapRelease.factory
+                : BUILTIN_SWAP_RELEASES[0].factory;
             showReviewThenSteps({
                 review: {
                     asset: t("create-pair", "Create Pair") + ": " + symA + " / " + symB,
-                    contractAddress: currentSwapRelease ? currentSwapRelease.factory : null,
-                    toAddress: walletStore.currentWalletAddress,
+                    contractAddress: factoryAddress,
+                    toAddress: factoryAddress,
                     quantityLabelKey: "send-quantity",
                     quantityValue: "0",
                     gasLimit: resolvedGas.gasLimit,
@@ -787,13 +803,14 @@ export async function onCreateTokenClick(): Promise<void> {
             asset: name + " (" + symbol + ")",
             assetLabelKey: "token-being-created",
             contractAddress: null,
-            toAddress: walletStore.currentWalletAddress,
+            toAddress: null,
             quantityLabelKey: "token-total-supply",
             quantityValue: supply + " " + symbol,
             gasLimit: resolvedGas.gasLimit,
             gasFee: resolvedGas.gasFee,
         },
-        stepsTitle: t("create-token", "Create Token"),
+        stepsTitle: t("create-token-status", "Create Token Status"),
+        progressText: t("create-token-progress", "Creating token."),
         buildSteps: (privateKey, publicKey, advancedSigningEnabled) => [{
             label: t("step-deploy-token", "Deploy token") + " " + symbol,
             run: async () => {
@@ -816,17 +833,44 @@ export async function onCreateTokenClick(): Promise<void> {
         onAllDone: () => {
             if (deployedAddress == null) return null;
             const wrap = document.createElement("div");
-            const label = document.createElement("div");
+            const header = document.createElement("div");
+            header.style.display = "flex";
+            header.style.alignItems = "center";
+            header.style.justifyContent = "space-between";
+            const label = document.createElement("label");
             label.style.fontWeight = "bold";
             label.textContent = t("token-contract-address", "Token contract address");
-            wrap.appendChild(label);
+            header.appendChild(label);
+            const buttons = document.createElement("div");
+            buttons.style.display = "flex";
+            buttons.style.alignItems = "center";
+            buttons.style.gap = "12px";
+            const copyBtn = document.createElement("div");
+            copyBtn.className = "copy-container";
+            copyBtn.setAttribute("role", "button");
+            copyBtn.title = "Copy";
+            copyBtn.addEventListener("click", function (event) {
+                const el = event.currentTarget as HTMLElement;
+                void WriteTextToClipboard(deployedAddress!).then(() => el.blur());
+            });
+            const scanBtn = document.createElement("div");
+            scanBtn.className = "scan-container";
+            scanBtn.setAttribute("role", "button");
+            scanBtn.title = "Block Explorer";
+            scanBtn.addEventListener("click", function (event) {
+                const el = event.currentTarget as HTMLElement;
+                void OpenScanAddress(deployedAddress!).then(() => el.blur());
+            });
+            buttons.appendChild(copyBtn);
+            buttons.appendChild(scanBtn);
+            header.appendChild(buttons);
+            wrap.appendChild(header);
             const addr = document.createElement("p");
             addr.style.fontFamily = "monospace";
             addr.style.wordBreak = "break-all";
             addr.style.marginTop = "4px";
             addr.textContent = deployedAddress;
             wrap.appendChild(addr);
-            wrap.appendChild(explorerAddressLink(deployedAddress));
             return wrap;
         },
         onClose: () => { void showTokenCreateScreen(); },
@@ -855,14 +899,12 @@ export async function refreshLiquidityPositions(force = false): Promise<void> {
     setInlineError("divLiquidityPositionsError", null);
 
     if (!force && positionsCache != null && positionsCache.key === key && (Date.now() - positionsCache.at) < ADVANCED_CACHE_TTL_MS) {
-        setLoadingRowVisible("divLiquidityPositionsLoading", false);
         renderLiquidityPositions(positionsCache.positions);
         return;
     }
 
     byId("divLiquidityPositionsList").textContent = "";
     byId("divLiquidityPositionsEmpty").style.display = "none";
-    setLoadingRowVisible("divLiquidityPositionsLoading", true);
     setRefreshSpinner("divLiquidityPositionsRefresh", true);
 
     const res = await getLiquidityPositions({
@@ -870,7 +912,6 @@ export async function refreshLiquidityPositions(force = false): Promise<void> {
         ownerAddress: walletStore.currentWalletAddress,
     });
     if (myToken !== positionsRefreshToken) return;
-    setLoadingRowVisible("divLiquidityPositionsLoading", false);
     setRefreshSpinner("divLiquidityPositionsRefresh", false);
     if (!res || !res.success || res.positions == null) {
         setInlineError("divLiquidityPositionsError", (res && res.error) ? String(res.error) : t("errors-generic", "Something went wrong."));
@@ -1097,12 +1138,15 @@ export async function onAddLiquidityClick(): Promise<void> {
             const gasLimit = parseInt(resolvedGas.gasLimit, 10);
             hideWaitingBox();
 
+            const routerAddress = currentSwapRelease
+                ? currentSwapRelease.router
+                : BUILTIN_SWAP_RELEASES[0].router;
             showReviewThenSteps({
                 review: {
                     asset: symA + " / " + symB,
                     assetLabelKey: "liquidity-pool",
-                    contractAddress: currentSwapRelease ? currentSwapRelease.router : null,
-                    toAddress: walletStore.currentWalletAddress,
+                    contractAddress: routerAddress,
+                    toAddress: routerAddress,
                     quantityLabelKey: "send-quantity",
                     quantityValue: amountA + " " + symA + " + " + amountB + " " + symB,
                     gasLimit: resolvedGas.gasLimit,
@@ -1225,12 +1269,15 @@ export async function onRemoveLiquidityClick(): Promise<void> {
             const gasLimit = parseInt(resolvedGas.gasLimit, 10);
             hideWaitingBox();
 
+            const routerAddress = currentSwapRelease
+                ? currentSwapRelease.router
+                : BUILTIN_SWAP_RELEASES[0].router;
             showReviewThenSteps({
                 review: {
                     asset: sym0 + " / " + sym1,
                     assetLabelKey: "liquidity-pool",
-                    contractAddress: currentSwapRelease ? currentSwapRelease.router : null,
-                    toAddress: walletStore.currentWalletAddress,
+                    contractAddress: routerAddress,
+                    toAddress: routerAddress,
                     quantityLabelKey: "lp-to-burn",
                     quantityValue: formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP (" + currentRemovePercent() + "%)",
                     gasLimit: resolvedGas.gasLimit,

@@ -95,6 +95,7 @@ img.qs-eye {
     margin: 12px 0 0 0;
     padding: 0;
     list-style: none;
+    min-height: 44px;
 }
 
 .tx-step {
@@ -103,10 +104,10 @@ img.qs-eye {
     gap: 10px;
     padding: 10px 12px;
     border-radius: 9px;
-    background: rgba(0, 0, 0, 0.04);
+    background: rgba(255, 255, 255, 0.06);
     border: 1px solid transparent;
     font-size: 14px;
-    color: rgba(0, 0, 0, 0.65);
+    color: #ffffff;
     text-align: left;
 }
 
@@ -120,35 +121,40 @@ img.qs-eye {
     font-size: 12px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    background: rgba(0, 0, 0, 0.08);
-    color: rgba(0, 0, 0, 0.7);
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
 }
 
 .tx-step .tx-label {
     flex: 1;
     word-break: break-word;
+    color: #ffffff;
 }
 
 .tx-step .tx-substatus {
-    color: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.75);
     font-size: 12px;
 }
 
 .tx-step.s-active,
 .tx-step.s-confirming {
-    background: rgba(114, 78, 219, 0.10);
+    background: rgba(114, 78, 219, 0.22);
     border-color: rgba(114, 78, 219, 0.55);
-    color: #1a1a1a;
+    color: #ffffff;
 }
 
 .tx-step.s-active .tx-badge,
 .tx-step.s-confirming .tx-badge {
-    background: rgba(114, 78, 219, 0.30);
-    color: #1a1a1a;
+    background: rgba(114, 78, 219, 0.45);
+    color: #ffffff;
 }
 
 .tx-step.s-done {
-    color: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.tx-step.s-done .tx-label {
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .tx-step.s-done .tx-badge {
@@ -170,8 +176,8 @@ img.qs-eye {
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 2px solid rgba(0, 0, 0, 0.18);
-    border-top-color: #724edb;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #c4b5fd;
     animation: qs-tx-spin 0.9s linear infinite;
     pointer-events: none;
     vertical-align: middle;
@@ -186,4 +192,11 @@ img.qs-eye {
 .tx-steps-error {
     color: #dc2626;
     text-align: left;
+}
+
+/* The legacy .proceed rule floats buttons upward with a negative margin.
+   Keep the tx-steps footer in normal flow so it cannot overlap step rows. */
+#modalTxSteps .proceed {
+    float: none;
+    margin-top: 0;
 }

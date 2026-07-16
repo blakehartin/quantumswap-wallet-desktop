@@ -235,8 +235,8 @@ function buildTransactionReviewDialog(): HTMLElement {
         ]);
 
     return el("dialog", { id: "modalTransactionReview", class: "modal", tabindex: "-1", role: "dialog", style: "overflow:hidden;" }, [
-        el("div", { class: "modal-content", style: "margin:8% auto; max-height:84vh; display:flex; flex-direction:column; overflow:hidden;" }, [
-            el("p", { id: "pTxReviewPrompt", style: "font-weight:bold;overflow:auto;", class: "scrollbar", "data-lang-key": "review-transaction-prompt", tabindex: "4" }, ["Please review your transaction request to be sent:"]),
+        el("div", { class: "modal-content", style: "margin:8% auto; max-height:90vh; display:flex; flex-direction:column; overflow:hidden;" }, [
+            el("p", { id: "pTxReviewPrompt", style: "font-weight:bold;overflow:auto;", class: "scrollbar", "data-lang-key": "review-transaction-prompt", tabindex: "6" }, ["Please review your transaction request to be sent:"]),
             el("div", { class: "scrollbar", style: "overflow:auto; flex:1 1 auto; min-height:0;" }, [
                 el("div", { style: "margin-top:8px;" }, [
                     el("label", { id: "lblTxReviewAsset", "data-lang-key": "what-is-being-sent", style: "font-weight:bold;display:block;" }, ["What is being sent"]),
@@ -247,7 +247,10 @@ function buildTransactionReviewDialog(): HTMLElement {
                     el("span", { id: "spanTxReviewContract", style: "word-break:break-all;" }),
                 ]),
                 labelledRow("from-address", "From Address", "spanTxReviewFrom"),
-                labelledRow("to-address", "To Address", "spanTxReviewTo"),
+                el("div", { id: "rowTxReviewTo", style: "margin-top:8px;" }, [
+                    el("label", { "data-lang-key": "to-address", style: "font-weight:bold;display:block;" }, ["To Address"]),
+                    el("span", { id: "spanTxReviewTo", style: "word-break:break-all;" }),
+                ]),
                 el("div", { style: "margin-top:8px;" }, [
                     el("label", { id: "lblTxReviewQuantity", "data-lang-key": "send-quantity", style: "font-weight:bold;" }, ["Quantity"]),
                     " : ",
@@ -282,18 +285,20 @@ function buildTransactionReviewDialog(): HTMLElement {
                 " ",
                 el("input", { type: "text", style: "width:63px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;", id: "txtTxReviewIAgree", tabindex: "1" }),
             ]),
-            el("div", { id: "rowTxReviewPassword", style: "margin-top:12px;display:flex;align-items:center;gap:6px;" }, [
-                el("label", { "data-lang-key": "enter-wallet-password" }, ["Password"]),
-                el("input", { type: "password", style: "width:100%;max-width:200px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;", id: "txtTxReviewPassword", tabindex: "5", autocomplete: "off" }),
-                el("img", {
-                    src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye", style: "flex-shrink:0;",
-                    "data-alt-key": "show-password", role: "button", tabindex: "6", title: "Show/Hide password",
-                    onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "txtTxReviewPassword"),
-                }),
+            el("div", { id: "rowTxReviewPassword", style: "margin-top:12px;" }, [
+                el("label", { "data-lang-key": "enter-wallet-password", style: "display:block;font-weight:bold;" }, ["Password"]),
+                el("div", { style: "display:flex;align-items:center;gap:6px;margin-top:4px;" }, [
+                    el("input", { type: "password", style: "width:100%;max-width:200px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;", id: "txtTxReviewPassword", tabindex: "2", autocomplete: "off" }),
+                    el("img", {
+                        src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye", style: "flex-shrink:0;",
+                        "data-alt-key": "show-password", role: "button", tabindex: "3", title: "Show/Hide password",
+                        onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "txtTxReviewPassword"),
+                    }),
+                ]),
             ]),
             el("div", { style: "margin-top:25px;display:flex;gap:15px;justify-content:flex-end;" }, [
-                el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "3", id: "btnTxReviewCancel" }, ["Cancel"]),
-                el("button", { class: "proceed", "data-lang-key": "ok", role: "button", tabindex: "2", id: "btnTxReviewSubmit" }, ["Ok"]),
+                el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "5", id: "btnTxReviewCancel" }, ["Cancel"]),
+                el("button", { class: "proceed", "data-lang-key": "ok", role: "button", tabindex: "4", id: "btnTxReviewSubmit" }, ["Ok"]),
             ]),
         ]),
     ]);

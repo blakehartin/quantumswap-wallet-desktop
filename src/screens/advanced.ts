@@ -255,7 +255,6 @@ function buildLiquidityScreen(): HTMLElement {
                     el("div", { id: "divLiquidityPositionsPanel" }, [
                         el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; max-height:360px; " + ADV_SCROLL_PAD }, [
                             refreshHeaderRow("heading medium bold", "my-positions", "My Positions", "divLiquidityPositionsRefresh", "2", () => refreshLiquidityPositions(true)),
-                            loadingRow("divLiquidityPositionsLoading"),
                             el("div", { id: "divLiquidityPositionsError", class: "tx-steps-error", style: "display:none;" }),
                             el("div", { id: "divLiquidityPositionsEmpty", style: "display:none;", "data-lang-key": "no-positions" }, ["You have no liquidity positions."]),
                             el("div", { id: "divLiquidityPositionsList" }),

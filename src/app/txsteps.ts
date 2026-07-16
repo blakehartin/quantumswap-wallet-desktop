@@ -27,6 +27,7 @@ let txStepsRunId = 0; // invalidates the running chain when the dialog closes
 let txStepsCurrentTxHash: string | null = null;
 let txStepsOnClose: (() => unknown) | null = null;
 let txStepsBound = false;
+let txStepsProgressText = "";
 
 function t(key: string, fallback: string): string {
     return (langJson && langJson.langValues && langJson.langValues[key]) || fallback;
@@ -41,7 +42,7 @@ function stepRow(num: number, label: string, state: TxStepStatus): HTMLElement {
         badge.textContent = "\u2713";
     } else if (state === "failed") {
         badge.textContent = "\u2715";
-    } else if (state === "confirming") {
+    } else if (state === "active" || state === "confirming") {
         const spinner = document.createElement("span");
         spinner.className = "tx-spinner";
         badge.appendChild(spinner);
@@ -55,7 +56,7 @@ function stepRow(num: number, label: string, state: TxStepStatus): HTMLElement {
     if (state === "confirming") {
         const confirming = document.createElement("span");
         confirming.className = "tx-substatus";
-        confirming.textContent = " " + t("tx-step-confirming", "Confirming...");
+        confirming.textContent = " " + (txStepsProgressText || t("tx-step-confirming", "Confirming..."));
         labelSpan.appendChild(confirming);
     }
     li.appendChild(badge);
@@ -166,6 +167,7 @@ async function waitForTxSuccess(txHash: string, runId: number): Promise<void> {
 export interface TxStepsOptions {
     title: string;
     steps: TxStepDefinition[];
+    progressText?: string;
     // Called once every step succeeded; may return a node to display (e.g.
     // the new token's address) - built with createElement/textContent only.
     onAllDone?: () => HTMLElement | null | void;
@@ -181,8 +183,11 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
     txStepsRunId++;
     const runId = txStepsRunId;
     const steps = options.steps;
-    const statuses: TxStepStatus[] = steps.map(() => "pending");
+    // Render the first spinner before opening the dialog. RPC submission is
+    // deferred until after this initial UI has painted.
+    const statuses: TxStepStatus[] = steps.map((_, index) => index === 0 ? "active" : "pending");
     txStepsOnClose = options.onClose || null;
+    txStepsProgressText = options.progressText || t("tx-step-confirming", "Confirming...");
 
     byId("h3TxStepsTitle").textContent = options.title;
     renderSteps(steps, statuses);
@@ -196,10 +201,24 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
     dlg.showModal();
 
     void (async () => {
+        // Wait for two animation frames so title, step rows, and Close are
+        // painted before any submit / poll IPC begins (avoids layout lag).
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+        if (runId !== txStepsRunId) return;
+
         for (let i = 0; i < steps.length; i++) {
             if (runId !== txStepsRunId) return;
             statuses[i] = "active";
             renderSteps(steps, statuses);
+            // Later steps also get a painted spinner before their RPC starts.
+            await new Promise<void>((resolve) => {
+                requestAnimationFrame(() => resolve());
+            });
+            if (runId !== txStepsRunId) return;
             try {
                 const txHash = await steps[i].run();
                 if (runId !== txStepsRunId) return;
