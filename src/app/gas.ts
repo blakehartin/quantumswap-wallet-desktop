@@ -4,7 +4,7 @@ import { base64ToBytes } from "../lib/crypto";
 import { estimateGas, estimateGasFee } from "../lib/bridge";
 import { byId, GasState, networkStore, TxContext, walletStore } from "./state";
 import { showGasConfigDialog } from "./dialog";
-import { advancedSigningGetDefaultValue, offlineTxnSigningGetDefaultValue } from "./settings";
+import { advancedSigningGetDefaultValue } from "./settings";
 import { applySwapReleaseToPayload } from "./release";
 
 export const SWAP_GAS_FEE_RATE = 1000 / 21000;
@@ -256,17 +256,6 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         s.gasLimit = null;
         s.gasFee = null;
         s.overridden = false;
-        return;
-    }
-
-    const offline = await offlineTxnSigningGetDefaultValue();
-    if (offline === true) {
-        // Offline: no network lookup. Use the hardcoded default for this tx kind.
-        if (ctx.defaultGasLimit) {
-            applyOfflineGasConfig(ctx.defaultGasLimit, labelId, state ?? undefined);
-        } else {
-            setGasIconPulse(iconId, false);
-        }
         return;
     }
 

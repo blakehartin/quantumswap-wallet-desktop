@@ -43,9 +43,11 @@ import {
     txReviewNetworkText,
     updateWaitingBox,
     TransactionReview,
+    TransactionReviewSubmission,
 } from "./dialog";
 import { getGenericError, setHeaderBand, showWalletScreen } from "./app";
 import { showSendCompletedDialog } from "./send";
+import { prepareOfflineDefaults } from "./offline-flow";
 
 export const STAKING_CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000001000";
 
@@ -57,14 +59,23 @@ export const PAUSE_VALIDATION_GAS = 100000;
 export const RESUME_VALIDATION_GAS = 100000;
 
 // From the old app.js: common review-dialog wrapper for all validator actions.
-export function showValidatorTransactionReview(review: TransactionReview, onConfirm: () => void): void {
-    review.requirePassword = false;
+let validatorSubmission: TransactionReviewSubmission | null = null;
+
+export async function showValidatorTransactionReview(review: TransactionReview, onConfirm: () => void): Promise<void> {
+    review.requirePassword = true;
+    review.requireNonce = settingsStore.offlineSignEnabled === true;
     review.assetLabelKey = "action";
     review.submitLabelKey = "submit";
     review.fromAddress = walletStore.currentWalletAddress;
     review.networkText = txReviewNetworkText();
     review.contractAddress = STAKING_CONTRACT_ADDRESS;
-    review.onSubmit = onConfirm;
+    if (settingsStore.offlineSignEnabled) {
+        review.nonce = (await prepareOfflineDefaults()).nonce;
+    }
+    review.onSubmit = (submission) => {
+        validatorSubmission = submission;
+        onConfirm();
+    };
     showTransactionReviewDialog(review);
 }
 
@@ -164,14 +175,10 @@ export async function showValidatorScreen(): Promise<boolean> {
 export async function updateValidatorScreen(): Promise<void> {
     inputById("txtValidatorAddress").value = "";
     inputById("txtValidatorDepositCoins").value = "";
-    inputById("txtCurrentNonceValidator").value = "";
-    inputById("pwdValidator").value = "";
     setGasFeeLabel("spanValidatorGasFee", "");
 
     byId("divValidatorAddress").style.display = "none";
     byId("divValidatorDepositCoins").style.display = "none";
-    byId("divCurrentNonceValidator").style.display = "none";
-    byId("divValidatorScreenPassword").style.display = "none";
     byId("divValidatorButton").style.display = "none";
 
     const ddlValidatorOptions = selectById("ddlValidatorOptions");
@@ -181,16 +188,13 @@ export async function updateValidatorScreen(): Promise<void> {
         // nothing to show
     } else {
         byId("divValidatorButton").style.display = "block";
-        byId("divValidatorScreenPassword").style.display = "block";
         settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
 
         if (settingsStore.offlineSignEnabled === true) {
             byId("btnValidation").style.display = "none";
-            byId("divCurrentNonceValidator").style.display = "block";
             byId("btnOfflineValidation").style.display = "block";
         } else {
             byId("btnValidation").style.display = "block";
-            byId("divCurrentNonceValidator").style.display = "none";
             byId("btnOfflineValidation").style.display = "none";
         }
 
@@ -235,29 +239,10 @@ export async function copyOfflineSignature(): Promise<void> {
 // Shared by all validator flows: validate the (optional) offline nonce and the
 // wallet password exactly the way each legacy module did inline.
 function readValidatorNonce(): string | null | false {
-    if (settingsStore.offlineSignEnabled === true) {
-        const currentNonce = inputById("txtCurrentNonceValidator").value;
-        if (currentNonce == null || currentNonce.length < 1) {
-            showWarnAlert(langJson.errors.enterCurrentNonce);
-            return false;
-        }
-
-        const tempNonce = parseInt(currentNonce);
-        if (Number.isInteger(tempNonce) == false || tempNonce < 0) {
-            showWarnAlert(langJson.errors.enterCurrentNonce);
-            return false;
-        }
-        return String(tempNonce);
-    }
-    return null;
+    return settingsStore.offlineSignEnabled === true ? "" : null;
 }
 
 function validateValidatorPassword(): boolean {
-    const password = inputById("pwdValidator").value;
-    if (password == null || password.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
     return true;
 }
 
@@ -279,7 +264,7 @@ async function checkDepositCoinsEntered(validatorDepositCoins: string): Promise<
 
 // Common decrypt-then-run wrapper each legacy module repeated verbatim.
 async function decryptAndRunValidatorAction(submit: (quantumWallet: Wallet) => void): Promise<boolean> {
-    const password = inputById("pwdValidator").value;
+    const password = validatorSubmission?.password || "";
     try {
         const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
@@ -340,7 +325,7 @@ async function submitValidatorTransaction(quantumWallet: Wallet, method: string,
 // Common offline staking signing each legacy module repeated verbatim.
 async function offlineSignValidatorTransaction(quantumWallet: Wallet, method: string, methodArgs: string[], value: string, defaultGasLimit: number): Promise<void> {
     updateWaitingBox(langJson.langValues.pleaseWaitSubmit);
-    const currentNonce = inputById("txtCurrentNonceValidator").value;
+    const currentNonce = validatorSubmission?.startingNonce;
 
     try {
         const result = await offlineSignStakingContract({
@@ -349,7 +334,7 @@ async function offlineSignValidatorTransaction(quantumWallet: Wallet, method: st
             methodArgs: methodArgs,
             value: value,
             gasLimit: parseInt(resolveGasForTx(defaultGasLimit).gasLimit, 10),
-            nonce: parseInt(currentNonce),
+            nonce: currentNonce as number,
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
             advancedSigningEnabled: await advancedSigningGetDefaultValue(),
@@ -507,7 +492,7 @@ export async function initiatePartialWithdrawal(): Promise<boolean> {
     const review: TransactionReview = {
         asset: langJson.langValues["validator-initiate-partial-withdrawal"],
         toAddress: STAKING_CONTRACT_ADDRESS,
-        quantityLabelKey: "coins-to-deposit",
+        quantityLabelKey: "initiate-withdrawal-quantity",
         quantityValue: validatorDepositCoins,
         gasLimit: resolved.gasLimit,
         gasFee: resolved.gasFee,

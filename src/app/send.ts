@@ -51,6 +51,7 @@ import {
     txReviewNetworkText,
     updateWaitingBox,
     TransactionReview,
+    TransactionReviewSubmission,
 } from "./dialog";
 import { getGenericError, getTokenBalance, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen, OpenScanTxn } from "./app";
 import { TOKEN_LIST_STATE_EVENT } from "./token-list-state";
@@ -60,6 +61,7 @@ import {
     openTokenPicker,
     setTokenPickerTriggerText,
 } from "./token-picker";
+import { prepareOfflineDefaults } from "./offline-flow";
 
 function updateSendTokenListLoading(): void {
     const loading = document.getElementById("divSendTokenListLoading");
@@ -160,6 +162,23 @@ export function getSendAssetSymbol(contractAddress: string | null, isCoin: boole
     return langJson.langValues.tokens;
 }
 
+function getSendAssetDisplayName(contractAddress: string | null, isCoin: boolean): string {
+    if (isCoin) return "Q";
+    const symbol = getSendAssetSymbol(contractAddress, false);
+    const lower = String(contractAddress || "").toLowerCase();
+    const walletToken = tokenStore.currentWalletTokenList.find(
+        (token) => token.contractAddress.toLowerCase() === lower,
+    );
+    let name = walletToken?.name || "";
+    if (!name && contractAddress && networkStore.currentBlockchainNetwork) {
+        name = getCachedManualToken(
+            parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
+            contractAddress,
+        )?.name || "";
+    }
+    return name ? name + " (" + symbol + ")" : symbol;
+}
+
 export function openSendTokenPicker(): void {
     openTokenPicker({
         allowNativeQ: true,
@@ -220,14 +239,14 @@ export function syncSendScreenTokenList(): void {
         ddlCoinTokenToSend.value = previousValue;
     }
 
-    updateInfoSendScreen();
+    updateInfoSendScreen(true);
     setTokenPickerTriggerText("ddlCoinTokenToSend", "btnSendTokenPicker");
 }
 
-export async function updateInfoSendScreen(): Promise<boolean> {
+export async function updateInfoSendScreen(preserveGas = false): Promise<boolean> {
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     const selectedValue = ddlCoinTokenToSend.value;
-    if (byId("SendScreen").style.display === "block") {
+    if (!preserveGas && byId("SendScreen").style.display === "block") {
         resetCurrentGasConfig();
         setGasFeeLabel("spanSendGasFee", "");
     }
@@ -268,7 +287,7 @@ export async function updateInfoSendScreen(): Promise<boolean> {
         }
     }
 
-    if (byId("SendScreen").style.display === "block") {
+    if (!preserveGas && byId("SendScreen").style.display === "block") {
         scheduleSendGasEstimation();
     }
     return false;
@@ -285,11 +304,9 @@ export async function showSendScreen(): Promise<boolean> {
 
     if (settingsStore.offlineSignEnabled === true) {
         byId("btnOfflineSign").style.display = "block";
-        byId("divCurrentNonce").style.display = "block";
         byId("btnSendCoins").style.display = "none";
     } else {
         byId("btnOfflineSign").style.display = "none";
-        byId("divCurrentNonce").style.display = "none";
         byId("btnSendCoins").style.display = "block";
     }
 
@@ -300,8 +317,6 @@ export async function showSendScreen(): Promise<boolean> {
     setHeaderBand("compact");
     inputById("txtSendAddress").value = "";
     inputById("txtSendQuantity").value = "";
-    inputById("txtCurrentNonce").value = "";
-    inputById("pwdSend").value = "";
     inputById("txtSendAddress").focus();
 
     resetCurrentGasConfig();
@@ -322,8 +337,6 @@ export function attachSendGasListeners(): void {
 export async function signOfflineSend(): Promise<boolean> {
     const sendAddress = inputById("txtSendAddress").value;
     const sendQuantity = inputById("txtSendQuantity").value;
-    const currentNonce = inputById("txtCurrentNonce").value;
-    const sendPassword = inputById("pwdSend").value;
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     const selectedValue = ddlCoinTokenToSend.value;
     if (selectedValue === "Q") {
@@ -354,40 +367,27 @@ export async function signOfflineSend(): Promise<boolean> {
         return false;
     }
 
-    if (currentNonce == null || currentNonce.length < 1) {
-        showWarnAlert(langJson.errors.enterCurrentNonce);
-        return false;
-    }
-
-    const tempNonce = parseInt(currentNonce);
-    if (Number.isInteger(tempNonce) == false || tempNonce < 0) {
-        showWarnAlert(langJson.errors.enterCurrentNonce);
-        return false;
-    }
-
-    if (sendPassword == null || sendPassword.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
-
     const isCoin = (selectedValue === "Q");
     const offlineContractAddress = isCoin ? null : selectedValue;
     const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
     const gasLimit = parseInt(resolved.gasLimit, 10);
     const gasFee = resolved.gasFee;
 
+    const prepared = await prepareOfflineDefaults();
     const review: TransactionReview = {
-        asset: getSendAssetSymbol(offlineContractAddress, isCoin),
+        asset: getSendAssetDisplayName(offlineContractAddress, isCoin),
         contractAddress: offlineContractAddress,
         fromAddress: walletStore.currentWalletAddress,
         toAddress: sendAddress,
         quantityLabelKey: "send-quantity",
-        quantityValue: sendQuantity,
+        quantityValue: isCoin ? sendQuantity : "0",
+        tokenQuantityValue: isCoin ? null : sendQuantity + " " + getSendAssetSymbol(offlineContractAddress, false),
         gasLimit: String(gasLimit),
         gasFee: gasFee,
-        nonce: String(tempNonce),
+        nonce: prepared.nonce,
         networkText: txReviewNetworkText(),
-        requirePassword: false,
+        requirePassword: true,
+        requireNonce: true,
         submitLabelKey: "ok",
         onSubmit: onSignOfflineSendCoinsConfirm,
     };
@@ -395,12 +395,14 @@ export async function signOfflineSend(): Promise<boolean> {
     return false;
 }
 
-export async function onSignOfflineSendCoinsConfirm(): Promise<void> {
-    showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletSignOffline);
+export async function onSignOfflineSendCoinsConfirm(submission: TransactionReviewSubmission): Promise<void> {
+    showLoadingAndExecuteAsync(
+        langJson.langValues.waitWalletOpen,
+        () => decryptAndUnlockWalletSignOffline(submission.password, submission.startingNonce as number),
+    );
 }
 
-export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
-    const password = inputById("pwdSend").value;
+export async function decryptAndUnlockWalletSignOffline(password: string, nonce: number): Promise<boolean> {
     try {
         const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {
@@ -408,7 +410,7 @@ export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
             showWarnAlert(getGenericError(""));
             return false;
         }
-        signOfflineTxnSend(quantumWallet);
+        signOfflineTxnSend(quantumWallet, nonce);
     } catch (error) {
         hideWaitingBox();
         showWarnAlert(langJson.errors.walletOpenError.replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH) + " " + error);
@@ -417,10 +419,9 @@ export async function decryptAndUnlockWalletSignOffline(): Promise<boolean> {
     return false;
 }
 
-export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<void> {
+export async function signOfflineTxnSendToken(quantumWallet: Wallet, nonce: number): Promise<void> {
     const sendAddress = inputById("txtSendAddress").value;
     const sendQuantity = inputById("txtSendQuantity").value;
-    const currentNonce = inputById("txtCurrentNonce").value;
     const contractAddress = selectedSendContractAddress() || "";
 
     try {
@@ -430,7 +431,7 @@ export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<vo
             amount: sendQuantity,
             contractAddress: contractAddress,
             fromDecimals: getSwapTokenDecimals(contractAddress),
-            nonce: parseInt(currentNonce),
+            nonce,
             gasLimit: parseInt(resolveGasForTx(TOKEN_SEND_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
@@ -453,25 +454,24 @@ export async function signOfflineTxnSendToken(quantumWallet: Wallet): Promise<vo
     }
 }
 
-export async function signOfflineTxnSend(quantumWallet: Wallet): Promise<void> {
+export async function signOfflineTxnSend(quantumWallet: Wallet, nonce: number): Promise<void> {
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     const selectedValue = ddlCoinTokenToSend.value;
     if (selectedValue === "Q") {
         // fall through to coin signing below
     } else {
-        await signOfflineTxnSendToken(quantumWallet);
+        await signOfflineTxnSendToken(quantumWallet, nonce);
         return;
     }
     const sendAddress = inputById("txtSendAddress").value;
     const sendQuantity = inputById("txtSendQuantity").value;
-    const currentNonce = inputById("txtCurrentNonce").value;
 
     try {
         const result = await offlineSignCoinTransaction({
             chainId: parseInt(String((networkStore.currentBlockchainNetwork as { networkId: number }).networkId), 10),
             toAddress: sendAddress,
             amount: sendQuantity,
-            nonce: parseInt(currentNonce),
+            nonce,
             gasLimit: parseInt(resolveGasForTx(COIN_SEND_GAS).gasLimit, 10),
             privateKey: await quantumWallet.getPrivateKey(),
             publicKey: await quantumWallet.getPublicKey(),
@@ -506,7 +506,6 @@ export async function openOfflineTxnSigningUrl(): Promise<boolean> {
 export async function sendCoins(): Promise<boolean> {
     const sendAddress = inputById("txtSendAddress").value;
     const sendQuantity = inputById("txtSendQuantity").value;
-    const sendPassword = inputById("pwdSend").value;
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     let CoinTokenToSendName = ddlCoinTokenToSend.options[ddlCoinTokenToSend.selectedIndex].text;
     const selectedValue = ddlCoinTokenToSend.value;
@@ -572,27 +571,23 @@ export async function sendCoins(): Promise<boolean> {
         }
     }
 
-    if (sendPassword == null || sendPassword.length < 2) {
-        showWarnAlert(langJson.errors.enterQuantumPassword);
-        return false;
-    }
-
     const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
     const gasLimit = parseInt(resolved.gasLimit, 10);
     const gasFee = resolved.gasFee;
 
     const review: TransactionReview = {
-        asset: getSendAssetSymbol(contractAddress, isCoin),
+        asset: getSendAssetDisplayName(contractAddress, isCoin),
         contractAddress: isCoin ? null : contractAddress,
         fromAddress: walletStore.currentWalletAddress,
         toAddress: sendAddress,
         quantityLabelKey: "send-quantity",
-        quantityValue: sendQuantity,
+        quantityValue: isCoin ? sendQuantity : "0",
+        tokenQuantityValue: isCoin ? null : sendQuantity + " " + getSendAssetSymbol(contractAddress, false),
         gasLimit: String(gasLimit),
         gasFee: gasFee,
         nonce: null,
         networkText: txReviewNetworkText(),
-        requirePassword: false,
+        requirePassword: true,
         submitLabelKey: "ok",
         onSubmit: onSendCoinsConfirm,
     };
@@ -600,12 +595,14 @@ export async function sendCoins(): Promise<boolean> {
     return false;
 }
 
-export async function onSendCoinsConfirm(): Promise<void> {
-    showLoadingAndExecuteAsync(langJson.langValues.waitWalletOpen, decryptAndUnlockWalletSend);
+export async function onSendCoinsConfirm(submission: TransactionReviewSubmission): Promise<void> {
+    showLoadingAndExecuteAsync(
+        langJson.langValues.waitWalletOpen,
+        () => decryptAndUnlockWalletSend(submission.password),
+    );
 }
 
-export async function decryptAndUnlockWalletSend(): Promise<boolean> {
-    const password = inputById("pwdSend").value;
+export async function decryptAndUnlockWalletSend(password: string): Promise<boolean> {
     try {
         const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
         if (quantumWallet == null) {

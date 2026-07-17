@@ -1,7 +1,7 @@
 // Send and Offline-Sign screens, extracted 1:1 from the legacy fixture.
 import { el } from "../ui/dom";
 import type { ScreenModule } from "../ui/screens";
-import { showWalletScreen, togglePasswordBox } from "../app/app";
+import { showWalletScreen } from "../app/app";
 import {
     copySignedSendTransaction,
     onSendGasIconClick,
@@ -63,34 +63,6 @@ function buildSendScreen(): HTMLElement {
                         type: "number", autocomplete: "off", id: "txtSendQuantity", name: "send_quantity", "data-placeholder-key": "quantity-to-send",
                         placeholder: "Quantity to send", tabindex: "306",
                     }),
-                    el("div", { class: "divider" }),
-                ]),
-                el("div", { class: "input_container", id: "divCurrentNonce" }, [
-                    el("div", { "data-lang-key": "nonce-help", style: "text-align: left;" }),
-                    el("input", {
-                        class: "tab-name qs-input-strong",
-                        type: "number", autocomplete: "off", id: "txtCurrentNonce", name: "current_nonce", "data-placeholder-key": "current-nonce",
-                        placeholder: "Current Nonce", tabindex: "307", maxlength: "6",
-                    }),
-                    el("div", { class: "divider" }),
-                ]),
-                el("div", { class: "input_container" }, [
-                    el("div", { style: "width:100%;display:flex;align-items:center;" }, [
-                        el("div", { style: "width: 80%;" }, [
-                            el("input", {
-                                class: "tab-name qs-input-strong",
-                                type: "password", autocomplete: "off", id: "pwdSend", name: "password", "data-placeholder-key": "password",
-                                placeholder: "Enter the password", tabindex: "308",
-                            }),
-                        ]),
-                        el("div", {}, [
-                            el("img", {
-                                src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye",
-                                "data-alt-key": "show-password", role: "button", tabindex: "309",
-                                onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "pwdSend"),
-                            }),
-                        ]),
-                    ]),
                     el("div", { class: "divider" }),
                 ]),
                 el("div", { style: "display: flex; justify-content: flex-end;" }, [

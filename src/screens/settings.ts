@@ -4,7 +4,6 @@ import { el } from "../ui/dom";
 import type { ScreenModule } from "../ui/screens";
 import { addNetwork, showAddNetworkScreen, showNetworksScreen, showSettingsScreen, showWalletPath, showWalletScreen } from "../app/app";
 import { showAdvancedSigningSettingDialog, showOfflineTxnSettingDialog } from "../app/dialog";
-import { showValidatorScreen } from "../app/validator";
 import { showReleasesScreen } from "../app/release";
 
 type MenuAction = () => unknown;
@@ -39,8 +38,6 @@ function buildSettingsScreen(): HTMLElement {
                             menuLink("offline-txn-signing", "Offline Transaction Signing", "4002", showOfflineTxnSettingDialog),
                             el("div", { class: "divider" }),
                             menuLink("signing", "Signing", "4003", showAdvancedSigningSettingDialog),
-                            el("div", { class: "divider" }),
-                            menuLink("validator-options", "Validator Options", "4004", showValidatorScreen),
                             el("div", { class: "divider" }),
                         ]),
                     ]),

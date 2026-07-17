@@ -1,7 +1,7 @@
 // Validator screen, extracted 1:1 from the legacy fixture.
 import { el } from "../ui/dom";
 import type { ScreenModule } from "../ui/screens";
-import { showSettingsScreen, togglePasswordBox } from "../app/app";
+import { showWalletScreen } from "../app/app";
 import {
     onValidatorGasIconClick,
     openValidatorPage,
@@ -12,7 +12,7 @@ import {
 function buildValidatorScreen(): HTMLElement {
     return el("div", { class: "center-content home-content", id: "ValidatorScreen" }, [
         el("div", { class: "center-content-rounded-container" }, [
-            el("div", { class: "back-container", role: "button", tabindex: "2308", onclick: () => showSettingsScreen() }),
+            el("div", { class: "back-container", role: "button", tabindex: "2308", onclick: () => showWalletScreen() }),
             el("div", { class: "roundex-box scrollbar", style: "padding-top: 15px; padding-bottom: 15px;overflow-y: auto;overflow-x: auto;" }, [
                 el("div", { class: "gas-header-row" }, [
                     el("div", { class: "heading bold", "data-lang-key": "validator" }, ["Validator"]),
@@ -57,35 +57,6 @@ function buildValidatorScreen(): HTMLElement {
                         type: "number", autocomplete: "off", id: "txtValidatorDepositCoins", name: "validator_deposit_coins", "data-placeholder-key": "quantity",
                         placeholder: "Quantity", tabindex: "2302",
                     }),
-                    el("div", { class: "divider" }),
-                ]),
-                el("div", { class: "input_container", id: "divCurrentNonceValidator" }, [
-                    el("div", { "data-lang-key": "nonce-help", style: "text-align: left;" }),
-                    el("input", {
-                        class: "tab-name qs-input-strong",
-                        type: "number", autocomplete: "off", id: "txtCurrentNonceValidator", name: "current_nonce_validator", "data-placeholder-key": "current-nonce",
-                        placeholder: "Current Nonce", tabindex: "2303", maxlength: "6",
-                    }),
-                    el("div", { class: "divider" }),
-                ]),
-                el("div", { class: "input_container", id: "divValidatorScreenPassword" }, [
-                    el("div", { class: "heading medium", "data-lang-key": "enter-wallet-password", style: "margin-top:5px" }, ["Enter Wallet Password"]),
-                    el("div", { style: "width:100%;margin-top:5px;display:flex;align-items:center;" }, [
-                        el("div", { style: "width: 80%;" }, [
-                            el("input", {
-                                class: "tab-name qs-input-strong",
-                                type: "password", autocomplete: "off", id: "pwdValidator", name: "password", "data-placeholder-key": "password",
-                                placeholder: "password", tabindex: "2304",
-                            }),
-                        ]),
-                        el("div", {}, [
-                            el("img", {
-                                src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye",
-                                "data-alt-key": "show-password", role: "button", tabindex: "2305",
-                                onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "pwdValidator"),
-                            }),
-                        ]),
-                    ]),
                     el("div", { class: "divider" }),
                 ]),
                 el("div", { class: "divider" }),

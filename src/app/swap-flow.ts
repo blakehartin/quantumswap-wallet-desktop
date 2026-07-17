@@ -10,6 +10,33 @@ export interface SwapSuccessAmounts {
     to: string;
 }
 
+export interface SwapReviewQuantities {
+    quantityValue: string;
+    tokenQuantityValue: string | null;
+}
+
+export function createSwapReviewQuantities(
+    fromToken: string,
+    fromQuantity: string,
+    fromSymbol: string,
+    toToken: string,
+    toQuantity: string,
+    toSymbol: string,
+): SwapReviewQuantities {
+    const tokenQuantities: string[] = [];
+    if (fromToken !== "Q") {
+        tokenQuantities.push(fromQuantity + " " + fromSymbol);
+    }
+    if (toToken !== "Q") {
+        tokenQuantities.push(toQuantity + " " + toSymbol);
+    }
+
+    return {
+        quantityValue: fromToken === "Q" ? fromQuantity : (toToken === "Q" ? toQuantity : "0"),
+        tokenQuantityValue: tokenQuantities.length > 0 ? tokenQuantities.join(" for ") : null,
+    };
+}
+
 export function createSwapSuccessAmounts(
     fromQuantity: string,
     fromSymbol: string,

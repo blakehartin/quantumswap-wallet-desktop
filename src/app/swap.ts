@@ -23,6 +23,7 @@ import {
     inputById,
     networkStore,
     selectById,
+    settingsStore,
     tokenStore,
     walletStore,
     zero_address,
@@ -35,8 +36,8 @@ import {
     formatGasFeeQ,
 } from "./gas";
 import { ReviewedTxStepDefinition, requireTxHash, showReviewThenSteps } from "./txflow";
-import { createSwapSuccessAmounts, createSwapWorkflowStepPlan } from "./swap-flow";
-import { showWarnAlert } from "./dialog";
+import { createSwapReviewQuantities, createSwapSuccessAmounts, createSwapWorkflowStepPlan } from "./swap-flow";
+import { showTransactionReviewDialog, showWarnAlert, txReviewNetworkText } from "./dialog";
 import { OpenScanTxn, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
 import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
 import { BUILTIN_SWAP_RELEASES } from "../lib/release";
@@ -47,6 +48,9 @@ import {
     openTokenPicker,
     setTokenPickerTriggerText,
 } from "./token-picker";
+import { offlineTxnSigningGetDefaultValue } from "./settings";
+import { amountAfterSlippage, offlineDeadline, prepareOfflineDefaults, signOfflineBundle, OfflineBundleStep } from "./offline-flow";
+import { buildOfflineSwapPath } from "./offline-flow-core";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
 
@@ -58,12 +62,42 @@ function selectedSwapToken(side: "from" | "to"): string {
     return selectById(swapSelectId(side)).value;
 }
 
+function updateSwapQuantityVisibility(): void {
+    const ready = selectedSwapToken("from") !== "" && selectedSwapToken("to") !== "";
+    byId("divSwapFromQuantityBox").style.display = ready ? "block" : "none";
+    byId("divSwapToQuantityBox").style.display = ready ? "block" : "none";
+    byId("divSwapFlip").style.display = ready ? "block" : "none";
+    const flip = byId<HTMLButtonElement>("btnSwapFlipTokens");
+    flip.disabled = !ready;
+}
+
+export async function flipSwapTokens(): Promise<void> {
+    const from = selectById("ddlSwapFromToken");
+    const to = selectById("ddlSwapToToken");
+    const fromValue = from.value;
+    const toValue = to.value;
+    if (!fromValue || !toValue) return;
+    const fromText = from.options[from.selectedIndex]?.text || fromValue;
+    const toText = to.options[to.selectedIndex]?.text || toValue;
+    const previousToQuantity = inputById("txtSwapToQuantity").value;
+    restoreSwapOption(from, toValue, toText);
+    restoreSwapOption(to, fromValue, fromText);
+    setTokenPickerTriggerText("ddlSwapFromToken", "btnSwapFromTokenPicker");
+    setTokenPickerTriggerText("ddlSwapToToken", "btnSwapToTokenPicker");
+    await updateSwapScreenInfo();
+    if (previousToQuantity) {
+        inputById("txtSwapFromQuantity").value = previousToQuantity;
+        updateToQuantityFromFrom();
+    }
+}
+
 export function openSwapTokenPicker(side: "from" | "to"): void {
     const otherSide = side === "from" ? "to" : "from";
     const triggerId = side === "from" ? "btnSwapFromTokenPicker" : "btnSwapToTokenPicker";
     openTokenPicker({
         allowNativeQ: SWAP_SHOW_NATIVE_COIN,
         allowUnrecognized: true,
+        allowOfflineFallback: settingsStore.offlineSignEnabled === true,
         excludeValue: selectedSwapToken(otherSide),
         onSelect: (item) => {
             applyTokenPickerSelection(swapSelectId(side), triggerId, item);
@@ -388,6 +422,10 @@ export async function updateToQuantityFromFrom(): Promise<void> {
     swapLastChanged = "from";
     const fromValue = selectedSwapToken("from");
     const toValue = selectedSwapToken("to");
+    const offlineFromDecimals = document.getElementById("txtSwapOfflineFromDecimals") as HTMLInputElement | null;
+    const offlineToDecimals = document.getElementById("txtSwapOfflineToDecimals") as HTMLInputElement | null;
+    if (offlineFromDecimals && fromValue) offlineFromDecimals.value = String(getSwapTokenDecimals(fromValue));
+    if (offlineToDecimals && toValue) offlineToDecimals.value = String(getSwapTokenDecimals(toValue));
     const fromQtyStr = (inputById("txtSwapFromQuantity").value || "").trim();
     const fromQty = parseFloat(fromQtyStr);
 
@@ -506,6 +544,7 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
     updateSwapBalanceLabels();
     const fromValue = selectedSwapToken("from");
     const toValue = selectedSwapToken("to");
+    updateSwapQuantityVisibility();
     if (!fromValue || !toValue || fromValue.toLowerCase() === toValue.toLowerCase()) {
         return false;
     }
@@ -540,7 +579,7 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
     return false;
 }
 
-export function openSwapScreen(): boolean {
+export async function openSwapScreen(): Promise<boolean> {
     byId("divNetworkDropdown").style.display = "none";
     byId("HomeScreen").style.display = "none";
     byId("SendScreen").style.display = "none";
@@ -556,9 +595,108 @@ export function openSwapScreen(): boolean {
     syncSwapTokenListState();
     inputById("txtSwapFromQuantity").value = "";
     inputById("txtSwapToQuantity").value = "";
+    updateSwapQuantityVisibility();
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    byId("divSwapOfflineOptions").style.display = settingsStore.offlineSignEnabled ? "block" : "none";
+    inputById("txtSwapOfflineDeadline").value = offlineDeadline();
+    if (settingsStore.offlineSignEnabled) {
+        const prepared = await prepareOfflineDefaults();
+        inputById("txtSwapOfflineDeadline").value = prepared.deadline;
+    }
     updateSwapRoutePathDisplay(null);
     inputById("txtSwapFromQuantity").focus();
     updateSwapBalanceLabels();
+    return false;
+}
+
+function mappedOfflineToken(value: string): string {
+    if (value !== "Q") return value;
+    return currentSwapRelease ? currentSwapRelease.wq : BUILTIN_SWAP_RELEASES[0].wq;
+}
+
+async function signSwapOffline(
+    fromValue: string,
+    toValue: string,
+    fromQty: string,
+    toQty: string,
+    slippagePercent: number,
+): Promise<boolean> {
+    const fromDecimals = Number(inputById("txtSwapOfflineFromDecimals").value || getSwapTokenDecimals(fromValue));
+    const toDecimals = Number(inputById("txtSwapOfflineToDecimals").value || getSwapTokenDecimals(toValue));
+    const deadline = inputById("txtSwapOfflineDeadline").value || offlineDeadline();
+    const intermediates = (inputById("txtSwapOfflineIntermediatePath").value || "")
+        .split(",").map((value) => value.trim()).filter(Boolean);
+    let path = buildOfflineSwapPath(mappedOfflineToken(fromValue), mappedOfflineToken(toValue), intermediates);
+    if (intermediates.length === 0 && swapCurrentRoute && swapCurrentRoute.length >= 2) {
+        path = swapCurrentRoute.map((entry) => entry.address);
+    }
+    let approvalGas = Number(inputById("txtSwapOfflineApprovalGas").value) || APPROVE_DEFAULT_GAS;
+    let swapGas = Number(inputById("txtSwapOfflineGas").value) || SWAP_DEFAULT_GAS;
+    if (approvalGas === APPROVE_DEFAULT_GAS && fromValue !== "Q") {
+        approvalGas = Number((await estimateGasForContext({
+            txKind: "approve", fromTokenValue: fromValue, amount: fromQty,
+            fromDecimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
+        })).gasLimit);
+    }
+    if (swapGas === SWAP_DEFAULT_GAS) {
+        swapGas = Number((await estimateGasForContext({
+            txKind: "swap", fromTokenValue: fromValue, toTokenValue: toValue,
+            amountIn: fromQty, amountOut: toQty, lastChanged: "from", slippagePercent,
+            fromDecimals, toDecimals, recipientAddress: walletStore.currentWalletAddress,
+            defaultGasLimit: SWAP_DEFAULT_GAS,
+        })).gasLimit);
+    }
+    const steps: OfflineBundleStep[] = [];
+    if (fromValue !== "Q") {
+        steps.push({
+            kind: "approve",
+            label: (langJson.langValues["step-approve"] || "Approve") + " " + getSwapCachedSymbol(fromValue),
+            gasLimit: approvalGas,
+            data: { tokenAddress: fromValue },
+        });
+    }
+    steps.push({
+        kind: "swap",
+        label: langJson.langValues.swap || "Swap",
+        gasLimit: swapGas,
+        data: {
+            path,
+            amountIn: fromQty,
+            amountOutMin: amountAfterSlippage(toQty, toDecimals, slippagePercent),
+            fromDecimals,
+            toDecimals,
+            recipientAddress: walletStore.currentWalletAddress,
+            deadline,
+        },
+    });
+    const prepared = await prepareOfflineDefaults();
+    const fromSymbol = getSwapCachedSymbol(fromValue);
+    const toSymbol = getSwapCachedSymbol(toValue);
+    const reviewQuantities = createSwapReviewQuantities(
+        fromValue,
+        fromQty,
+        fromSymbol,
+        toValue,
+        amountAfterSlippage(toQty, toDecimals, slippagePercent),
+        toSymbol,
+    );
+    showTransactionReviewDialog({
+        asset: fromSymbol + " -> " + toSymbol,
+        fromTokenContractAddress: fromValue,
+        toTokenContractAddress: toValue,
+        fromAddress: walletStore.currentWalletAddress,
+        toAddress: currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router,
+        quantityValue: reviewQuantities.quantityValue,
+        tokenQuantityValue: reviewQuantities.tokenQuantityValue,
+        gasLimit: steps.map((step) => step.gasLimit).join(" + "),
+        gasFee: "",
+        nonce: prepared.nonce,
+        requireNonce: true,
+        requirePassword: true,
+        networkText: txReviewNetworkText(),
+        submitLabelKey: "sign-offline",
+        onSubmit: (submission) => signOfflineBundle(steps, submission),
+    });
     return false;
 }
 
@@ -585,6 +723,10 @@ export async function onSwapNextClick(): Promise<boolean> {
         return false;
     }
     if (!networkStore.currentBlockchainNetwork) return false;
+
+    if (settingsStore.offlineSignEnabled) {
+        return await signSwapOffline(fromValue, toValue, fromQty, toQty, slippagePercent);
+    }
 
     try {
         const payload = applySwapReleaseToPayload({
@@ -654,6 +796,14 @@ export async function onSwapNextClick(): Promise<boolean> {
             langJson.langValues["step-approve"] || "Approve",
             langJson.langValues.swap || "Swap",
         );
+        const reviewQuantities = createSwapReviewQuantities(
+            fromValue,
+            fromQty,
+            fromSymbol,
+            toValue,
+            toQty,
+            toSymbol,
+        );
 
         showReviewThenSteps({
             review: {
@@ -662,7 +812,8 @@ export async function onSwapNextClick(): Promise<boolean> {
                 toTokenContractAddress: toValue,
                 toAddress: routerAddress,
                 quantityLabelKey: "send-quantity",
-                quantityValue: fromQty + " " + fromSymbol + " for " + toQty + " " + toSymbol,
+                quantityValue: reviewQuantities.quantityValue,
+                tokenQuantityValue: reviewQuantities.tokenQuantityValue,
             },
             stepsTitle: langJson.langValues.swap || "Swap",
             buildSteps: () => {
@@ -675,7 +826,9 @@ export async function onSwapNextClick(): Promise<boolean> {
                             assetLabelKey: "what-is-being-sent",
                             toAddress: fromValue,
                             quantityLabelKey: "send-quantity",
-                            quantityValue: fromQty + " " + fromSymbol,
+                            quantityValue: "0",
+                            tokenQuantityLabelKey: "approval-token-quantity",
+                            tokenQuantityValue: fromQty + " " + fromSymbol,
                         },
                         prepare: async () => estimateGasForContext({
                             txKind: "approve",

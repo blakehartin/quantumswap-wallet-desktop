@@ -57,19 +57,6 @@ export function showReleasePasswordDialog(onOk: (password: string) => void): voi
 let modalGasConfig: HTMLDialogElement;
 let onGasConfigOk: ((result: { gasLimit: string; gasFee: string }) => void) | null = null;
 
-// Restrict the gas-fee field to numbers and a single decimal point (no other characters).
-function sanitizeGasFeeInput(el: HTMLInputElement | null): void {
-    if (!el || el.dataset.gasSanitized) return;
-    el.dataset.gasSanitized = "1";
-    el.addEventListener("input", function () {
-        const v = el.value;
-        let cleaned = v.replace(/[^0-9.]/g, "");
-        const parts = cleaned.split(".");
-        if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
-        if (cleaned !== v) el.value = cleaned;
-    });
-}
-
 // Price per gas unit (coins) derived from the estimate the dialog was opened with.
 // Used to recompute the fee field live when the user edits the gas limit.
 let gasConfigFeeRate: number | null = null;
@@ -77,7 +64,7 @@ let gasConfigFeeRate: number | null = null;
 // Bind a one-time input listener on the gas-limit field that recomputes the fee
 // field as (gasLimit * gasConfigFeeRate). Generic: applies to every screen that
 // opens this dialog (send, validator, swap), since they all share these inputs.
-function bindGasLimitRecompute(limitEl: HTMLInputElement | null, feeEl: HTMLInputElement | null): void {
+function bindGasLimitRecompute(limitEl: HTMLInputElement | null, feeEl: HTMLElement | null): void {
     if (!limitEl || !feeEl || limitEl.dataset.gasRecomputeBound) return;
     limitEl.dataset.gasRecomputeBound = "1";
     limitEl.addEventListener("input", function () {
@@ -85,7 +72,7 @@ function bindGasLimitRecompute(limitEl: HTMLInputElement | null, feeEl: HTMLInpu
         const lim = parseFloat(limitEl.value);
         if (isNaN(lim) || lim < 0) return;
         const fee = lim * gasConfigFeeRate;
-        feeEl.value = formatGasFeeNumber(fee);
+        feeEl.textContent = formatGasFeeNumber(fee);
     });
 }
 
@@ -98,10 +85,9 @@ export interface GasConfigDialogOptions {
 export function showGasConfigDialog(opts: GasConfigDialogOptions): boolean {
     opts = opts || {};
     const limitEl = inputById("txtGasLimit");
-    const feeEl = inputById("txtGasFee");
+    const feeEl = byId("spanGasFee");
     if (limitEl) limitEl.value = (opts.gasLimit != null ? String(opts.gasLimit) : "");
-    if (feeEl) feeEl.value = (opts.gasFee != null ? String(opts.gasFee) : "");
-    sanitizeGasFeeInput(feeEl);
+    if (feeEl) feeEl.textContent = (opts.gasFee != null ? String(opts.gasFee) : "");
     // Derive the coins-per-gas-unit rate from the opened estimate so editing the
     // gas limit updates the fee. Null when there is no usable estimate yet.
     const limitNum = parseFloat(opts.gasLimit ?? "");
@@ -229,9 +215,15 @@ export async function showAdvancedSigningSettingDialog(f?: () => void): Promise<
 let modalSwapApprovalSubmit: HTMLDialogElement | null;
 
 let modalTransactionReview: HTMLDialogElement;
-let txReviewOnSubmit: (() => unknown) | null = null;
+export interface TransactionReviewSubmission {
+    password: string;
+    startingNonce: number | null;
+}
+
+let txReviewOnSubmit: ((submission: TransactionReviewSubmission) => unknown) | null = null;
 let txReviewOnCancel: (() => unknown) | null = null;
 let txReviewRequirePassword = false;
+let txReviewRequireNonce = false;
 
 let modalSendCompleted: HTMLDialogElement;
 
@@ -308,6 +300,10 @@ export function closeTransactionReviewDialog(): void {
     }
     txReviewOnSubmit = null;
     txReviewOnCancel = null;
+    const password = document.getElementById("txtTxReviewPassword") as HTMLInputElement | null;
+    const nonce = document.getElementById("txtTxReviewNonce") as HTMLInputElement | null;
+    if (password) password.value = "";
+    if (nonce) nonce.value = "";
 }
 
 export function txReviewNetworkText(): string {
@@ -329,6 +325,8 @@ export interface TransactionReview {
     toAddress?: string | null;
     quantityLabelKey?: string;
     quantityValue?: string;
+    tokenQuantityLabelKey?: string;
+    tokenQuantityValue?: string | null;
     gasLimit?: string;
     gasFee?: string;
     nonce?: string | null;
@@ -338,9 +336,10 @@ export interface TransactionReview {
     toTokenContractAddress?: string | null;
     assetLabelKey?: string;
     requirePassword?: boolean;
+    requireNonce?: boolean;
     showGas?: boolean;
     submitLabelKey?: string;
-    onSubmit?: () => unknown;
+    onSubmit?: (submission: TransactionReviewSubmission) => unknown;
     onCancel?: () => unknown;
 }
 
@@ -348,6 +347,14 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     byId("spanTxReviewAsset").textContent = review.asset || "";
     byId("spanTxReviewFrom").textContent = review.fromAddress || "";
     byId("spanTxReviewQuantity").textContent = review.quantityValue || "";
+    const tokenQuantityRow = byId("rowTxReviewTokenQuantity");
+    if (review.tokenQuantityValue) {
+        byId("spanTxReviewTokenQuantity").textContent = review.tokenQuantityValue;
+        tokenQuantityRow.style.display = "block";
+    } else {
+        byId("spanTxReviewTokenQuantity").textContent = "";
+        tokenQuantityRow.style.display = "none";
+    }
     byId("spanTxReviewGasLimit").textContent = review.gasLimit || "";
     byId("spanTxReviewGasFee").textContent = review.gasFee || "";
     byId("spanTxReviewNetwork").textContent = review.networkText || "";
@@ -366,6 +373,12 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     const lblQty = byId("lblTxReviewQuantity");
     if (lblQty && review.quantityLabelKey && langJson && langJson.langValues[review.quantityLabelKey]) {
         lblQty.textContent = langJson.langValues[review.quantityLabelKey];
+    }
+
+    const lblTokenQty = byId("lblTxReviewTokenQuantity");
+    const tokenQuantityLabelKey = review.tokenQuantityLabelKey || "token-quantity";
+    if (lblTokenQty && langJson && langJson.langValues[tokenQuantityLabelKey]) {
+        lblTokenQty.textContent = langJson.langValues[tokenQuantityLabelKey];
     }
 
     const toRow = byId("rowTxReviewTo");
@@ -402,11 +415,12 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
     );
 
     const nonceRow = byId("rowTxReviewNonce");
-    if (review.nonce != null && review.nonce !== "") {
-        byId("spanTxReviewNonce").textContent = review.nonce;
+    txReviewRequireNonce = review.requireNonce === true;
+    if (txReviewRequireNonce || (review.nonce != null && review.nonce !== "")) {
+        inputById("txtTxReviewNonce").value = review.nonce || "";
         nonceRow.style.display = "block";
     } else {
-        byId("spanTxReviewNonce").textContent = "";
+        inputById("txtTxReviewNonce").value = "";
         nonceRow.style.display = "none";
     }
 
@@ -447,6 +461,8 @@ function cancelTransactionReview(): void {
     modalTransactionReview.style.display = "none";
     modalTransactionReview.close();
     txReviewOnSubmit = null;
+    inputById("txtTxReviewPassword").value = "";
+    inputById("txtTxReviewNonce").value = "";
     const cb = txReviewOnCancel;
     txReviewOnCancel = null;
     if (cb != null) void cb();
@@ -521,9 +537,9 @@ export function initDialogs(): void {
 
     btnGasConfigOk.onclick = function () {
         const limitEl = inputById("txtGasLimit");
-        const feeEl = inputById("txtGasFee");
+        const feeEl = byId("spanGasFee");
         const gasLimit = parseInt((limitEl && limitEl.value) || "", 10);
-        const gasFee = (feeEl && feeEl.value != null) ? String(feeEl.value).trim() : "";
+        const gasFee = (feeEl && feeEl.textContent != null) ? String(feeEl.textContent).trim() : "";
         const feeNum = parseFloat(gasFee);
         if (isNaN(gasLimit) || gasLimit <= 0 || isNaN(feeNum) || feeNum < 0) {
             showWarnAlert((langJson && langJson.errors && langJson.errors.invalidValue) ? langJson.errors.invalidValue : "Invalid value");
@@ -698,42 +714,40 @@ export function initDialogs(): void {
             showWarnAlert(langJson.langValues["must-agree-to-submit"]);
             return;
         }
-        if (txReviewRequirePassword) {
-            const password = (inputById("txtTxReviewPassword").value || "").trim();
-            if (!password) {
-                showWarnAlert(langJson.errors.enterWalletPassord);
-                return;
-            }
-            const cb = txReviewOnSubmit;
-            if (cb == null) return;
-            let ok = false;
-            try {
-                const result = await cb();
-                ok = result !== false;
-            } catch {
-                ok = false;
-            }
-            if (!ok) {
-                setTimeout(function () {
-                    const pwdEl = byId("txtTxReviewPassword");
-                    if (pwdEl) { pwdEl.focus(); }
-                }, 100);
-                return;
-            }
-            modalTransactionReview.style.display = "none";
-            modalTransactionReview.close();
-            txReviewOnSubmit = null;
-            txReviewOnCancel = null;
+        const password = (inputById("txtTxReviewPassword").value || "").trim();
+        if (txReviewRequirePassword && !password) {
+            showWarnAlert(langJson.errors.enterWalletPassord);
+            return;
+        }
+        const nonceText = (inputById("txtTxReviewNonce").value || "").trim();
+        const startingNonce = nonceText === "" ? null : Number(nonceText);
+        if (txReviewRequireNonce && (!Number.isInteger(startingNonce) || (startingNonce as number) < 0)) {
+            showWarnAlert(langJson.errors.enterCurrentNonce);
             return;
         }
         const cb = txReviewOnSubmit;
+        if (cb == null) return;
+        let ok = false;
+        try {
+            const result = await cb({ password, startingNonce });
+            ok = result !== false;
+        } catch {
+            ok = false;
+        }
+        if (!ok) {
+            setTimeout(function () {
+                const target = txReviewRequirePassword ? "txtTxReviewPassword" : "txtTxReviewIAgree";
+                const el = byId(target);
+                if (el) el.focus();
+            }, 100);
+            return;
+        }
         modalTransactionReview.style.display = "none";
         modalTransactionReview.close();
+        inputById("txtTxReviewPassword").value = "";
+        inputById("txtTxReviewNonce").value = "";
         txReviewOnSubmit = null;
         txReviewOnCancel = null;
-        if (cb != null) {
-            cb();
-        }
     };
 
     btnTxReviewCancel.onclick = function () {

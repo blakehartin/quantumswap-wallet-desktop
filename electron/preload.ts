@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld("SwapQuoteApi", makeApi([
     "OfflineSignTokenTransaction",
     "StakingContractSubmit",
     "StakingContractOfflineSign",
+    "OfflineSignTransactionBundle",
+    "OfflinePrepareSigning",
     "estimateGas",
     "estimateGasFee",
 ]));

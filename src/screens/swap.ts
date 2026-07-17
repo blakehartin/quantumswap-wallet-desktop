@@ -6,6 +6,7 @@ import {
     debouncedUpdateFromQuantityFromTo,
     debouncedUpdateToQuantityFromFrom,
     onSwapNextClick,
+    flipSwapTokens,
     openSwapTokenPicker,
     onSwapScreenBackClick,
     onSwapSuccessOkClick,
@@ -17,8 +18,32 @@ import {
 
 const SWAP_PANEL_STYLE = "padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:590px; display: none;";
 
+function buildFlipIcon(): SVGSVGElement {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("width", "18");
+    svg.setAttribute("height", "18");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "#fff");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    for (const [tag, attrs] of [
+        ["line", { x1: "8", y1: "20", x2: "8", y2: "5" }],
+        ["polyline", { points: "4 9 8 5 12 9" }],
+        ["line", { x1: "16", y1: "4", x2: "16", y2: "19" }],
+        ["polyline", { points: "12 15 16 19 20 15" }],
+    ] as const) {
+        const child = document.createElementNS(ns, tag);
+        for (const [key, value] of Object.entries(attrs)) child.setAttribute(key, value);
+        svg.appendChild(child);
+    }
+    return svg;
+}
+
 function buildSwapMainPanel(): HTMLElement {
-    return el("div", { id: "divSwapScreenInner", class: "roundex-box scrollbar", style: "padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:690px;" }, [
+    return el("div", { id: "divSwapScreenInner", class: "roundex-box scrollbar", style: "padding-top: 15px; padding-bottom: 15px; overflow-y: auto; overflow-x: auto; max-height:740px;" }, [
         el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
             el("div", { class: "heading bold", "data-lang-key": "swap" }, ["Swap"]),
             el("div", { id: "divSwapTokenListLoading", style: "display:none; width:30px; height:30px;" }, [
@@ -35,19 +60,30 @@ function buildSwapMainPanel(): HTMLElement {
             el("div", { class: "selectwrapper", style: "display:none;" }, [
                 el("select", { id: "ddlSwapFromToken", class: "selectbox", style: "height:100%; box-sizing:border-box; padding:7px 10px;", tabindex: "321", onchange: () => { void updateSwapScreenInfo(); } }),
             ]),
-            el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
-                el("div", { style: "font-size: 0.85em; color: #372339;" }, [
-                    el("span", { "data-lang-key": "balance" }, ["Balance"]),
-                    ": ",
-                    el("span", { id: "spanSwapFromBalance", role: "button", tabindex: "323", class: "swap-balance-label", style: "cursor:pointer;text-decoration:underline;", onclick: () => setSwapFromQuantityToBalance() }, ["0"]),
+            el("div", { id: "divSwapFromQuantityBox", style: "display:none;width:100%;" }, [
+                el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
+                    el("div", { style: "font-size: 0.85em; color: #372339;" }, [
+                        el("span", { "data-lang-key": "balance" }, ["Balance"]),
+                        ": ",
+                        el("span", { id: "spanSwapFromBalance", role: "button", tabindex: "323", class: "swap-balance-label", style: "cursor:pointer;text-decoration:underline;", onclick: () => setSwapFromQuantityToBalance() }, ["0"]),
+                    ]),
                 ]),
+                el("input", {
+                    class: "tab-name qs-input-strong",
+                    type: "number", autocomplete: "off", id: "txtSwapFromQuantity", name: "swap_from_quantity",
+                    "data-placeholder-key": "swap-from-token-quantity", placeholder: "From token quantity",
+                    style: "width:100%;box-sizing:border-box;", tabindex: "326", min: "0", step: "any", oninput: () => debouncedUpdateToQuantityFromFrom(),
+                }),
+                el("div", { class: "divider" }),
             ]),
-            el("input", {
-                class: "tab-name qs-input-strong",
-                type: "number", autocomplete: "off", id: "txtSwapFromQuantity", name: "swap_from_quantity", "data-placeholder-key": "quantity",
-                placeholder: "Quantity", tabindex: "326", min: "0", step: "any", oninput: () => debouncedUpdateToQuantityFromFrom(),
-            }),
-            el("div", { class: "divider" }),
+        ]),
+        el("div", { id: "divSwapFlip", style: "display:none;" }, [
+            el("div", { class: "swap-flip" }, [
+                el("button", {
+                    id: "btnSwapFlipTokens", type: "button", title: "Flip", "aria-label": "Flip tokens",
+                    onclick: () => { void flipSwapTokens(); },
+                }, [buildFlipIcon()]),
+            ]),
         ]),
         el("div", { class: "input_container", style: "gap:2px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "swap-to-token", style: "margin-top: 3px;" }, ["To token"]),
@@ -58,24 +94,29 @@ function buildSwapMainPanel(): HTMLElement {
             el("div", { class: "selectwrapper", style: "display:none;" }, [
                 el("select", { id: "ddlSwapToToken", class: "selectbox", style: "height:100%; box-sizing:border-box; padding:7px 10px;", tabindex: "327", onchange: () => { void updateSwapScreenInfo(); } }),
             ]),
-            el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
-                el("div", { style: "font-size: 0.85em; color: #372339;" }, [
-                    el("span", { "data-lang-key": "balance" }, ["Balance"]),
-                    ": ",
-                    el("span", { id: "spanSwapToBalance", role: "button", tabindex: "329", class: "swap-balance-label", style: "cursor:pointer;text-decoration:underline;", onclick: () => setSwapToQuantityToBalance() }, ["0"]),
+            el("div", { id: "divSwapToQuantityBox", style: "display:none;width:100%;" }, [
+                el("div", { class: "input_container", style: "margin-top:3px;gap:2px;" }, [
+                    el("div", { style: "font-size: 0.85em; color: #372339;" }, [
+                        el("span", { "data-lang-key": "balance" }, ["Balance"]),
+                        ": ",
+                        el("span", { id: "spanSwapToBalance", role: "button", tabindex: "329", class: "swap-balance-label", style: "cursor:pointer;text-decoration:underline;", onclick: () => setSwapToQuantityToBalance() }, ["0"]),
+                    ]),
                 ]),
+                el("input", {
+                    class: "tab-name qs-input-strong",
+                    type: "number", autocomplete: "off", id: "txtSwapToQuantity", name: "swap_to_quantity",
+                    "data-placeholder-key": "swap-to-token-quantity", placeholder: "To token quantity",
+                    style: "width:100%;box-sizing:border-box;", tabindex: "332", min: "0", step: "any", oninput: () => debouncedUpdateFromQuantityFromTo(),
+                }),
+                el("div", { class: "divider" }),
             ]),
-            el("input", {
-                class: "tab-name qs-input-strong",
-                type: "number", autocomplete: "off", id: "txtSwapToQuantity", name: "swap_to_quantity", "data-placeholder-key": "quantity",
-                placeholder: "Quantity", tabindex: "332", min: "0", step: "any", oninput: () => debouncedUpdateFromQuantityFromTo(),
-            }),
-            el("div", { class: "divider" }),
         ]),
-        el("div", { id: "divSwapRoutePath", style: "display: none; font-size: 0.85em; color: #ffffff; margin-top:6px; word-break: break-all;" }, [
-            el("span", { "data-lang-key": "swap-route" }, ["Route"]),
-            ": ",
-            el("span", { id: "spanSwapRoutePath" }),
+        el("div", { id: "divSwapRoutePath", style: "display: none; margin-top:6px;" }, [
+            el("div", { style: "font-size: 0.85em; color: #ffffff; word-break: break-all;" }, [
+                el("span", { "data-lang-key": "swap-route" }, ["Route"]),
+                ": ",
+                el("span", { id: "spanSwapRoutePath" }),
+            ]),
         ]),
         el("div", { class: "input_container", style: "margin-top:8px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "slippage" }, ["Slippage"]),
@@ -84,6 +125,21 @@ function buildSwapMainPanel(): HTMLElement {
                 el("span", {}, ["%"]),
             ]),
             el("div", { class: "divider" }),
+        ]),
+        el("div", { id: "divSwapOfflineOptions", class: "input_container", style: "display:none;margin-top:8px;" }, [
+            el("div", { class: "heading medium", "data-lang-key": "offline-signing-details" }, ["Offline signing details"]),
+            el("div", { class: "tx-steps-error", "data-lang-key": "offline-rpc-fallback-warning" }, [
+                "RPC data is used when available. Otherwise route and chain state cannot be verified.",
+            ]),
+            el("input", {
+                id: "txtSwapOfflineIntermediatePath", class: "tab-name qs-input", type: "text",
+                placeholder: "Intermediate token contracts (comma separated)",
+            }),
+            el("input", { id: "txtSwapOfflineFromDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "From token decimals" }),
+            el("input", { id: "txtSwapOfflineToDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "To token decimals" }),
+            el("input", { id: "txtSwapOfflineDeadline", class: "tab-name qs-input", type: "number", min: "1", placeholder: "Deadline (Unix timestamp)" }),
+            el("input", { id: "txtSwapOfflineApprovalGas", class: "tab-name qs-input", type: "number", min: "1", value: "84000", placeholder: "Approval gas limit" }),
+            el("input", { id: "txtSwapOfflineGas", class: "tab-name qs-input", type: "number", min: "1", value: "200000", placeholder: "Swap gas limit" }),
         ]),
         el("div", { style: "display: flex; align-items: center; justify-content: flex-end; gap: 10px;margin-top:10px;" }, [
             el("div", { id: "divSwapQuoteLoading", style: "display: none;" }, [

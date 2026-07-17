@@ -3,9 +3,10 @@
 // before that transaction is submitted.
 import { langJson } from "../lib/i18n";
 import { walletGetByAddress } from "../lib/wallet";
-import { ERROR_TEMPLATE, STORAGE_PATH_TEMPLATE, inputById, walletStore } from "./state";
+import { ERROR_TEMPLATE, STORAGE_PATH_TEMPLATE, walletStore } from "./state";
 import {
     TransactionReview,
+    TransactionReviewSubmission,
     hideWaitingBox,
     showTransactionReviewDialog,
     showWaitingBox,
@@ -51,11 +52,10 @@ function requestStepCredentials(review: TransactionReview): Promise<TxStepCreden
         review.fromAddress = walletStore.currentWalletAddress;
         review.showGas = true;
         review.onCancel = () => settle(null);
-        review.onSubmit = async function (): Promise<boolean> {
+        review.onSubmit = async function (submission: TransactionReviewSubmission): Promise<boolean> {
             showWaitingBox(langJson.langValues.waitWalletOpen);
             try {
-                const password = (inputById("txtTxReviewPassword").value || "").trim();
-                const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
+                const quantumWallet = await walletGetByAddress(submission.password, walletStore.currentWalletAddress);
                 if (quantumWallet == null) {
                     showWarnAlert(
                         langJson.errors.error

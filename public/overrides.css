@@ -453,3 +453,46 @@ input.token-picker-search:focus {
     margin-top: 0;
     flex-direction: row;
 }
+
+/* Match the web-app swap-direction control. The negative bottom margin only
+   swallows dead space below the button (the "To token" heading's 3px top
+   margin plus its line-box leading), so the visual gap above the button
+   (to the from-quantity input's edge) and below it (to the "To token"
+   glyphs) come out the same. */
+.swap-flip {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 -8px;
+    position: relative;
+    z-index: 2;
+}
+
+.swap-flip button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgb(28 31 47);
+    border: 1px solid rgb(145 125 207 / 60%);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 16px -4px rgba(108, 59, 255, 0.7);
+    transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease, transform 0.08s ease;
+}
+
+.swap-flip button:hover:not(:disabled) {
+    background: rgb(42, 46, 70);
+    border-color: rgb(165, 148, 220);
+}
+
+.swap-flip button:active:not(:disabled) {
+    transform: scale(0.96);
+    filter: brightness(0.88);
+}
+
+.swap-flip button:disabled {
+    cursor: default;
+    opacity: 0.45;
+}

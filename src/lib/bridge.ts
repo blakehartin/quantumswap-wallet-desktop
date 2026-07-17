@@ -89,6 +89,34 @@ export async function getSwapTokenMetadata(payload: unknown): Promise<SwapTokenM
     return await SwapQuoteApi.send("SwapTokenGetMetadata", payload);
 }
 
+export interface OfflineSignedTransaction {
+    label: string;
+    nonce: number;
+    txData: string;
+    contractAddress?: string;
+}
+
+export interface OfflineBundleResult {
+    success: boolean;
+    transactions: OfflineSignedTransaction[] | null;
+    error: string | null;
+}
+
+export async function offlineSignTransactionBundle(payload: unknown): Promise<OfflineBundleResult> {
+    return await SwapQuoteApi.send("OfflineSignTransactionBundle", payload);
+}
+
+export interface OfflinePreparationResult {
+    success: boolean;
+    nonce: number | null;
+    chainTimestamp: number | null;
+    error: string | null;
+}
+
+export async function prepareOfflineSigning(payload: unknown): Promise<OfflinePreparationResult> {
+    return await SwapQuoteApi.send("OfflinePrepareSigning", payload);
+}
+
 export async function getSwapQuoteAmountsOut(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SwapQuoteGetAmountsOut", payload);
 }

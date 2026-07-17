@@ -7,6 +7,7 @@ import { closeBurgerMenu, showSettingsScreen, showWalletListScreen, toggleBurger
 import { showAdvancedScreen } from "../app/advanced";
 import { showNetworkDialog } from "../app/dialog";
 import { DROPDOWN_TEXT, networkStore } from "../app/state";
+import { showValidatorScreen } from "../app/validator";
 
 function buildOrb1(): HTMLElement {
     return el("div", { class: "qs-orb qs-orb-1" });
@@ -63,6 +64,7 @@ function buildHeader(): HTMLElement {
                 burgerItem("tab1", "10", "assets/svg/wallet-outline.svg", "Wallets Icon", "wallets", "Wallets", showWalletListScreen),
                 burgerItem("tab4", "11", "assets/svg/settings.svg", "Settings Icon", "settings", "Settings", showSettingsScreen),
                 burgerItem("tab5", "12", "assets/svg/keypad.svg", "Advanced Icon", "advanced", "Advanced", showAdvancedScreen),
+                burgerItem("tab6", "13", "assets/icons/application-server.svg", "Validator Icon", "validator-options", "Validator", showValidatorScreen),
             ]),
         ]),
         el("div", { class: "dropdown", id: "divNetworkDropdown", role: "button", tabindex: "1000", style: "display:none;", onclick: () => { void showNetworkDialog(); } }, [

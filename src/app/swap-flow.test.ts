@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { createSwapSuccessAmounts, createSwapWorkflowStepPlan } from "./swap-flow";
+import {
+    createSwapReviewQuantities,
+    createSwapSuccessAmounts,
+    createSwapWorkflowStepPlan,
+} from "./swap-flow";
+
+describe("createSwapReviewQuantities", () => {
+    it("separates two token amounts from the native Q quantity", () => {
+        expect(createSwapReviewQuantities(
+            "0xtig", "2.377715260798994844", "TIG",
+            "0xlion", "9.040139995395390906", "Lion",
+        )).toEqual({
+            quantityValue: "0",
+            tokenQuantityValue: "2.377715260798994844 TIG for 9.040139995395390906 Lion",
+        });
+    });
+
+    it("puts Q and token amounts on their respective rows in either direction", () => {
+        expect(createSwapReviewQuantities("Q", "2", "Q", "0xtig", "9", "TIG")).toEqual({
+            quantityValue: "2",
+            tokenQuantityValue: "9 TIG",
+        });
+        expect(createSwapReviewQuantities("0xtig", "2", "TIG", "Q", "9", "Q")).toEqual({
+            quantityValue: "9",
+            tokenQuantityValue: "2 TIG",
+        });
+    });
+});
 
 describe("createSwapWorkflowStepPlan", () => {
     it("uses only the swap step when allowance is sufficient", () => {
