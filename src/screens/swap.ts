@@ -116,11 +116,11 @@ function buildSwapSuccessPanel(): HTMLElement {
     return el("div", { id: "divSwapSuccessPanel", class: "roundex-box scrollbar", style: SWAP_PANEL_STYLE }, [
         el("div", { class: "heading bold", "data-lang-key": "swap-succeeded", style: "color: green;" }, ["Swap transaction succeeded."]),
         el("div", { class: "divider" }),
-        el("div", { class: "input_container", style: "margin-top: 8px;" }, [
+        el("div", { class: "input_container", style: "margin-top:4px; gap:2px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "swap-from-token" }, ["From token"]),
             el("span", { id: "spanSwapSuccessFromTokenDisplay", style: "font-size: 0.9em;" }),
         ]),
-        el("div", { class: "input_container", style: "margin-top: 8px;" }, [
+        el("div", { class: "input_container", style: "margin-top:4px; gap:2px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "swap-to-token" }, ["To token"]),
             el("span", { id: "spanSwapSuccessToTokenDisplay", style: "font-size: 0.9em;" }),
         ]),
@@ -128,9 +128,9 @@ function buildSwapSuccessPanel(): HTMLElement {
             el("table", { class: "styled-table", style: "width:100%; min-width:600px; text-align:left;" }, [
                 el("thead", {}, [
                     el("tr", {}, [
-                        el("th", { "data-lang-key": "token", style: "text-align:left;" }, ["Token"]),
-                        el("th", { "data-lang-key": "before", style: "text-align:left;" }, ["Before"]),
-                        el("th", { "data-lang-key": "after", style: "text-align:left;" }, ["After"]),
+                        el("th", { "data-lang-key": "token", style: "text-align:left; padding:6px 10px; line-height:1.2;" }, ["Token"]),
+                        el("th", { "data-lang-key": "before", style: "text-align:left; padding:6px 10px; line-height:1.2;" }, ["Before"]),
+                        el("th", { "data-lang-key": "after", style: "text-align:left; padding:6px 10px; line-height:1.2;" }, ["After"]),
                     ]),
                 ]),
                 el("tbody", {}, [
@@ -147,11 +147,11 @@ function buildSwapSuccessPanel(): HTMLElement {
                 ]),
             ]),
         ]),
-        el("div", { class: "input_container", style: "margin-top: 12px;" }, [
+        el("div", { class: "input_container", style: "margin-top:8px; gap:2px;" }, [
             el("span", { class: "heading medium", "data-lang-key": "gas-fee-spent" }, ["Gas fee spent (coins)"]),
             el("span", { id: "spanSwapSuccessGasFee" }, ["0"]),
         ]),
-        el("div", { id: "divSwapSuccessTxHashRow", style: "margin-top:12px; text-align:left;" }, [
+        el("div", { id: "divSwapSuccessTxHashRow", style: "margin-top:8px; text-align:left;" }, [
             el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
                 el("span", { class: "heading medium", "data-lang-key": "transaction-id" }, ["Transaction ID"]),
                 el("div", { style: "display:flex; align-items:center; gap:12px;" }, [
@@ -159,7 +159,7 @@ function buildSwapSuccessPanel(): HTMLElement {
                     el("div", { class: "scan-container", role: "button", tabindex: "341", title: "Block Explorer", onclick: () => { void openSwapSuccessTransactionInExplorer(); } }),
                 ]),
             ]),
-            el("p", { id: "pSwapSuccessTxHash", style: "font-family:monospace; word-break:break-all; margin:4px 0 0;" }),
+            el("p", { id: "pSwapSuccessTxHash", style: "font-family:monospace; word-break:break-all; margin:2px 0 0;" }),
         ]),
         el("div", { style: "position:sticky; bottom:0; z-index:2; display:flex; justify-content:flex-end; margin-top:20px; padding:10px 0 4px; background:var(--panel, #0b0b12);" }, [
             el("div", { class: "large_button_container heading large", role: "button", tabindex: "342", id: "btnSwapSuccessOk", style: "margin-left: auto;", onclick: () => onSwapSuccessOkClick() }, [
