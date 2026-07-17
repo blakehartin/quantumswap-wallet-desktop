@@ -230,6 +230,7 @@ let modalSwapApprovalSubmit: HTMLDialogElement | null;
 
 let modalTransactionReview: HTMLDialogElement;
 let txReviewOnSubmit: (() => unknown) | null = null;
+let txReviewOnCancel: (() => unknown) | null = null;
 let txReviewRequirePassword = false;
 
 let modalSendCompleted: HTMLDialogElement;
@@ -306,6 +307,7 @@ export function closeTransactionReviewDialog(): void {
         modalTransactionReview.close();
     }
     txReviewOnSubmit = null;
+    txReviewOnCancel = null;
 }
 
 export function txReviewNetworkText(): string {
@@ -332,11 +334,14 @@ export interface TransactionReview {
     nonce?: string | null;
     networkText?: string;
     contractAddress?: string | null;
+    fromTokenContractAddress?: string | null;
+    toTokenContractAddress?: string | null;
     assetLabelKey?: string;
     requirePassword?: boolean;
     showGas?: boolean;
     submitLabelKey?: string;
     onSubmit?: () => unknown;
+    onCancel?: () => unknown;
 }
 
 export function showTransactionReviewDialog(review: TransactionReview): boolean {
@@ -381,6 +386,21 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
         contractRow.style.display = "none";
     }
 
+    const setOptionalAddressRow = (rowId: string, spanId: string, value: string | null | undefined): void => {
+        byId(spanId).textContent = value || "";
+        byId(rowId).style.display = value ? "block" : "none";
+    };
+    setOptionalAddressRow(
+        "rowTxReviewFromTokenContract",
+        "spanTxReviewFromTokenContract",
+        review.fromTokenContractAddress,
+    );
+    setOptionalAddressRow(
+        "rowTxReviewToTokenContract",
+        "spanTxReviewToTokenContract",
+        review.toTokenContractAddress,
+    );
+
     const nonceRow = byId("rowTxReviewNonce");
     if (review.nonce != null && review.nonce !== "") {
         byId("spanTxReviewNonce").textContent = review.nonce;
@@ -405,9 +425,15 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
 
     inputById("txtTxReviewIAgree").value = "";
     const pwdInput = inputById("txtTxReviewPassword");
-    if (pwdInput) { pwdInput.value = ""; }
+    if (pwdInput) {
+        pwdInput.value = "";
+        pwdInput.type = "password";
+    }
+    const pwdEye = byId<HTMLImageElement>("imgTxReviewPasswordEye");
+    if (pwdEye) pwdEye.src = "assets/svg/eye-outline.svg";
 
     txReviewOnSubmit = review.onSubmit || null;
+    txReviewOnCancel = review.onCancel || null;
     modalTransactionReview.style.display = "block";
     modalTransactionReview.showModal();
     setTimeout(function () {
@@ -415,6 +441,15 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
         if (el) { el.focus(); }
     }, 100);
     return false;
+}
+
+function cancelTransactionReview(): void {
+    modalTransactionReview.style.display = "none";
+    modalTransactionReview.close();
+    txReviewOnSubmit = null;
+    const cb = txReviewOnCancel;
+    txReviewOnCancel = null;
+    if (cb != null) void cb();
 }
 
 // Wires all static dialog buttons. Must run after the generated body is
@@ -688,22 +723,26 @@ export function initDialogs(): void {
             modalTransactionReview.style.display = "none";
             modalTransactionReview.close();
             txReviewOnSubmit = null;
+            txReviewOnCancel = null;
             return;
         }
         const cb = txReviewOnSubmit;
         modalTransactionReview.style.display = "none";
         modalTransactionReview.close();
         txReviewOnSubmit = null;
+        txReviewOnCancel = null;
         if (cb != null) {
             cb();
         }
     };
 
     btnTxReviewCancel.onclick = function () {
-        modalTransactionReview.style.display = "none";
-        modalTransactionReview.close();
-        txReviewOnSubmit = null;
+        cancelTransactionReview();
     };
+    modalTransactionReview.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        cancelTransactionReview();
+    });
 
     // Click on the dialog backdrop closes the open modal (same target checks as
     // the old window.onclick handler).
@@ -745,9 +784,7 @@ export function initDialogs(): void {
                 modalSwapApprovalSubmit.close();
             }
             if (modalTransactionReview && modalTransactionReview.style.display !== "none") {
-                modalTransactionReview.style.display = "none";
-                modalTransactionReview.close();
-                txReviewOnSubmit = null;
+                cancelTransactionReview();
             }
             if (modalSendCompleted && modalSendCompleted.style.display !== "none") {
                 closeSendCompletedDialog();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSwapWorkflowStepPlan } from "./swap-flow";
+import { createSwapSuccessAmounts, createSwapWorkflowStepPlan } from "./swap-flow";
 
 describe("createSwapWorkflowStepPlan", () => {
     it("uses only the swap step when allowance is sufficient", () => {
@@ -20,5 +20,14 @@ describe("createSwapWorkflowStepPlan", () => {
             { kind: "approve", label: "Allow BOSS" },
             { kind: "swap", label: "Exchange BOSS -> FUN" },
         ]);
+    });
+});
+
+describe("createSwapSuccessAmounts", () => {
+    it("preserves the exact quantities submitted to the swap", () => {
+        expect(createSwapSuccessAmounts("1.2500", "TOKENA", "9.87654321", "TOKENB")).toEqual({
+            from: "1.2500 TOKENA",
+            to: "9.87654321 TOKENB",
+        });
     });
 });

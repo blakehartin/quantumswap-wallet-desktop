@@ -5,7 +5,7 @@ import { showWalletScreen, togglePasswordBox } from "../app/app";
 import {
     copySignedSendTransaction,
     onSendGasIconClick,
-    onToggleSendUnrecognized,
+    openSendTokenPicker,
     openOfflineTxnSigningUrl,
     sendCoins,
     showSendScreen,
@@ -21,36 +21,24 @@ function buildSendScreen(): HTMLElement {
                 el("div", { class: "gas-header-row" }, [
                     el("div", { class: "heading bold", "data-lang-key": "send" }, ["Send"]),
                     el("div", { class: "gas-header-right" }, [
+                        el("div", { id: "divSendTokenListLoading", style: "display:none; width:30px; height:30px;" }, [
+                            el("img", { src: "assets/icons/loading.gif", alt: "Loading tokens", style: "width:30px; height:30px;" }),
+                        ]),
                         el("span", { id: "spanSendGasFee", class: "gas-fee-label" }),
                         el("div", { id: "divSendGasIcon", class: "gas-container", role: "button", tabindex: "301", onclick: () => onSendGasIconClick() }),
                     ]),
                 ]),
                 el("div", { class: "divider" }),
                 el("div", { class: "input_container", id: "divTokenList" }, [
-                    el("div", { id: "divSendShowUnrecognized", style: "display:none; text-align:left; margin-bottom:8px;" }, [
-                        el("input", { type: "checkbox", id: "chkSendShowUnrecognized", tabindex: "302", onchange: () => onToggleSendUnrecognized() }),
-                        el("label", {
-                            for: "chkSendShowUnrecognized", tabindex: "0", "data-lang-key": "show-unrecognized-tokens", style: "cursor: pointer; color:black;",
-                            onkeydown: (event: Event) => {
-                                const key = (event as KeyboardEvent).key;
-                                if (key === "Enter" || key === " ") {
-                                    event.preventDefault();
-                                    (document.getElementById("chkSendShowUnrecognized") as HTMLInputElement).click();
-                                }
-                            },
-                        }, ["Show unrecognized tokens"]),
-                    ]),
-                    el("div", { class: "selectwrapper" }, [
+                    el("button", {
+                        id: "btnSendTokenPicker", class: "token-picker-trigger", type: "button",
+                        tabindex: "303", onclick: () => openSendTokenPicker(),
+                    }, ["Select token"]),
+                    el("div", { class: "selectwrapper", style: "display:none;" }, [
                         el("select", { id: "ddlCoinTokenToSend", class: "selectbox", tabindex: "303", onchange: () => { void updateInfoSendScreen(); } }, [
                             el("option", { value: "Q" }, ["Q"]),
-                            el("option", { value: "other" }, ["(token)"]),
                         ]),
                     ]),
-                    el("input", {
-                        class: "tab-name qs-input",
-                        autocomplete: "off", id: "txtTokenContractAddress", name: "contract_address", "data-placeholder-key": "token-contract-address",
-                        placeholder: "token contract address", tabindex: "304",
-                    }),
                     el("div", { id: "divCoinTokenToSend", style: "font-size: small" }, ["0x0000000000000000000000000000000000000000000000000000000000001000"]),
                     el("div", { class: "divider" }),
                 ]),

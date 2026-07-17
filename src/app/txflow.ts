@@ -1,6 +1,6 @@
-// Shared transaction-review -> numbered-steps handoff. The wallet password is
-// collected once, keys are held only by step closures, and interactive flows
-// estimate/review gas immediately before each transaction.
+// Shared numbered-steps -> per-step transaction-review handoff. Every step
+// estimates gas first, then collects a fresh wallet password immediately
+// before that transaction is submitted.
 import { langJson } from "../lib/i18n";
 import { walletGetByAddress } from "../lib/wallet";
 import { ERROR_TEMPLATE, STORAGE_PATH_TEMPLATE, inputById, walletStore } from "./state";
@@ -14,69 +14,100 @@ import {
 } from "./dialog";
 import { advancedSigningGetDefaultValue } from "./settings";
 import { TxStepDefinition, showTxStepsDialog } from "./txsteps";
+import { buildStepReview } from "./txflow-core";
+
+export interface TxStepCredentials {
+    privateKey: string;
+    publicKey: string;
+    advancedSigningEnabled: boolean;
+}
+
+export interface ReviewedTxStepDefinition extends TxStepDefinition {
+    review?: TransactionReview;
+    run: (gasLimit: number, credentials: TxStepCredentials) => Promise<string>;
+}
 
 export interface ReviewedStepsFlow {
     review: TransactionReview;
     stepsTitle: string;
     progressText?: string;
-    interactive?: boolean;
-    buildSteps: (privateKey: string, publicKey: string, advancedSigningEnabled: boolean) => TxStepDefinition[];
+    buildSteps: () => ReviewedTxStepDefinition[];
     onAllDone?: () => HTMLElement | null | void;
     onClose?: () => unknown;
 }
 
-export function showReviewThenSteps(flow: ReviewedStepsFlow): void {
-    const review = flow.review;
-    review.requirePassword = true;
-    review.submitLabelKey = "ok";
-    review.nonce = null;
-    review.networkText = txReviewNetworkText();
-    review.fromAddress = walletStore.currentWalletAddress;
-    if (flow.interactive) review.showGas = false;
-    review.onSubmit = async function (): Promise<boolean> {
-        showWaitingBox(langJson.langValues.waitWalletOpen);
-        try {
-            const password = (inputById("txtTxReviewPassword").value || "").trim();
-            const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
-            if (quantumWallet == null) {
-                showWarnAlert(
-                    langJson.errors.error
-                        .replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH)
-                        .replace(ERROR_TEMPLATE, ""),
-                );
-                return false;
-            }
-            const privateKey = await quantumWallet.getPrivateKey();
-            const publicKey = await quantumWallet.getPublicKey();
-            const advancedSigningEnabled = await advancedSigningGetDefaultValue();
-            const steps = flow.buildSteps(privateKey, publicKey, advancedSigningEnabled === true);
-            hideWaitingBox();
-            const clearStepSecretsAndClose = function (): void {
-                for (const step of steps) {
-                    step.prepare = undefined;
-                    step.run = async () => { throw new Error("Workflow closed."); };
+function requestStepCredentials(review: TransactionReview): Promise<TxStepCredentials | null> {
+    return new Promise((resolve) => {
+        let settled = false;
+        const settle = (credentials: TxStepCredentials | null): void => {
+            if (settled) return;
+            settled = true;
+            resolve(credentials);
+        };
+        review.requirePassword = true;
+        review.submitLabelKey = "ok";
+        review.nonce = null;
+        review.networkText = txReviewNetworkText();
+        review.fromAddress = walletStore.currentWalletAddress;
+        review.showGas = true;
+        review.onCancel = () => settle(null);
+        review.onSubmit = async function (): Promise<boolean> {
+            showWaitingBox(langJson.langValues.waitWalletOpen);
+            try {
+                const password = (inputById("txtTxReviewPassword").value || "").trim();
+                const quantumWallet = await walletGetByAddress(password, walletStore.currentWalletAddress);
+                if (quantumWallet == null) {
+                    showWarnAlert(
+                        langJson.errors.error
+                            .replace(STORAGE_PATH_TEMPLATE, walletStore.STORAGE_PATH)
+                            .replace(ERROR_TEMPLATE, ""),
+                    );
+                    return false;
                 }
-                if (flow.onClose) void flow.onClose();
-            };
-            setTimeout(function () {
-                showTxStepsDialog({
-                    title: flow.stepsTitle,
-                    steps,
-                    progressText: flow.progressText,
-                    interactive: flow.interactive,
-                    onAllDone: flow.onAllDone,
-                    onClose: clearStepSecretsAndClose,
+                const privateKey = await quantumWallet.getPrivateKey();
+                const publicKey = await quantumWallet.getPublicKey();
+                const advancedSigningEnabled = await advancedSigningGetDefaultValue();
+                settle({
+                    privateKey,
+                    publicKey,
+                    advancedSigningEnabled: advancedSigningEnabled === true,
                 });
-            }, 0);
-            return true;
-        } catch (err: any) {
-            showWarnAlert((err && err.message) ? String(err.message) : String(err));
-            return false;
-        } finally {
-            hideWaitingBox();
+                return true;
+            } catch (err: any) {
+                showWarnAlert((err && err.message) ? String(err.message) : String(err));
+                return false;
+            } finally {
+                hideWaitingBox();
+            }
+        };
+        showTransactionReviewDialog(review);
+    });
+}
+
+export function showReviewThenSteps(flow: ReviewedStepsFlow): void {
+    const steps = flow.buildSteps();
+    const clearStepsAndClose = function (): void {
+        for (const step of steps) {
+            step.prepare = undefined;
+            step.run = async () => { throw new Error("Workflow closed."); };
         }
+        if (flow.onClose) void flow.onClose();
     };
-    showTransactionReviewDialog(review);
+    showTxStepsDialog({
+        title: flow.stepsTitle,
+        steps,
+        progressText: flow.progressText,
+        onSubmitStep: async (index, gasLimit, gasFee, onSubmitting) => {
+            const step = steps[index];
+            const review: TransactionReview = buildStepReview(flow.review, step.review, gasLimit, gasFee);
+            const credentials = await requestStepCredentials(review);
+            if (credentials == null) return null;
+            onSubmitting();
+            return step.run(gasLimit, credentials);
+        },
+        onAllDone: flow.onAllDone,
+        onClose: clearStepsAndClose,
+    });
 }
 
 export function requireTxHash(result: any): string {

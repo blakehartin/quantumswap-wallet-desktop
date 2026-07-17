@@ -5,6 +5,23 @@ export interface SwapWorkflowStepPlan {
     label: string;
 }
 
+export interface SwapSuccessAmounts {
+    from: string;
+    to: string;
+}
+
+export function createSwapSuccessAmounts(
+    fromQuantity: string,
+    fromSymbol: string,
+    toQuantity: string,
+    toSymbol: string,
+): SwapSuccessAmounts {
+    return {
+        from: fromQuantity + " " + fromSymbol,
+        to: toQuantity + " " + toSymbol,
+    };
+}
+
 // Pure workflow planning kept separate from DOM/RPC code so the conditional
 // step order and user-facing symbols can be verified directly.
 export function createSwapWorkflowStepPlan(

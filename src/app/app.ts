@@ -84,6 +84,7 @@ import { syncSendScreenTokenList } from "./send";
 import { openSwapScreen } from "./swap";
 import { swapReleasesInit, swapReleasesLoadAll } from "../lib/release";
 import { refreshCurrentSwapRelease, setCustomReleaseBannerAllowed } from "./release";
+import { setTokenListLoading } from "./token-list-state";
 
 export function checkDuplicateIds(): void {
     const nodes = document.querySelectorAll("[id]");
@@ -1575,6 +1576,7 @@ export async function refreshAccountBalance(): Promise<void> {
             return;
         }
         walletStore.isRefreshingBalance = true;
+        setTokenListLoading(true);
 
         tokenStore.currentWalletTokenList = [];
         tokenStore.currentWalletRecognizedTokens = [];
@@ -1606,6 +1608,7 @@ export async function refreshAccountBalance(): Promise<void> {
         byId("divRefreshBalance").style.display = "block";
         byId("divLoadingBalance").style.display = "none";
         walletStore.isRefreshingBalance = false;
+        setTokenListLoading(false);
         if (isNetworkError(error)) {
             showWarnAlert(langJson.errors.internetDisconnected);
         } else {
@@ -1707,6 +1710,7 @@ export async function refreshTokenList(): Promise<void> {
     const tokenListDetails = await listAccountTokens((networkStore.currentBlockchainNetwork as { scanApiDomain: string }).scanApiDomain, walletStore.currentWalletAddress, 1); //todo: pagination
     if (tokenListDetails == null || !("tokenList" in tokenListDetails) || tokenListDetails.tokenList == null || tokenListDetails.tokenList.length === 0) {
         syncSendScreenTokenList();
+        setTokenListLoading(false);
         return;
     }
 
@@ -1735,6 +1739,7 @@ export async function refreshTokenList(): Promise<void> {
     tokenStore.currentWalletTokenList = tokenStore.currentWalletRecognizedTokens.concat(tokenStore.currentWalletUnrecognizedTokens);
     renderHomeTokenTab();
     syncSendScreenTokenList();
+    setTokenListLoading(false);
 }
 
 export async function initRefreshAccountBalanceBackground(): Promise<void> {
@@ -1752,6 +1757,7 @@ export async function refreshAccountBalanceBackground(): Promise<void> {
             return;
         }
         walletStore.isRefreshingBalance = true;
+        setTokenListLoading(true);
         tokenStore.currentWalletTokenList = [];
         tokenStore.currentWalletRecognizedTokens = [];
         tokenStore.currentWalletUnrecognizedTokens = [];
@@ -1788,6 +1794,7 @@ export async function refreshAccountBalanceBackground(): Promise<void> {
         const backoffJitterDelay = Math.random() * (60 - 20) + 20;
         setTimeout(refreshAccountBalanceBackground, backoffJitterDelay * 1000);
         walletStore.isRefreshingBalance = false;
+        setTokenListLoading(false);
 
         if (walletStore.isFirstTimeAccountRefresh == true) { //Show error only when wallet screen displayed first time after the app is opened
             walletStore.isFirstTimeAccountRefresh = false;

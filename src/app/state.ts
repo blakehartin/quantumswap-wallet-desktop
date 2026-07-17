@@ -203,6 +203,7 @@ export const tokenStore = createStore({
     currentWalletRecognizedTokens: [] as AccountTokenDetails[],
     currentWalletUnrecognizedTokens: [] as AccountTokenDetails[],
     showingUnrecognizedTokens: false,
+    isTokenListLoading: false,
 });
 
 // Transactions screen paging.

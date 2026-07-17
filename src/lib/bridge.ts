@@ -75,6 +75,20 @@ export async function compareEther(val1: string, val2: string): Promise<number> 
     return await FormatApi.send("FormatApiCompareEther", { num1: val1, num2: val2 });
 }
 
+export interface SwapTokenMetadataResult {
+    success: boolean;
+    contractAddress?: string;
+    name?: string;
+    symbol?: string;
+    decimals?: number;
+    balance?: string;
+    error?: string | null;
+}
+
+export async function getSwapTokenMetadata(payload: unknown): Promise<SwapTokenMetadataResult> {
+    return await SwapQuoteApi.send("SwapTokenGetMetadata", payload);
+}
+
 export async function getSwapQuoteAmountsOut(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SwapQuoteGetAmountsOut", payload);
 }

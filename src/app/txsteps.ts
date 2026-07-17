@@ -1,27 +1,22 @@
 // Controller for the numbered multi-step transaction dialog (modalTxSteps).
-// Ported from the quantumswap-web-app's txSteps component, adapted to the
-// desktop flow: the wallet password/keys are collected once by the caller.
-// Interactive liquidity steps estimate and wait for a user action one at a
-// time; legacy single-step flows still auto-run. Submitted hashes are polled
-// through the same scan API used by showSendCompletedDialog.
+// Every step estimates gas and waits for its own transaction confirmation
+// before submission. Submitted hashes are polled through the same scan API
+// used by showSendCompletedDialog.
 import { langJson } from "../lib/i18n";
 import { getTransactionStatusByHash } from "../lib/api";
 import { WriteTextToClipboard } from "../lib/bridge";
 import { byId, networkStore, walletStore } from "./state";
 import { OpenScanTxn } from "./app";
 import { formatGasFeeQ } from "./gas";
+import { showGasConfigDialog } from "./dialog";
 
 export type TxStepStatus = "pending" | "active" | "ready" | "confirming" | "done" | "failed";
 
 export interface TxStepDefinition {
     label: string;
-    // Interactive workflows prepare only the current transaction, after any
-    // preceding receipt has succeeded.
+    // Prepare only the current transaction, after any preceding receipt has
+    // succeeded.
     prepare?: () => Promise<TxStepGasEstimate>;
-    // Submits the step's transaction and resolves with its hash (throws on
-    // submit failure; a { success: false } IPC result must be thrown by the
-    // step itself so the message reaches the dialog).
-    run: (gasLimit?: number) => Promise<string>;
 }
 
 export interface TxStepGasEstimate {
@@ -39,7 +34,8 @@ let txStepsOnClose: (() => unknown) | null = null;
 let txStepsBound = false;
 let txStepsProgressText = "";
 let txStepsAction: (() => void) | null = null;
-let txStepsFeePerGas = 0;
+let txStepsGasLimit = 0;
+let txStepsGasFee = "";
 
 function t(key: string, fallback: string): string {
     return (langJson && langJson.langValues && langJson.langValues[key]) || fallback;
@@ -133,27 +129,16 @@ function setTxStepsButton(labelKey: string, fallback: string, enabled: boolean, 
     btn.disabled = !enabled;
 }
 
-function setTxStepsGasError(message: string | null): void {
-    const p = byId("pTxStepsGasError");
-    p.textContent = message || "";
-    p.style.display = message ? "block" : "none";
-}
-
-function updateTxStepsEstimatedFee(): void {
-    const input = byId<HTMLInputElement>("txtTxStepsGasLimit");
-    const gasLimit = Number(input.value);
-    byId("spanTxStepsGasFee").textContent =
-        Number.isInteger(gasLimit) && gasLimit > 0
-            ? formatGasFeeQ(gasLimit * txStepsFeePerGas)
-            : "";
+function setTxStepsWaiting(visible: boolean): void {
+    byId("divTxStepsWait").style.display = visible ? "block" : "none";
 }
 
 function hideTxStepsGas(): void {
     byId("divTxStepsGas").style.display = "none";
-    byId<HTMLInputElement>("txtTxStepsGasLimit").value = "";
     byId("spanTxStepsGasFee").textContent = "";
-    setTxStepsGasError(null);
-    txStepsFeePerGas = 0;
+    byId("divTxStepsGasIcon").classList.remove("gas-pulse");
+    txStepsGasLimit = 0;
+    txStepsGasFee = "";
 }
 
 function closeTxStepsDialog(): void {
@@ -163,6 +148,7 @@ function closeTxStepsDialog(): void {
     dlg.close();
     txStepsAction = null;
     hideTxStepsGas();
+    setTxStepsWaiting(false);
     const cb = txStepsOnClose;
     txStepsOnClose = null;
     if (cb != null) void cb();
@@ -177,9 +163,17 @@ function bindTxStepsDialog(): void {
     byId("btnTxStepsDismiss").addEventListener("click", function () {
         closeTxStepsDialog();
     });
-    byId("txtTxStepsGasLimit").addEventListener("input", function () {
-        setTxStepsGasError(null);
-        updateTxStepsEstimatedFee();
+    byId("divTxStepsGasIcon").addEventListener("click", function () {
+        if (txStepsGasLimit <= 0 || txStepsGasFee === "") return;
+        showGasConfigDialog({
+            gasLimit: String(txStepsGasLimit),
+            gasFee: txStepsGasFee,
+            onOk: (result) => {
+                txStepsGasLimit = Number(result.gasLimit);
+                txStepsGasFee = result.gasFee;
+                byId("spanTxStepsGasFee").textContent = formatGasFeeQ(result.gasFee);
+            },
+        });
     });
     byId<HTMLDialogElement>("modalTxSteps").addEventListener("cancel", function (event) {
         event.preventDefault();
@@ -223,7 +217,14 @@ export interface TxStepsOptions {
     title: string;
     steps: TxStepDefinition[];
     progressText?: string;
-    interactive?: boolean;
+    // Opens the per-step review and submits after the user confirms. Returning
+    // null means the review was cancelled and the current step remains ready.
+    onSubmitStep: (
+        index: number,
+        gasLimit: number,
+        gasFee: string,
+        onSubmitting: () => void,
+    ) => Promise<string | null>;
     // Called once every step succeeded; may return a node to display (e.g.
     // the new token's address) - built with createElement/textContent only.
     onAllDone?: () => HTMLElement | null | void;
@@ -239,8 +240,8 @@ function afterTwoPaints(): Promise<void> {
     });
 }
 
-// Open the numbered status dialog. Single-step legacy flows auto-run; compound
-// liquidity flows prepare and submit only when the user clicks each action.
+// Open the numbered status dialog. Every step prepares and submits only when
+// the user clicks its action and completes that step's transaction review.
 export function showTxStepsDialog(options: TxStepsOptions): void {
     bindTxStepsDialog();
     txStepsRunId++;
@@ -260,158 +261,129 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
     setTxStepsButton("close", "Close", true);
     txStepsAction = closeTxStepsDialog;
     hideTxStepsGas();
+    setTxStepsWaiting(false);
 
     const dlg = byId<HTMLDialogElement>("modalTxSteps");
     dlg.style.display = "block";
     dlg.showModal();
 
-    if (options.interactive) {
-        let currentIndex = 0;
-        let running = false;
+    let currentIndex = 0;
+    let running = false;
 
-        const failCurrent = (err: unknown): void => {
-            if (runId !== txStepsRunId) return;
-            const msg = String((err as { message?: unknown })?.message ?? err ?? "");
-            if (msg === "__txsteps_cancelled__") return;
-            statuses[currentIndex] = "failed";
-            renderSteps(steps, statuses);
-            setTxStepsError(t("tx-step-failed", "Step failed.") + " " + msg);
-            setTxStepsButton("close", "Close", true);
-            txStepsAction = closeTxStepsDialog;
-        };
-
-        const finishAll = (): void => {
-            hideTxStepsGas();
-            if (options.onAllDone) {
-                const node = options.onAllDone();
-                if (node instanceof HTMLElement) setTxStepsResult(node);
-            }
-            setTxStepsButton("ok", "Ok", true);
-            txStepsAction = closeTxStepsDialog;
-        };
-
-        const prepareCurrent = async (): Promise<void> => {
-            if (runId !== txStepsRunId) return;
-            if (currentIndex >= steps.length) {
-                finishAll();
-                return;
-            }
-            const step = steps[currentIndex];
-            statuses[currentIndex] = "active";
-            renderSteps(steps, statuses);
-            setTxStepsHash(null);
-            setTxStepsError(null);
-            setTxStepsGasError(null);
-            byId("divTxStepsGas").style.display = "block";
-            byId("lblTxStepsGasAction").textContent = step.label;
-            const gasInput = byId<HTMLInputElement>("txtTxStepsGasLimit");
-            gasInput.value = "";
-            gasInput.disabled = true;
-            byId("spanTxStepsGasFee").textContent = "";
-            setTxStepsButton("tx-step-estimating-gas", "Estimating gas...", false, true);
-            txStepsAction = null;
-            try {
-                await afterTwoPaints();
-                if (!step.prepare) throw new Error("Gas preparation is unavailable for this step.");
-                const estimate = await step.prepare();
-                if (runId !== txStepsRunId) return;
-                txStepsFeePerGas = estimate.feePerGas;
-                gasInput.value = estimate.gasLimit;
-                gasInput.disabled = false;
-                updateTxStepsEstimatedFee();
-                statuses[currentIndex] = "ready";
-                renderSteps(steps, statuses);
-                setTxStepsButton("", step.label, true);
-                txStepsAction = () => { void runCurrent(); };
-                setTimeout(() => gasInput.focus(), 0);
-            } catch (err) {
-                failCurrent(err);
-            }
-        };
-
-        const runCurrent = async (): Promise<void> => {
-            if (running || currentIndex >= steps.length || runId !== txStepsRunId) return;
-            const gasInput = byId<HTMLInputElement>("txtTxStepsGasLimit");
-            const gasLimit = Number(gasInput.value);
-            if (!Number.isInteger(gasLimit) || gasLimit <= 0) {
-                setTxStepsGasError(t("tx-step-invalid-gas", "Enter a valid positive gas limit."));
-                gasInput.focus();
-                return;
-            }
-            running = true;
-            statuses[currentIndex] = "active";
-            renderSteps(steps, statuses);
-            gasInput.disabled = true;
-            setTxStepsGasError(null);
-            setTxStepsButton("tx-step-submitting", "Submitting...", false, true);
-            txStepsAction = null;
-            try {
-                const txHash = await steps[currentIndex].run(gasLimit);
-                if (runId !== txStepsRunId) return;
-                statuses[currentIndex] = "confirming";
-                renderSteps(steps, statuses);
-                setTxStepsHash(txHash);
-                setTxStepsButton("tx-step-confirming", "Confirming...", false, true);
-                await waitForTxSuccess(txHash, runId);
-                if (runId !== txStepsRunId) return;
-                statuses[currentIndex] = "done";
-                renderSteps(steps, statuses);
-                currentIndex++;
-                running = false;
-                await prepareCurrent();
-            } catch (err) {
-                running = false;
-                failCurrent(err);
-            }
-        };
-
-        void prepareCurrent();
-        return;
-    }
-
-    void (async () => {
-        // Wait for two animation frames so title, step rows, and Close are
-        // painted before any submit / poll IPC begins (avoids layout lag).
-        await afterTwoPaints();
+    const failCurrent = (err: unknown): void => {
         if (runId !== txStepsRunId) return;
+        const msg = String((err as { message?: unknown })?.message ?? err ?? "");
+        if (msg === "__txsteps_cancelled__") return;
+        setTxStepsWaiting(false);
+        statuses[currentIndex] = "failed";
+        renderSteps(steps, statuses);
+        setTxStepsError(t("tx-step-failed", "Step failed.") + " " + msg);
+        setTxStepsButton("close", "Close", true);
+        txStepsAction = closeTxStepsDialog;
+    };
 
-        for (let i = 0; i < steps.length; i++) {
-            if (runId !== txStepsRunId) return;
-            statuses[i] = "active";
-            renderSteps(steps, statuses);
-            // Later steps also get a painted spinner before their RPC starts.
-            await new Promise<void>((resolve) => {
-                requestAnimationFrame(() => resolve());
-            });
-            if (runId !== txStepsRunId) return;
-            try {
-                const txHash = await steps[i].run();
-                if (runId !== txStepsRunId) return;
-                statuses[i] = "confirming";
-                renderSteps(steps, statuses);
-                setTxStepsHash(txHash);
-                await waitForTxSuccess(txHash, runId);
-                if (runId !== txStepsRunId) return;
-                statuses[i] = "done";
-                renderSteps(steps, statuses);
-            } catch (err) {
-                if (runId !== txStepsRunId) return;
-                const msg = String((err as { message?: unknown })?.message ?? err ?? "");
-                if (msg === "__txsteps_cancelled__") return;
-                statuses[i] = "failed";
-                renderSteps(steps, statuses);
-                setTxStepsError(t("tx-step-failed", "Step failed.") + " " + msg);
-                setTxStepsButton("close", "Close", true);
-                txStepsAction = closeTxStepsDialog;
-                return;
-            }
-        }
-        if (runId !== txStepsRunId) return;
+    const finishAll = (): void => {
+        hideTxStepsGas();
+        setTxStepsWaiting(false);
         if (options.onAllDone) {
             const node = options.onAllDone();
             if (node instanceof HTMLElement) setTxStepsResult(node);
         }
         setTxStepsButton("ok", "Ok", true);
         txStepsAction = closeTxStepsDialog;
-    })();
+    };
+
+    const prepareCurrent = async (): Promise<void> => {
+        if (runId !== txStepsRunId) return;
+        if (currentIndex >= steps.length) {
+            finishAll();
+            return;
+        }
+        const step = steps[currentIndex];
+        statuses[currentIndex] = "active";
+        renderSteps(steps, statuses);
+        setTxStepsHash(null);
+        setTxStepsError(null);
+        setTxStepsWaiting(false);
+        byId("divTxStepsGas").style.display = "flex";
+        byId("spanTxStepsGasFee").textContent = "";
+        byId("divTxStepsGasIcon").classList.add("gas-pulse");
+        txStepsGasLimit = 0;
+        txStepsGasFee = "";
+        setTxStepsButton("tx-step-estimating-gas", "Estimating gas...", false, true);
+        txStepsAction = null;
+        try {
+            await afterTwoPaints();
+            if (!step.prepare) throw new Error("Gas preparation is unavailable for this step.");
+            const estimate = await step.prepare();
+            if (runId !== txStepsRunId) return;
+            txStepsGasLimit = Number(estimate.gasLimit);
+            txStepsGasFee = estimate.gasFee;
+            byId("spanTxStepsGasFee").textContent = formatGasFeeQ(estimate.gasFee);
+            byId("divTxStepsGasIcon").classList.remove("gas-pulse");
+            statuses[currentIndex] = "ready";
+            renderSteps(steps, statuses);
+            setTxStepsButton("", step.label, true);
+            txStepsAction = () => { void runCurrent(); };
+        } catch (err) {
+            byId("divTxStepsGasIcon").classList.remove("gas-pulse");
+            failCurrent(err);
+        }
+    };
+
+    const runCurrent = async (): Promise<void> => {
+        if (running || currentIndex >= steps.length || runId !== txStepsRunId) return;
+        if (!Number.isInteger(txStepsGasLimit) || txStepsGasLimit <= 0 || txStepsGasFee === "") {
+            failCurrent(t("tx-step-invalid-gas", "Enter a valid positive gas limit."));
+            return;
+        }
+        running = true;
+        setTxStepsButton("", steps[currentIndex].label, false);
+        txStepsAction = null;
+        let submissionStarted = false;
+        const onSubmitting = (): void => {
+            if (runId !== txStepsRunId) return;
+            submissionStarted = true;
+            statuses[currentIndex] = "active";
+            renderSteps(steps, statuses);
+            hideTxStepsGas();
+            setTxStepsWaiting(true);
+            setTxStepsButton("tx-step-submitting", "Submitting...", false, true);
+        };
+        try {
+            const txHash = await options.onSubmitStep(
+                currentIndex,
+                txStepsGasLimit,
+                formatGasFeeQ(txStepsGasFee),
+                onSubmitting,
+            );
+            if (runId !== txStepsRunId) return;
+            if (txHash == null) {
+                running = false;
+                statuses[currentIndex] = "ready";
+                renderSteps(steps, statuses);
+                setTxStepsButton("", steps[currentIndex].label, true);
+                txStepsAction = () => { void runCurrent(); };
+                return;
+            }
+            if (!submissionStarted) onSubmitting();
+            statuses[currentIndex] = "confirming";
+            renderSteps(steps, statuses);
+            setTxStepsHash(txHash);
+            setTxStepsButton("tx-step-confirming", "Confirming...", false, true);
+            await waitForTxSuccess(txHash, runId);
+            if (runId !== txStepsRunId) return;
+            setTxStepsWaiting(false);
+            statuses[currentIndex] = "done";
+            renderSteps(steps, statuses);
+            currentIndex++;
+            running = false;
+            await prepareCurrent();
+        } catch (err) {
+            running = false;
+            failCurrent(err);
+        }
+    };
+
+    void prepareCurrent();
 }
