@@ -93,7 +93,6 @@ describe("runGasEstimation offline vs online toast", () => {
             "label",
             null,
             onRpcError,
-            "btn",
         );
         expect(onRpcError).not.toHaveBeenCalled();
         expect(document.getElementById("label")?.textContent).toContain("Q");
@@ -110,7 +109,6 @@ describe("runGasEstimation offline vs online toast", () => {
             "label",
             null,
             onRpcError,
-            "btn",
         );
         expect(onRpcError).toHaveBeenCalled();
     });

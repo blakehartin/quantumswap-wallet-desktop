@@ -239,7 +239,7 @@ function buildTransactionReviewDialog(): HTMLElement {
             el("p", { id: "pTxReviewPrompt", style: "font-weight:bold;overflow:visible;min-height:24px;flex-shrink:0;", "data-lang-key": "review-transaction-prompt", tabindex: "6" }, ["Please review your transaction request to be sent:"]),
             el("div", { class: "scrollbar", style: "overflow:auto; flex:1 1 auto; min-height:0;" }, [
                 el("div", { style: "margin-top:8px;" }, [
-                    el("label", { id: "lblTxReviewAsset", "data-lang-key": "what-is-being-sent", style: "font-weight:bold;display:block;" }, ["What is being sent"]),
+                    el("label", { id: "lblTxReviewAsset", "data-lang-key": "action", style: "font-weight:bold;display:block;" }, ["Action"]),
                     el("span", { id: "spanTxReviewAsset", style: "word-break:break-all;" }),
                 ]),
                 el("div", { id: "rowTxReviewContract", style: "margin-top:8px;display:none;" }, [
@@ -247,7 +247,7 @@ function buildTransactionReviewDialog(): HTMLElement {
                     el("span", { id: "spanTxReviewContract", style: "word-break:break-all;" }),
                 ]),
                 el("div", { id: "rowTxReviewFromTokenContract", style: "margin-top:8px;display:none;" }, [
-                    el("label", { "data-lang-key": "swap-from-token-contract", style: "font-weight:bold;display:block;" }, ["From token contract"]),
+                    el("label", { id: "lblTxReviewFromTokenContract", "data-lang-key": "swap-from-token-contract", style: "font-weight:bold;display:block;" }, ["From token contract"]),
                     el("span", { id: "spanTxReviewFromTokenContract", style: "word-break:break-all;" }),
                 ]),
                 el("div", { id: "rowTxReviewToTokenContract", style: "margin-top:8px;display:none;" }, [

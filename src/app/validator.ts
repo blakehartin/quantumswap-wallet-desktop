@@ -27,6 +27,8 @@ import {
     walletStore,
 } from "./state";
 import {
+    ensureGasEstimateReady,
+    isGasConfigReady,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -64,7 +66,6 @@ let validatorSubmission: TransactionReviewSubmission | null = null;
 export async function showValidatorTransactionReview(review: TransactionReview, onConfirm: () => void): Promise<void> {
     review.requirePassword = true;
     review.requireNonce = settingsStore.offlineSignEnabled === true;
-    review.assetLabelKey = "action";
     review.submitLabelKey = "submit";
     review.fromAddress = walletStore.currentWalletAddress;
     review.networkText = txReviewNetworkText();
@@ -124,11 +125,11 @@ export function getValidatorTxContext(): TxContext | null {
 }
 
 export function onValidatorGasIconClick(): boolean {
-    return onGasIconClick("spanValidatorGasFee", null, getValidatorTxContext, "btnValidation");
+    return onGasIconClick("spanValidatorGasFee", null, getValidatorTxContext);
 }
 
 export function scheduleValidatorGasEstimation(): void {
-    scheduleGasEstimation(getValidatorTxContext, "divValidatorGasIcon", "spanValidatorGasFee", null, null, "btnValidation");
+    scheduleGasEstimation(getValidatorTxContext, "divValidatorGasIcon", "spanValidatorGasFee", null, null);
 }
 
 export function attachValidatorGasListeners(): void {
@@ -165,7 +166,7 @@ export async function showValidatorScreen(): Promise<boolean> {
 
     selectById("ddlValidatorOptions").focus();
 
-    resetCurrentGasConfig(undefined, "btnValidation");
+    resetCurrentGasConfig();
     attachValidatorGasListeners();
     setGasFeeLabel("spanValidatorGasFee", "");
 
@@ -207,7 +208,7 @@ export async function updateValidatorScreen(): Promise<void> {
             byId("divValidatorDepositCoins").style.display = "block";
         }
 
-        resetCurrentGasConfig(undefined, "btnValidation");
+        resetCurrentGasConfig();
         setGasFeeLabel("spanValidatorGasFee", "");
         scheduleValidatorGasEstimation();
     }
@@ -217,6 +218,24 @@ export function validation(): void {
     const ddlValidatorOptions = selectById("ddlValidatorOptions");
     const selectedValue = ddlValidatorOptions.value;
 
+    // The action button stays enabled while gas is being estimated. If the
+    // user clicks before the estimate has loaded (and has not set gas
+    // manually), wait for it behind the shared wait dialog first. Offline
+    // mode is always ready (eager SDK fallback).
+    if (!isGasConfigReady()) {
+        showLoadingAndExecuteAsync(langJson.langValues.pleaseWaitEstimatingGas, function () {
+            void ensureGasEstimateReady().then(function () {
+                hideWaitingBox();
+                dispatchValidatorAction(selectedValue);
+            });
+        });
+        return;
+    }
+
+    dispatchValidatorAction(selectedValue);
+}
+
+function dispatchValidatorAction(selectedValue: string): void {
     if (selectedValue === "newdeposit") {
         newDeposit();
     } else if (selectedValue === "increasedeposit") {

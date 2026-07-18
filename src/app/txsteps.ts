@@ -8,7 +8,7 @@ import { WriteTextToClipboard } from "../lib/bridge";
 import { byId, networkStore, walletStore } from "./state";
 import { OpenScanTxn } from "./app";
 import { formatGasFeeQ } from "./gas";
-import { showGasConfigDialog } from "./dialog";
+import { hideWaitingBox, showGasConfigDialog, showWaitingBox } from "./dialog";
 import { appendTxStepGasSelection, TxStepGasSelection } from "./txsteps-core";
 
 export type TxStepStatus = "pending" | "active" | "ready" | "confirming" | "done" | "failed";
@@ -277,6 +277,10 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
     let currentIndex = 0;
     let running = false;
     let configuredSelections: TxStepGasSelection[] = [];
+    // In-flight prepare() (gas estimation) for the current step. The step
+    // button is enabled while it runs; an early click waits on this promise
+    // behind the shared wait dialog (see runCurrent).
+    let prepareInFlight: Promise<void> | null = null;
 
     const failCurrent = (err: unknown): void => {
         if (runId !== txStepsRunId) return;
@@ -325,9 +329,12 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
         byId("divTxStepsGasIcon").classList.add("gas-pulse");
         txStepsGasLimit = 0;
         txStepsGasFee = "";
-        setTxStepsButton("tx-step-estimating-gas", "Estimating gas...", false, true);
-        txStepsAction = null;
-        try {
+        // The step button is enabled right away; if clicked before the gas
+        // estimate finishes, runCurrent waits on prepareInFlight behind the
+        // shared wait dialog.
+        setTxStepsButton("", step.label, true);
+        txStepsAction = () => { void runCurrent(); };
+        const prepare = (async (): Promise<void> => {
             await afterTwoPaints();
             if (!step.prepare) throw new Error("Gas preparation is unavailable for this step.");
             const estimate = await step.prepare();
@@ -338,16 +345,37 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
             byId("divTxStepsGasIcon").classList.remove("gas-pulse");
             statuses[currentIndex] = "ready";
             renderSteps(steps, statuses);
-            setTxStepsButton("", step.label, true);
-            txStepsAction = () => { void runCurrent(); };
+        })();
+        prepareInFlight = prepare;
+        try {
+            await prepare;
         } catch (err) {
             byId("divTxStepsGasIcon").classList.remove("gas-pulse");
             failCurrent(err);
+        } finally {
+            if (prepareInFlight === prepare) prepareInFlight = null;
         }
     };
 
     const runCurrent = async (): Promise<void> => {
         if (running || currentIndex >= steps.length || runId !== txStepsRunId) return;
+        if (prepareInFlight != null) {
+            // Clicked before the gas estimate landed: wait for it here instead
+            // of the button having been disabled.
+            running = true;
+            showWaitingBox(t("pleaseWaitEstimatingGas", "Please wait, estimating gas..."));
+            try {
+                await prepareInFlight;
+            } catch {
+                // failCurrent already rendered the failed step.
+                hideWaitingBox();
+                running = false;
+                return;
+            }
+            hideWaitingBox();
+            running = false;
+            if (runId !== txStepsRunId) return;
+        }
         if (!Number.isInteger(txStepsGasLimit) || txStepsGasLimit <= 0 || txStepsGasFee === "") {
             failCurrent(t("tx-step-invalid-gas", "Enter a valid positive gas limit."));
             return;

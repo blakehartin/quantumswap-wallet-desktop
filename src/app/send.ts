@@ -35,6 +35,8 @@ import {
 import {
     GAS_ESTIMATE_BUFFER_PERCENT,
     GAS_NO_BUFFER_PERCENT,
+    ensureGasEstimateReady,
+    isGasConfigReady,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -103,7 +105,7 @@ export function getSendTxContext(): TxContext {
 }
 
 export function onSendGasIconClick(): boolean {
-    return onGasIconClick("spanSendGasFee", null, getSendTxContext, "btnSendCoins");
+    return onGasIconClick("spanSendGasFee", null, getSendTxContext);
 }
 
 export function scheduleSendGasEstimation(): void {
@@ -117,7 +119,7 @@ export function scheduleSendGasEstimation(): void {
         // renders via textContent so any HTML in it is sanitized (not parsed).
         const message = errorDetail ? (base + " (" + errorDetail + ")") : base;
         showTransientToast(message, 4000);
-    }, "btnSendCoins");
+    });
 }
 
 export function resetTokenList(): void {
@@ -249,7 +251,7 @@ export async function updateInfoSendScreen(preserveGas = false): Promise<boolean
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     const selectedValue = ddlCoinTokenToSend.value;
     if (!preserveGas && byId("SendScreen").style.display === "block") {
-        resetCurrentGasConfig(undefined, "btnSendCoins");
+        resetCurrentGasConfig();
         setGasFeeLabel("spanSendGasFee", "");
     }
     byId("divCoinTokenToSend").textContent = "";
@@ -321,7 +323,7 @@ export async function showSendScreen(): Promise<boolean> {
     inputById("txtSendQuantity").value = "";
     inputById("txtSendAddress").focus();
 
-    resetCurrentGasConfig(undefined, "btnSendCoins");
+    resetCurrentGasConfig();
     attachSendGasListeners();
     setGasFeeLabel("spanSendGasFee", "");
     scheduleSendGasEstimation();
@@ -377,7 +379,7 @@ export async function signOfflineSend(): Promise<boolean> {
 
     const prepared = await prepareOfflineDefaults();
     const review: TransactionReview = {
-        asset: getSendAssetDisplayName(offlineContractAddress, isCoin),
+        asset: (langJson.langValues.send || "Send") + " " + getSendAssetDisplayName(offlineContractAddress, isCoin),
         contractAddress: offlineContractAddress,
         fromAddress: walletStore.currentWalletAddress,
         toAddress: sendAddress,
@@ -573,27 +575,45 @@ export async function sendCoins(): Promise<boolean> {
         }
     }
 
-    const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
-    const gasLimit = parseInt(resolved.gasLimit, 10);
-    const gasFee = resolved.gasFee;
+    const proceedToReview = (): void => {
+        const resolved = resolveGasForTx(isCoin ? COIN_SEND_GAS : TOKEN_SEND_GAS);
+        const gasLimit = parseInt(resolved.gasLimit, 10);
+        const gasFee = resolved.gasFee;
 
-    const review: TransactionReview = {
-        asset: getSendAssetDisplayName(contractAddress, isCoin),
-        contractAddress: isCoin ? null : contractAddress,
-        fromAddress: walletStore.currentWalletAddress,
-        toAddress: sendAddress,
-        quantityLabelKey: "send-quantity",
-        quantityValue: isCoin ? sendQuantity : "0",
-        tokenQuantityValue: isCoin ? null : sendQuantity + " " + getSendAssetSymbol(contractAddress, false),
-        gasLimit: String(gasLimit),
-        gasFee: gasFee,
-        nonce: null,
-        networkText: txReviewNetworkText(),
-        requirePassword: true,
-        submitLabelKey: "ok",
-        onSubmit: onSendCoinsConfirm,
+        const review: TransactionReview = {
+            asset: (langJson.langValues.send || "Send") + " " + getSendAssetDisplayName(contractAddress, isCoin),
+            contractAddress: isCoin ? null : contractAddress,
+            fromAddress: walletStore.currentWalletAddress,
+            toAddress: sendAddress,
+            quantityLabelKey: "send-quantity",
+            quantityValue: isCoin ? sendQuantity : "0",
+            tokenQuantityValue: isCoin ? null : sendQuantity + " " + getSendAssetSymbol(contractAddress, false),
+            gasLimit: String(gasLimit),
+            gasFee: gasFee,
+            nonce: null,
+            networkText: txReviewNetworkText(),
+            requirePassword: true,
+            submitLabelKey: "ok",
+            onSubmit: onSendCoinsConfirm,
+        };
+        showTransactionReviewDialog(review);
     };
-    showTransactionReviewDialog(review);
+
+    // The Send button stays enabled while gas is being estimated. If the user
+    // clicks before the estimate has loaded (and has not set gas manually),
+    // wait for it behind the shared wait dialog, then open the review.
+    // Offline mode is always ready (eager SDK fallback).
+    if (!isGasConfigReady()) {
+        showLoadingAndExecuteAsync(langJson.langValues.pleaseWaitEstimatingGas, function () {
+            void ensureGasEstimateReady().then(function () {
+                hideWaitingBox();
+                proceedToReview();
+            });
+        });
+        return false;
+    }
+
+    proceedToReview();
     return false;
 }
 

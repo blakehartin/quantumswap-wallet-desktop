@@ -80,30 +80,18 @@ export function setGasIconPulse(iconId: string, pulsing: boolean): void {
     }
 }
 
-// Gate a transactional action button on gas readiness. The button stays
-// disabled while an online gas estimate is pending and no value has loaded
-// yet, so a user cannot submit before the fee is known. Offline mode and an
-// explicit user override (manual gas dialog) bypass the gate.
-export function setActionButtonGasReady(actionButtonId: string | null | undefined, state?: GasState | null): void {
-    if (!actionButtonId) return;
-    const btn = byId(actionButtonId);
-    if (!btn) return;
+// True when the gas config is usable for review/submission: an estimate has
+// loaded or the user manually overrode it via the gas dialog. Offline mode
+// counts as ready because the eager SDK fallback populates gas immediately.
+// When not ready, the action click waits for the in-flight estimate (see
+// ensureGasEstimateReady) instead of the button being disabled.
+export function isGasConfigReady(state?: GasState | null): boolean {
     const s = state || currentGasConfig;
     const offline = settingsStore.offlineSignEnabled === true;
-    const ready = offline || s.overridden || (s.gasLimit != null && s.gasFee != null);
-    btn.setAttribute("aria-disabled", ready ? "false" : "true");
-    if (ready) {
-        btn.removeAttribute("disabled");
-        btn.style.opacity = "";
-        btn.style.pointerEvents = "";
-    } else {
-        btn.setAttribute("disabled", "disabled");
-        btn.style.opacity = "0.55";
-        btn.style.pointerEvents = "none";
-    }
+    return offline || s.overridden === true || (s.gasLimit != null && s.gasFee != null);
 }
 
-export function resetCurrentGasConfig(state?: GasState, actionButtonId?: string | null): void {
+export function resetCurrentGasConfig(state?: GasState): void {
     const s = state || currentGasConfig;
     s.gasLimit = null;
     s.gasFee = null;
@@ -111,7 +99,6 @@ export function resetCurrentGasConfig(state?: GasState, actionButtonId?: string 
     if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
     gasEstimateToken++;
     s._token = gasEstimateToken;
-    setActionButtonGasReady(actionButtonId, state);
 }
 
 /** Sync SDK-aware Q fee for a gas limit (advanced signing / keyType aware). */
@@ -288,12 +275,51 @@ function applyEagerOfflineFallback(
     ctx: TxContext,
     s: GasState,
     labelId: string | null,
-    actionButtonId: string | null | undefined,
     fullSign?: boolean,
 ): void {
     if (!ctx.defaultGasLimit) return;
     applyOfflineGasConfig(ctx.defaultGasLimit, labelId, s, fullSign);
-    setActionButtonGasReady(actionButtonId, s);
+}
+
+// The last scheduled estimation and the in-flight run, so an action click can
+// flush the debounce and await the result (ensureGasEstimateReady) instead of
+// the action button being disabled while gas is pending.
+interface ScheduledGasEstimation {
+    ctxProvider: TxContextProvider;
+    iconId: string;
+    labelId: string | null;
+    state?: GasState | null;
+    onRpcError?: ((msg: string | null) => void) | null;
+}
+let lastScheduledGasEstimation: ScheduledGasEstimation | null = null;
+let gasEstimateInFlight: Promise<void> | null = null;
+
+function startTrackedGasEstimation(args: ScheduledGasEstimation): void {
+    const run = runGasEstimation(args.ctxProvider, args.iconId, args.labelId, args.state, args.onRpcError);
+    gasEstimateInFlight = run;
+    void run.finally(function () {
+        if (gasEstimateInFlight === run) gasEstimateInFlight = null;
+    });
+}
+
+// Await gas readiness for an action click: flushes a pending debounce timer,
+// (re)starts the estimation if none is in flight, and waits for it to settle.
+// Never rejects; on estimation failure the caller proceeds with the
+// resolveGasForTx() defaults (the failure toast still fires via onRpcError).
+export async function ensureGasEstimateReady(state?: GasState | null): Promise<void> {
+    const s = state || currentGasConfig;
+    if (isGasConfigReady(s)) return;
+    if (gasEstimateTimerId != null && lastScheduledGasEstimation != null) {
+        clearTimeout(gasEstimateTimerId);
+        gasEstimateTimerId = null;
+        startTrackedGasEstimation(lastScheduledGasEstimation);
+    } else if (gasEstimateInFlight == null && lastScheduledGasEstimation != null) {
+        // A previous run may have failed and cleared the gas config; retry once.
+        startTrackedGasEstimation(lastScheduledGasEstimation);
+    }
+    if (gasEstimateInFlight != null) {
+        try { await gasEstimateInFlight; } catch { /* fall back to defaults */ }
+    }
 }
 
 // Schedule a debounced gas estimation. `ctxProvider` returns the tx context (or null to skip),
@@ -301,22 +327,22 @@ function applyEagerOfflineFallback(
 // (defaults to the global currentGasConfig).
 // Offline mode: eagerly populate SDK-aware fallbacks, then optionally upgrade via RPC.
 // Online mode: clear label while estimating; toast on failure via onRpcError.
-// `actionButtonId` (optional) is the transactional action button to disable while gas is pending (online only).
-export function scheduleGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null, actionButtonId?: string | null): void {
+export function scheduleGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null): void {
     const s = state || currentGasConfig;
     if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
     gasEstimateToken++;
     s._token = gasEstimateToken;
+    lastScheduledGasEstimation = { ctxProvider, iconId, labelId, state, onRpcError };
     const offline = settingsStore.offlineSignEnabled === true;
     if (!s.overridden) {
         if (offline) {
             const ctx = (typeof ctxProvider === "function") ? ctxProvider() : ctxProvider;
             if (ctx && ctx.txKind && ctx.defaultGasLimit) {
                 // Sync eager value first (compact until advanced-signing flag loads).
-                applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, false);
+                applyEagerOfflineFallback(ctx, s, labelId, false);
                 void advancedSigningGetDefaultValue().then((fullSign) => {
                     if (s._token !== gasEstimateToken || s.overridden) return;
-                    applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+                    applyEagerOfflineFallback(ctx, s, labelId, fullSign === true);
                 });
             }
             setGasIconPulse(iconId, true);
@@ -325,14 +351,13 @@ export function scheduleGasEstimation(ctxProvider: TxContextProvider, iconId: st
             if (labelId) setGasFeeLabel(labelId, "");
         }
     }
-    setActionButtonGasReady(actionButtonId, state);
     gasEstimateTimerId = setTimeout(function () {
         gasEstimateTimerId = null;
-        runGasEstimation(ctxProvider, iconId, labelId, state, onRpcError, actionButtonId);
+        startTrackedGasEstimation({ ctxProvider, iconId, labelId, state, onRpcError });
     }, GAS_ESTIMATE_DEBOUNCE_MS);
 }
 
-export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null, actionButtonId?: string | null): Promise<void> {
+export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null): Promise<void> {
     const s = state || currentGasConfig;
     const myToken = s._token;
     const offline = settingsStore.offlineSignEnabled === true;
@@ -341,7 +366,6 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         if (offline) {
             // Keep any eager fallback; do not wipe gas or toast.
             setGasIconPulse(iconId, false);
-            setActionButtonGasReady(actionButtonId, state);
             return;
         }
         if (labelId) setGasFeeLabel(labelId, "");
@@ -349,7 +373,6 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         s.gasLimit = null;
         s.gasFee = null;
         s.overridden = false;
-        setActionButtonGasReady(actionButtonId, state);
         return;
     }
 
@@ -357,19 +380,17 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         // User has manually overridden; keep their values until context actually changes.
         if (labelId) setGasFeeLabel(labelId, s.gasFee);
         setGasIconPulse(iconId, false);
-        setActionButtonGasReady(actionButtonId, state);
         return;
     }
 
     if (offline && ctx.defaultGasLimit && (s.gasLimit == null || s.gasFee == null)) {
         const fullSign = await advancedSigningGetDefaultValue();
         if (myToken !== s._token) return;
-        applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+        applyEagerOfflineFallback(ctx, s, labelId, fullSign === true);
     }
 
     setGasIconPulse(iconId, true);
     if (!offline && labelId) setGasFeeLabel(labelId, "");
-    setActionButtonGasReady(actionButtonId, state);
     try {
         const result = await estimateGasForContext(ctx);
         if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
@@ -380,7 +401,6 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
             if (labelId) setGasFeeLabel(labelId, s.gasFee);
         }
         setGasIconPulse(iconId, false);
-        setActionButtonGasReady(actionButtonId, state);
         // Offline: never toast on gas estimation failures; keep/upgrade silently.
         if (!offline && result.usedFallback && typeof onRpcError === "function") {
             onRpcError(result.error);
@@ -392,10 +412,9 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
             if (!s.overridden && ctx.defaultGasLimit) {
                 const fullSign = await advancedSigningGetDefaultValue();
                 if (myToken !== s._token) return;
-                applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+                applyEagerOfflineFallback(ctx, s, labelId, fullSign === true);
             }
             setGasIconPulse(iconId, false);
-            setActionButtonGasReady(actionButtonId, state);
             return;
         }
         s.gasLimit = null;
@@ -403,7 +422,6 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         s.overridden = false;
         if (labelId) setGasFeeLabel(labelId, "");
         setGasIconPulse(iconId, false);
-        setActionButtonGasReady(actionButtonId, state);
         if (typeof onRpcError === "function") {
             onRpcError((e && e.message) ? String(e.message) : String(e));
         }
@@ -414,8 +432,7 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
 // `ctxProvider` (optional) is used to gate the offline-default pre-apply: the default
 // fee is only applied when the tx context is valid (inputs present), so no fee is
 // shown before the required quantity/inputs have been entered.
-// `actionButtonId` (optional) is re-enabled once the user confirms a manual override.
-export function onGasIconClick(labelId: string, state?: GasState | null, ctxProvider?: () => TxContext | null, actionButtonId?: string | null): boolean {
+export function onGasIconClick(labelId: string, state?: GasState | null, ctxProvider?: () => TxContext | null): boolean {
     const s = state || currentGasConfig;
     if (s.gasLimit == null && typeof ctxProvider === "function") {
         const ctx = ctxProvider();
@@ -437,7 +454,6 @@ export function onGasIconClick(labelId: string, state?: GasState | null, ctxProv
             s.gasFee = String(result.gasFee);
             s.overridden = true;
             if (labelId) setGasFeeLabel(labelId, s.gasFee);
-            setActionButtonGasReady(actionButtonId, state);
         },
     });
     return false;
