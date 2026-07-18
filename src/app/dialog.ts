@@ -333,6 +333,7 @@ export interface TransactionReview {
     networkText?: string;
     contractAddress?: string | null;
     fromTokenContractAddress?: string | null;
+    fromTokenContractLabelKey?: string;
     toTokenContractAddress?: string | null;
     assetLabelKey?: string;
     requirePassword?: boolean;
@@ -364,7 +365,7 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
 
     const lblAsset = byId("lblTxReviewAsset");
     if (lblAsset) {
-        const assetKey = review.assetLabelKey || "what-is-being-sent";
+        const assetKey = review.assetLabelKey || "action";
         if (langJson && langJson.langValues[assetKey]) {
             lblAsset.textContent = langJson.langValues[assetKey];
         }
@@ -408,6 +409,13 @@ export function showTransactionReviewDialog(review: TransactionReview): boolean 
         "spanTxReviewFromTokenContract",
         review.fromTokenContractAddress,
     );
+    const lblFromTokenContract = byId("lblTxReviewFromTokenContract");
+    if (lblFromTokenContract) {
+        const fromTokenContractKey = review.fromTokenContractLabelKey || "swap-from-token-contract";
+        if (langJson && langJson.langValues[fromTokenContractKey]) {
+            lblFromTokenContract.textContent = langJson.langValues[fromTokenContractKey];
+        }
+    }
     setOptionalAddressRow(
         "rowTxReviewToTokenContract",
         "spanTxReviewToTokenContract",

@@ -51,14 +51,17 @@ import {
     hideWaitingBox,
     showLoadingAndExecuteAsync,
     showTransactionReviewDialog,
+    showWaitingBox,
     showWarnAlert,
     txReviewNetworkText,
 } from "./dialog";
 import { ReviewedTxStepDefinition, requireTxHash, showReviewThenSteps } from "./txflow";
 import {
     APPROVE_DEFAULT_GAS,
+    ensureGasEstimateReady,
     estimateGasForContext,
     estimateGasLimitOfflineSafe,
+    isGasConfigReady,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -293,11 +296,11 @@ function getCreatePairTxContext(): TxContext | null {
 }
 
 function scheduleCreateTokenGas(): void {
-    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState, null, "btnCreateToken");
+    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState, null);
 }
 
 function scheduleCreatePairGas(): void {
-    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState, null, "btnPoolsCreatePair");
+    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState, null);
 }
 
 export function onCreateTokenInput(): void {
@@ -314,11 +317,11 @@ export function onRemoveSlippageInput(): void {
 }
 
 export function onCreateTokenGasIconClick(): boolean {
-    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext, "btnCreateToken");
+    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext);
 }
 
 export function onCreatePairGasIconClick(): boolean {
-    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext, "btnPoolsCreatePair");
+    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext);
 }
 
 // ---------------- Balance / contract rows under the token pickers ----------------
@@ -441,7 +444,6 @@ function approveStep(
         label,
         review: {
             asset: label,
-            assetLabelKey: "what-is-being-sent",
             contractAddress: tokenAddress,
             toAddress: tokenAddress,
             quantityLabelKey: "send-quantity",
@@ -538,7 +540,7 @@ export function showTokenCreateScreen(): boolean {
     selectById("ddlCreateTokenDecimals").value = "18";
     inputById("txtCreateTokenSupply").value = "";
     setInlineError("divCreateTokenError", null);
-    resetCurrentGasConfig(createTokenGasState, "btnCreateToken");
+    resetCurrentGasConfig(createTokenGasState);
     setGasFeeLabel("spanCreateTokenGasFee", "");
     void syncAdvancedOfflineUi();
     return false;
@@ -569,7 +571,7 @@ export function showPoolsCreatePanel(): boolean {
     setInlineError("divPoolsPairWarn", null);
     void updatePickerInfoRows("PoolsA", "");
     void updatePickerInfoRows("PoolsB", "");
-    resetCurrentGasConfig(createPairGasState, "btnPoolsCreatePair");
+    resetCurrentGasConfig(createPairGasState);
     setGasFeeLabel("spanCreatePairGasFee", "");
     void syncAdvancedOfflineUi();
     return false;
@@ -725,6 +727,13 @@ export async function onCreatePairClick(): Promise<void> {
     }
     setInlineError("divPoolsPairWarn", null);
     settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    // The button stays enabled while gas is being estimated; wait for the
+    // pending estimate here if the user clicked early (offline is always ready).
+    if (!isGasConfigReady(createPairGasState)) {
+        showWaitingBox(langJson.langValues.pleaseWaitEstimatingGas);
+        await ensureGasEstimateReady(createPairGasState);
+        hideWaitingBox();
+    }
     if (settingsStore.offlineSignEnabled) {
         const factoryAddress = currentSwapRelease ? currentSwapRelease.factory : BUILTIN_SWAP_RELEASES[0].factory;
         showOfflineAdvancedReview(
@@ -834,9 +843,16 @@ export async function onCreateTokenClick(): Promise<void> {
     }
     setInlineError("divCreateTokenError", null);
     settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    // The button stays enabled while gas is being estimated; wait for the
+    // pending estimate here if the user clicked early (offline is always ready).
+    if (!isGasConfigReady(createTokenGasState)) {
+        showWaitingBox(langJson.langValues.pleaseWaitEstimatingGas);
+        await ensureGasEstimateReady(createTokenGasState);
+        hideWaitingBox();
+    }
     if (settingsStore.offlineSignEnabled) {
         showOfflineAdvancedReview(
-            name + " (" + symbol + ")",
+            t("create-token", "Create Token") + " " + name + " (" + symbol + ")",
             null,
             supply + " " + symbol,
             [{
@@ -852,8 +868,7 @@ export async function onCreateTokenClick(): Promise<void> {
     let deployedAddress: string | null = null;
     showReviewThenSteps({
         review: {
-            asset: name + " (" + symbol + ")",
-            assetLabelKey: "token-being-created",
+            asset: t("create-token", "Create Token") + " " + name + " (" + symbol + ")",
             contractAddress: null,
             toAddress: null,
             quantityLabelKey: "token-total-supply",
@@ -1231,7 +1246,7 @@ export async function onAddLiquidityClick(): Promise<void> {
         const router = currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router;
         const reviewQuantities = liquidityReviewQuantities(a, amountA, symA, b, amountB, symB);
         showOfflineAdvancedReview(
-            symA + " / " + symB,
+            t("add-liquidity", "Add Liquidity") + " " + symA + " / " + symB,
             router,
             reviewQuantities.quantityValue,
             steps,
@@ -1272,8 +1287,7 @@ export async function onAddLiquidityClick(): Promise<void> {
             const reviewQuantities = liquidityReviewQuantities(a, amountA, symA, b, amountB, symB);
             showReviewThenSteps({
                 review: {
-                    asset: symA + " / " + symB,
-                    assetLabelKey: "liquidity-pool",
+                    asset: t("add-liquidity", "Add Liquidity") + " " + symA + " / " + symB,
                     contractAddress: routerAddress,
                     toAddress: routerAddress,
                     quantityLabelKey: "send-quantity",
@@ -1492,7 +1506,7 @@ export async function onRemoveLiquidityClick(): Promise<void> {
         }];
         const router = currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router;
         showOfflineAdvancedReview(
-            sym0 + " / " + sym1,
+            t("remove-liquidity", "Remove Liquidity") + " " + sym0 + " / " + sym1,
             router,
             formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP",
             steps,
@@ -1511,8 +1525,7 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                 : BUILTIN_SWAP_RELEASES[0].router;
             showReviewThenSteps({
                 review: {
-                    asset: sym0 + " / " + sym1,
-                    assetLabelKey: "liquidity-pool",
+                    asset: t("remove-liquidity", "Remove Liquidity") + " " + sym0 + " / " + sym1,
                     contractAddress: routerAddress,
                     toAddress: routerAddress,
                     quantityLabelKey: "lp-to-burn",

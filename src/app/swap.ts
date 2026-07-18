@@ -736,7 +736,10 @@ async function signSwapOffline(
                     showTransactionReviewDialog({
                         ...commonReview,
                         asset: stepDefinitions[index].label,
+                        // Approval only concerns the token being spent, so
+                        // show a single "Approval token contract" row.
                         fromTokenContractAddress: fromValue,
+                        fromTokenContractLabelKey: "approval-token-contract",
                         toAddress: fromValue,
                         quantityLabelKey: "send-quantity",
                         quantityValue: "0",
@@ -746,7 +749,8 @@ async function signSwapOffline(
                 } else {
                     showTransactionReviewDialog({
                         ...commonReview,
-                        asset: fromSymbol + " -> " + toSymbol,
+                        asset: (langJson.langValues.swap || "Swap") + " " + fromSymbol
+                            + " " + (langJson.langValues["swap-for"] || "for") + " " + toSymbol,
                         fromTokenContractAddress: fromValue,
                         toTokenContractAddress: toValue,
                         toAddress: currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router,
@@ -843,11 +847,15 @@ export async function onSwapNextClick(): Promise<boolean> {
         const routerAddress = currentSwapRelease
             ? currentSwapRelease.router
             : BUILTIN_SWAP_RELEASES[0].router;
-        let routeText = fromSymbol + " -> " + toSymbol;
-        if (swapCurrentRoute && swapCurrentRoute.length >= 2) {
-            routeText = swapCurrentRoute
+        let swapActionText = (langJson.langValues.swap || "Swap") + " " + fromSymbol
+            + " " + (langJson.langValues["swap-for"] || "for") + " " + toSymbol;
+        if (swapCurrentRoute && swapCurrentRoute.length > 2) {
+            // Multi-hop trade: append the full route so the user sees the
+            // intermediate tokens their swap passes through.
+            const routeText = swapCurrentRoute
                 .map((entry) => getSwapRouteDisplaySymbol(entry.address, entry.symbol))
                 .join(" -> ");
+            swapActionText += " (" + routeText + ")";
         }
         const stepPlan = createSwapWorkflowStepPlan(
             !allowanceResult.sufficient,
@@ -867,7 +875,7 @@ export async function onSwapNextClick(): Promise<boolean> {
 
         showReviewThenSteps({
             review: {
-                asset: routeText,
+                asset: swapActionText,
                 fromTokenContractAddress: fromValue,
                 toTokenContractAddress: toValue,
                 toAddress: routerAddress,
@@ -883,8 +891,11 @@ export async function onSwapNextClick(): Promise<boolean> {
                         label: stepPlan[0].label,
                         review: {
                             asset: stepPlan[0].label,
-                            assetLabelKey: "what-is-being-sent",
                             toAddress: fromValue,
+                            // Approval only concerns the token being spent, so
+                            // show a single "Approval token contract" row.
+                            fromTokenContractLabelKey: "approval-token-contract",
+                            toTokenContractAddress: null,
                             quantityLabelKey: "send-quantity",
                             quantityValue: "0",
                             tokenQuantityLabelKey: "approval-token-quantity",
