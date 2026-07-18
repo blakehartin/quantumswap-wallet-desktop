@@ -19,6 +19,11 @@ export function assignSequentialNonces<T>(steps: T[], startingNonce: number): Ar
     return steps.map((step, index) => ({ step, nonce: startingNonce + index }));
 }
 
+export function nextOfflineNonce(currentNonce: number): string {
+    if (!Number.isInteger(currentNonce) || currentNonce < 0) throw new Error("Invalid current nonce");
+    return String(currentNonce + 1);
+}
+
 export function buildOfflineSwapPath(fromAddress: string, toAddress: string, intermediates: string[]): string[] {
     const path = [fromAddress, ...intermediates.map((value) => value.trim()).filter(Boolean), toAddress];
     if (path.length < 2 || path.length > 5) throw new Error("Invalid swap path");

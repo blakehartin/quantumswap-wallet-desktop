@@ -9,6 +9,7 @@ import { byId, networkStore, walletStore } from "./state";
 import { OpenScanTxn } from "./app";
 import { formatGasFeeQ } from "./gas";
 import { showGasConfigDialog } from "./dialog";
+import { appendTxStepGasSelection, TxStepGasSelection } from "./txsteps-core";
 
 export type TxStepStatus = "pending" | "active" | "ready" | "confirming" | "done" | "failed";
 
@@ -217,9 +218,15 @@ export interface TxStepsOptions {
     title: string;
     steps: TxStepDefinition[];
     progressText?: string;
+    configurationOnly?: boolean;
+    onConfigured?: (selections: TxStepGasSelection[]) => unknown;
+    // Configuration-only flows may handle each selected gas value before the
+    // step advances (for example, review and sign one offline transaction).
+    // False keeps the current step ready for retry.
+    onConfigureStep?: (index: number, selection: TxStepGasSelection) => Promise<boolean>;
     // Opens the per-step review and submits after the user confirms. Returning
     // null means the review was cancelled and the current step remains ready.
-    onSubmitStep: (
+    onSubmitStep?: (
         index: number,
         gasLimit: number,
         gasFee: string,
@@ -269,6 +276,7 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
 
     let currentIndex = 0;
     let running = false;
+    let configuredSelections: TxStepGasSelection[] = [];
 
     const failCurrent = (err: unknown): void => {
         if (runId !== txStepsRunId) return;
@@ -285,6 +293,13 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
     const finishAll = (): void => {
         hideTxStepsGas();
         setTxStepsWaiting(false);
+        if (options.configurationOnly === true) {
+            const onConfigured = options.onConfigured;
+            txStepsOnClose = null;
+            closeTxStepsDialog();
+            if (onConfigured) void onConfigured(configuredSelections.slice());
+            return;
+        }
         if (options.onAllDone) {
             const node = options.onAllDone();
             if (node instanceof HTMLElement) setTxStepsResult(node);
@@ -340,6 +355,36 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
         running = true;
         setTxStepsButton("", steps[currentIndex].label, false);
         txStepsAction = null;
+        if (options.configurationOnly === true) {
+            try {
+                const selection = { gasLimit: txStepsGasLimit, gasFee: txStepsGasFee };
+                if (options.onConfigureStep) {
+                    const completed = await options.onConfigureStep(currentIndex, selection);
+                    if (!completed) {
+                        running = false;
+                        statuses[currentIndex] = "ready";
+                        renderSteps(steps, statuses);
+                        setTxStepsButton("", steps[currentIndex].label, true);
+                        txStepsAction = () => { void runCurrent(); };
+                        return;
+                    }
+                }
+                configuredSelections = appendTxStepGasSelection(
+                    configuredSelections,
+                    selection.gasLimit,
+                    selection.gasFee,
+                );
+                statuses[currentIndex] = "done";
+                renderSteps(steps, statuses);
+                currentIndex++;
+                running = false;
+                await prepareCurrent();
+            } catch (err) {
+                running = false;
+                failCurrent(err);
+            }
+            return;
+        }
         let submissionStarted = false;
         const onSubmitting = (): void => {
             if (runId !== txStepsRunId) return;
@@ -351,6 +396,7 @@ export function showTxStepsDialog(options: TxStepsOptions): void {
             setTxStepsButton("tx-step-submitting", "Submitting...", false, true);
         };
         try {
+            if (!options.onSubmitStep) throw new Error("Step submission is unavailable.");
             const txHash = await options.onSubmitStep(
                 currentIndex,
                 txStepsGasLimit,

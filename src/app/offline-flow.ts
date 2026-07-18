@@ -1,7 +1,7 @@
 import { OfflineSignedTransaction, WriteTextToClipboard, offlineSignTransactionBundle, prepareOfflineSigning } from "../lib/bridge";
 import { walletGetByAddress } from "../lib/wallet";
 import { byId, networkStore, walletStore } from "./state";
-import { hideWaitingBox, showWaitingBox, showWarnAlert, TransactionReviewSubmission } from "./dialog";
+import { hideWaitingBox, showOfflineSignatureDialog, showWaitingBox, showWarnAlert, TransactionReviewSubmission } from "./dialog";
 import { advancedSigningGetDefaultValue } from "./settings";
 import { applySwapReleaseToPayload } from "./release";
 export { amountAfterSlippage } from "./offline-flow-core";
@@ -96,6 +96,45 @@ export async function signOfflineBundle(
             return false;
         }
         setTimeout(() => showBundle(result.transactions!), 0);
+        return true;
+    } catch (err: any) {
+        showWarnAlert(err && err.message ? String(err.message) : String(err));
+        return false;
+    } finally {
+        hideWaitingBox();
+    }
+}
+
+export async function signOfflineStep(
+    step: OfflineBundleStep,
+    submission: TransactionReviewSubmission,
+    onSignatureClose: () => void,
+): Promise<boolean> {
+    if (submission.startingNonce == null) return false;
+    showWaitingBox("Signing transaction offline...");
+    try {
+        const wallet = await walletGetByAddress(submission.password, walletStore.currentWalletAddress);
+        if (!wallet) {
+            showWarnAlert("Unable to open wallet.");
+            return false;
+        }
+        const network = networkStore.currentBlockchainNetwork;
+        if (!network) throw new Error("Network required");
+        const payload = applySwapReleaseToPayload({
+            chainId: Number(network.networkId),
+            startingNonce: submission.startingNonce,
+            privateKey: await wallet.getPrivateKey(),
+            publicKey: await wallet.getPublicKey(),
+            advancedSigningEnabled: await advancedSigningGetDefaultValue(),
+            steps: [step],
+        });
+        const result = await offlineSignTransactionBundle(payload);
+        if (!result.success || !result.transactions || result.transactions.length !== 1) {
+            showWarnAlert(result.error || "Unable to sign offline transaction.");
+            return false;
+        }
+        const txData = result.transactions[0].txData;
+        setTimeout(() => { void showOfflineSignatureDialog(txData, onSignatureClose); }, 0);
         return true;
     } catch (err: any) {
         showWarnAlert(err && err.message ? String(err.message) : String(err));

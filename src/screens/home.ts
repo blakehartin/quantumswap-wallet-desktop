@@ -37,7 +37,7 @@ function buildHomeScreen(): HTMLElement {
                 el("div", { style: "display: flex; flex-direction: row; height: 40px; justify-content: center;" }, [
                     el("div", { class: "copy-container", role: "button", tabindex: "1", onclick: () => { void copyAddress(); } }),
                     el("div", { class: "scan-container", role: "button", style: "margin-left:15px;margin-top:-2px;", tabindex: "2", onclick: () => { void openBlockExplorerAccount(); } }),
-                    el("div", { class: "refresh-container", role: "button", style: "margin-left:15px;", id: "divRefreshBalance", tabindex: "3", onclick: () => { void refreshAccountBalance(); } }),
+                    el("div", { class: "refresh-container", role: "button", style: "margin-left:15px;", id: "divRefreshBalance", tabindex: "3", onclick: () => { void refreshAccountBalance(true); } }),
                     el("div", { style: "float: left; width: 30px; height: 30px; margin-left:15px;", id: "divLoadingBalance" }, [
                         el("img", { src: "assets/icons/loading.gif", style: "width:30px;height:30px" }),
                     ]),

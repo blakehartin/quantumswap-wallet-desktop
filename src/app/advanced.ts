@@ -58,6 +58,7 @@ import { ReviewedTxStepDefinition, requireTxHash, showReviewThenSteps } from "./
 import {
     APPROVE_DEFAULT_GAS,
     estimateGasForContext,
+    estimateGasLimitOfflineSafe,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -292,11 +293,11 @@ function getCreatePairTxContext(): TxContext | null {
 }
 
 function scheduleCreateTokenGas(): void {
-    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState);
+    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState, null, "btnCreateToken");
 }
 
 function scheduleCreatePairGas(): void {
-    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState);
+    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState, null, "btnPoolsCreatePair");
 }
 
 export function onCreateTokenInput(): void {
@@ -313,11 +314,11 @@ export function onRemoveSlippageInput(): void {
 }
 
 export function onCreateTokenGasIconClick(): boolean {
-    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext);
+    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext, "btnCreateToken");
 }
 
 export function onCreatePairGasIconClick(): boolean {
-    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext);
+    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext, "btnPoolsCreatePair");
 }
 
 // ---------------- Balance / contract rows under the token pickers ----------------
@@ -537,7 +538,7 @@ export function showTokenCreateScreen(): boolean {
     selectById("ddlCreateTokenDecimals").value = "18";
     inputById("txtCreateTokenSupply").value = "";
     setInlineError("divCreateTokenError", null);
-    resetCurrentGasConfig(createTokenGasState);
+    resetCurrentGasConfig(createTokenGasState, "btnCreateToken");
     setGasFeeLabel("spanCreateTokenGasFee", "");
     void syncAdvancedOfflineUi();
     return false;
@@ -568,7 +569,7 @@ export function showPoolsCreatePanel(): boolean {
     setInlineError("divPoolsPairWarn", null);
     void updatePickerInfoRows("PoolsA", "");
     void updatePickerInfoRows("PoolsB", "");
-    resetCurrentGasConfig(createPairGasState);
+    resetCurrentGasConfig(createPairGasState, "btnPoolsCreatePair");
     setGasFeeLabel("spanCreatePairGasFee", "");
     void syncAdvancedOfflineUi();
     return false;
@@ -1187,18 +1188,20 @@ export async function onAddLiquidityClick(): Promise<void> {
             const token = a !== "Q" ? a : b;
             const amount = a !== "Q" ? amountA : amountB;
             const decimals = a !== "Q" ? decimalsA : decimalsB;
-            if (token !== "Q") approvalGas = Number((await estimateGasForContext({
-                txKind: "approveToken", tokenAddress: token, amount,
-                fromDecimals: decimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
-            })).gasLimit);
+            if (token !== "Q") {
+                approvalGas = await estimateGasLimitOfflineSafe({
+                    txKind: "approveToken", tokenAddress: token, amount,
+                    fromDecimals: decimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
+                });
+            }
         }
         if (addGas === ADD_LIQUIDITY_DEFAULT_GAS) {
-            addGas = Number((await estimateGasForContext({
+            addGas = await estimateGasLimitOfflineSafe({
                 txKind: "addLiquidity", tokenAValue: a, tokenBValue: b,
                 amountA, amountB, decimalsA, decimalsB, slippagePercent,
                 ownerAddress: walletStore.currentWalletAddress,
                 defaultGasLimit: ADD_LIQUIDITY_DEFAULT_GAS,
-            })).gasLimit);
+            });
         }
         const steps: OfflineBundleStep[] = [];
         if (a !== "Q") steps.push({

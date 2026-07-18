@@ -124,11 +124,11 @@ export function getValidatorTxContext(): TxContext | null {
 }
 
 export function onValidatorGasIconClick(): boolean {
-    return onGasIconClick("spanValidatorGasFee", null, getValidatorTxContext);
+    return onGasIconClick("spanValidatorGasFee", null, getValidatorTxContext, "btnValidation");
 }
 
 export function scheduleValidatorGasEstimation(): void {
-    scheduleGasEstimation(getValidatorTxContext, "divValidatorGasIcon", "spanValidatorGasFee");
+    scheduleGasEstimation(getValidatorTxContext, "divValidatorGasIcon", "spanValidatorGasFee", null, null, "btnValidation");
 }
 
 export function attachValidatorGasListeners(): void {
@@ -165,7 +165,7 @@ export async function showValidatorScreen(): Promise<boolean> {
 
     selectById("ddlValidatorOptions").focus();
 
-    resetCurrentGasConfig();
+    resetCurrentGasConfig(undefined, "btnValidation");
     attachValidatorGasListeners();
     setGasFeeLabel("spanValidatorGasFee", "");
 
@@ -207,7 +207,7 @@ export async function updateValidatorScreen(): Promise<void> {
             byId("divValidatorDepositCoins").style.display = "block";
         }
 
-        resetCurrentGasConfig();
+        resetCurrentGasConfig(undefined, "btnValidation");
         setGasFeeLabel("spanValidatorGasFee", "");
         scheduleValidatorGasEstimation();
     }

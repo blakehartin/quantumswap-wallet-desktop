@@ -126,20 +126,20 @@ function buildSwapMainPanel(): HTMLElement {
             ]),
             el("div", { class: "divider" }),
         ]),
-        el("div", { id: "divSwapOfflineOptions", class: "input_container", style: "display:none;margin-top:8px;" }, [
+        el("div", { id: "divSwapOfflineOptions", class: "input_container", style: "display:none;margin-top:8px;gap:8px;" }, [
             el("div", { class: "heading medium", "data-lang-key": "offline-signing-details" }, ["Offline signing details"]),
-            el("div", { class: "tx-steps-error", "data-lang-key": "offline-rpc-fallback-warning" }, [
-                "RPC data is used when available. Otherwise route and chain state cannot be verified.",
+            el("div", { class: "input_container", style: "gap:4px;" }, [
+                el("label", { for: "txtSwapOfflineFromDecimals", class: "heading small", "data-lang-key": "offline-from-decimals" }, ["From token decimals"]),
+                el("input", { id: "txtSwapOfflineFromDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "From token decimals" }),
             ]),
-            el("input", {
-                id: "txtSwapOfflineIntermediatePath", class: "tab-name qs-input", type: "text",
-                placeholder: "Intermediate token contracts (comma separated)",
-            }),
-            el("input", { id: "txtSwapOfflineFromDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "From token decimals" }),
-            el("input", { id: "txtSwapOfflineToDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "To token decimals" }),
-            el("input", { id: "txtSwapOfflineDeadline", class: "tab-name qs-input", type: "number", min: "1", placeholder: "Deadline (Unix timestamp)" }),
-            el("input", { id: "txtSwapOfflineApprovalGas", class: "tab-name qs-input", type: "number", min: "1", value: "84000", placeholder: "Approval gas limit" }),
-            el("input", { id: "txtSwapOfflineGas", class: "tab-name qs-input", type: "number", min: "1", value: "200000", placeholder: "Swap gas limit" }),
+            el("div", { class: "input_container", style: "gap:4px;" }, [
+                el("label", { for: "txtSwapOfflineToDecimals", class: "heading small", "data-lang-key": "offline-to-decimals" }, ["To token decimals"]),
+                el("input", { id: "txtSwapOfflineToDecimals", class: "tab-name qs-input", type: "number", min: "0", max: "36", value: "18", placeholder: "To token decimals" }),
+            ]),
+            el("div", { class: "input_container", style: "gap:4px;" }, [
+                el("label", { for: "txtSwapOfflineDeadline", class: "heading small", "data-lang-key": "offline-deadline" }, ["Deadline (Unix timestamp)"]),
+                el("input", { id: "txtSwapOfflineDeadline", class: "tab-name qs-input", type: "number", min: "1", placeholder: "Deadline (Unix timestamp)" }),
+            ]),
         ]),
         el("div", { style: "display: flex; align-items: center; justify-content: flex-end; gap: 10px;margin-top:10px;" }, [
             el("div", { id: "divSwapQuoteLoading", style: "display: none;" }, [

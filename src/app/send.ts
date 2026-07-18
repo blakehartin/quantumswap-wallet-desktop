@@ -103,11 +103,13 @@ export function getSendTxContext(): TxContext {
 }
 
 export function onSendGasIconClick(): boolean {
-    return onGasIconClick("spanSendGasFee", null, getSendTxContext);
+    return onGasIconClick("spanSendGasFee", null, getSendTxContext, "btnSendCoins");
 }
 
 export function scheduleSendGasEstimation(): void {
     scheduleGasEstimation(getSendTxContext, "divSendGasIcon", "spanSendGasFee", null, function (errorDetail) {
+        // Offline mode: never toast gas-estimation failures (silent SDK fallback).
+        if (settingsStore.offlineSignEnabled === true) return;
         const base = (langJson && langJson.errors && langJson.errors.gasEstimateError)
             ? langJson.errors.gasEstimateError
             : "Could not fetch the gas fee from the network. Using the default estimate.";
@@ -115,7 +117,7 @@ export function scheduleSendGasEstimation(): void {
         // renders via textContent so any HTML in it is sanitized (not parsed).
         const message = errorDetail ? (base + " (" + errorDetail + ")") : base;
         showTransientToast(message, 4000);
-    });
+    }, "btnSendCoins");
 }
 
 export function resetTokenList(): void {
@@ -247,7 +249,7 @@ export async function updateInfoSendScreen(preserveGas = false): Promise<boolean
     const ddlCoinTokenToSend = selectById("ddlCoinTokenToSend");
     const selectedValue = ddlCoinTokenToSend.value;
     if (!preserveGas && byId("SendScreen").style.display === "block") {
-        resetCurrentGasConfig();
+        resetCurrentGasConfig(undefined, "btnSendCoins");
         setGasFeeLabel("spanSendGasFee", "");
     }
     byId("divCoinTokenToSend").textContent = "";
@@ -319,7 +321,7 @@ export async function showSendScreen(): Promise<boolean> {
     inputById("txtSendQuantity").value = "";
     inputById("txtSendAddress").focus();
 
-    resetCurrentGasConfig();
+    resetCurrentGasConfig(undefined, "btnSendCoins");
     attachSendGasListeners();
     setGasFeeLabel("spanSendGasFee", "");
     scheduleSendGasEstimation();

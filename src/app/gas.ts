@@ -2,12 +2,13 @@
 // of the old src/js/app.js.
 import { base64ToBytes } from "../lib/crypto";
 import { estimateGas, estimateGasFee } from "../lib/bridge";
-import { byId, GasState, networkStore, TxContext, walletStore } from "./state";
+import { byId, GasState, networkStore, settingsStore, TxContext, walletStore } from "./state";
 import { showGasConfigDialog } from "./dialog";
 import { advancedSigningGetDefaultValue } from "./settings";
 import { applySwapReleaseToPayload } from "./release";
+import { computeSdkGasFeeEth, CRUDE_GAS_FEE_RATE } from "./gas-fee-core";
 
-export const SWAP_GAS_FEE_RATE = 1000 / 21000;
+export const SWAP_GAS_FEE_RATE = CRUDE_GAS_FEE_RATE;
 
 export const GAS_ESTIMATE_BUFFER_PERCENT = 10;
 export const GAS_NO_BUFFER_PERCENT = 0;
@@ -79,7 +80,30 @@ export function setGasIconPulse(iconId: string, pulsing: boolean): void {
     }
 }
 
-export function resetCurrentGasConfig(state?: GasState): void {
+// Gate a transactional action button on gas readiness. The button stays
+// disabled while an online gas estimate is pending and no value has loaded
+// yet, so a user cannot submit before the fee is known. Offline mode and an
+// explicit user override (manual gas dialog) bypass the gate.
+export function setActionButtonGasReady(actionButtonId: string | null | undefined, state?: GasState | null): void {
+    if (!actionButtonId) return;
+    const btn = byId(actionButtonId);
+    if (!btn) return;
+    const s = state || currentGasConfig;
+    const offline = settingsStore.offlineSignEnabled === true;
+    const ready = offline || s.overridden || (s.gasLimit != null && s.gasFee != null);
+    btn.setAttribute("aria-disabled", ready ? "false" : "true");
+    if (ready) {
+        btn.removeAttribute("disabled");
+        btn.style.opacity = "";
+        btn.style.pointerEvents = "";
+    } else {
+        btn.setAttribute("disabled", "disabled");
+        btn.style.opacity = "0.55";
+        btn.style.pointerEvents = "none";
+    }
+}
+
+export function resetCurrentGasConfig(state?: GasState, actionButtonId?: string | null): void {
     const s = state || currentGasConfig;
     s.gasLimit = null;
     s.gasFee = null;
@@ -87,13 +111,46 @@ export function resetCurrentGasConfig(state?: GasState): void {
     if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
     gasEstimateToken++;
     s._token = gasEstimateToken;
+    setActionButtonGasReady(actionButtonId, state);
+}
+
+/** Sync SDK-aware Q fee for a gas limit (advanced signing / keyType aware). */
+export function computeLocalGasFeeQSync(gasLimit: number, fullSign?: boolean): number {
+    const keyType = getWalletKeyType();
+    return computeSdkGasFeeEth(gasLimit, keyType, fullSign === true);
+}
+
+/** Prefer IPC estimateGasFee (local getFeeData); fall back to sync SDK mirror. */
+export async function computeLocalGasFeeQ(gasLimit: number): Promise<number> {
+    const fullSign = await advancedSigningGetDefaultValue();
+    const keyType = getWalletKeyType();
+    const network = networkStore.currentBlockchainNetwork;
+    if (network) {
+        try {
+            const feeRes = await estimateGasFee({
+                rpcEndpoint: network.rpcEndpoint,
+                chainId: parseInt(String(network.networkId), 10),
+                gasLimit: String(gasLimit),
+                keyType,
+                fullSign: fullSign === true,
+            });
+            if (feeRes && feeRes.gasFeeEth != null) {
+                const n = parseFloat(String(feeRes.gasFeeEth));
+                if (Number.isFinite(n)) return n;
+            }
+        } catch {
+            /* use sync SDK mirror */
+        }
+    }
+    return computeSdkGasFeeEth(gasLimit, keyType, fullSign === true);
 }
 
 // Compute the offline/default gas config from a hardcoded gas-limit constant.
-export function applyOfflineGasConfig(defaultGasLimit: number, labelId: string | null, state?: GasState): void {
+// Uses the sync SDK fee mirror so a value is present immediately (advanced-signing aware).
+export function applyOfflineGasConfig(defaultGasLimit: number, labelId: string | null, state?: GasState, fullSign?: boolean): void {
     const s = state || currentGasConfig;
     const gasLimit = defaultGasLimit;
-    const gasFee = (gasLimit * SWAP_GAS_FEE_RATE);
+    const gasFee = computeLocalGasFeeQSync(gasLimit, fullSign);
     s.gasLimit = String(gasLimit);
     s.gasFee = String(gasFee);
     s.overridden = false;
@@ -213,7 +270,7 @@ export async function estimateGasForContext(ctx: TxContext): Promise<PerTransact
     }
 
     if (gasFee == null) {
-        gasFee = String(Number(gasLimit) * SWAP_GAS_FEE_RATE);
+        gasFee = String(computeSdkGasFeeEth(Number(gasLimit), keyType, fullSign === true));
         usedFallback = true;
     }
     const limitNumber = Number(gasLimit);
@@ -227,35 +284,72 @@ export async function estimateGasForContext(ctx: TxContext): Promise<PerTransact
     };
 }
 
+function applyEagerOfflineFallback(
+    ctx: TxContext,
+    s: GasState,
+    labelId: string | null,
+    actionButtonId: string | null | undefined,
+    fullSign?: boolean,
+): void {
+    if (!ctx.defaultGasLimit) return;
+    applyOfflineGasConfig(ctx.defaultGasLimit, labelId, s, fullSign);
+    setActionButtonGasReady(actionButtonId, s);
+}
+
 // Schedule a debounced gas estimation. `ctxProvider` returns the tx context (or null to skip),
 // `iconId`/`labelId` identify the UI elements. `state` is the gas-state object to update
-// (defaults to the global currentGasConfig). Respects offline mode (no network lookup).
-// `onRpcError` (optional) is invoked once if the network gas-price lookup fails (RPC error).
-export function scheduleGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: (msg: string | null) => void): void {
+// (defaults to the global currentGasConfig).
+// Offline mode: eagerly populate SDK-aware fallbacks, then optionally upgrade via RPC.
+// Online mode: clear label while estimating; toast on failure via onRpcError.
+// `actionButtonId` (optional) is the transactional action button to disable while gas is pending (online only).
+export function scheduleGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null, actionButtonId?: string | null): void {
     const s = state || currentGasConfig;
     if (gasEstimateTimerId) { clearTimeout(gasEstimateTimerId); gasEstimateTimerId = null; }
     gasEstimateToken++;
     s._token = gasEstimateToken;
+    const offline = settingsStore.offlineSignEnabled === true;
     if (!s.overridden) {
-        setGasIconPulse(iconId, true);
-        if (labelId) setGasFeeLabel(labelId, "");
+        if (offline) {
+            const ctx = (typeof ctxProvider === "function") ? ctxProvider() : ctxProvider;
+            if (ctx && ctx.txKind && ctx.defaultGasLimit) {
+                // Sync eager value first (compact until advanced-signing flag loads).
+                applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, false);
+                void advancedSigningGetDefaultValue().then((fullSign) => {
+                    if (s._token !== gasEstimateToken || s.overridden) return;
+                    applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+                });
+            }
+            setGasIconPulse(iconId, true);
+        } else {
+            setGasIconPulse(iconId, true);
+            if (labelId) setGasFeeLabel(labelId, "");
+        }
     }
+    setActionButtonGasReady(actionButtonId, state);
     gasEstimateTimerId = setTimeout(function () {
         gasEstimateTimerId = null;
-        runGasEstimation(ctxProvider, iconId, labelId, state, onRpcError);
+        runGasEstimation(ctxProvider, iconId, labelId, state, onRpcError, actionButtonId);
     }, GAS_ESTIMATE_DEBOUNCE_MS);
 }
 
-export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: (msg: string | null) => void): Promise<void> {
+export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: string, labelId: string | null, state?: GasState | null, onRpcError?: ((msg: string | null) => void) | null, actionButtonId?: string | null): Promise<void> {
     const s = state || currentGasConfig;
     const myToken = s._token;
+    const offline = settingsStore.offlineSignEnabled === true;
     const ctx = (typeof ctxProvider === "function") ? ctxProvider() : ctxProvider;
     if (!ctx || !ctx.txKind || !networkStore.currentBlockchainNetwork) {
+        if (offline) {
+            // Keep any eager fallback; do not wipe gas or toast.
+            setGasIconPulse(iconId, false);
+            setActionButtonGasReady(actionButtonId, state);
+            return;
+        }
         if (labelId) setGasFeeLabel(labelId, "");
         setGasIconPulse(iconId, false);
         s.gasLimit = null;
         s.gasFee = null;
         s.overridden = false;
+        setActionButtonGasReady(actionButtonId, state);
         return;
     }
 
@@ -263,11 +357,19 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
         // User has manually overridden; keep their values until context actually changes.
         if (labelId) setGasFeeLabel(labelId, s.gasFee);
         setGasIconPulse(iconId, false);
+        setActionButtonGasReady(actionButtonId, state);
         return;
     }
 
+    if (offline && ctx.defaultGasLimit && (s.gasLimit == null || s.gasFee == null)) {
+        const fullSign = await advancedSigningGetDefaultValue();
+        if (myToken !== s._token) return;
+        applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+    }
+
     setGasIconPulse(iconId, true);
-    if (labelId) setGasFeeLabel(labelId, "");
+    if (!offline && labelId) setGasFeeLabel(labelId, "");
+    setActionButtonGasReady(actionButtonId, state);
     try {
         const result = await estimateGasForContext(ctx);
         if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
@@ -278,16 +380,30 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
             if (labelId) setGasFeeLabel(labelId, s.gasFee);
         }
         setGasIconPulse(iconId, false);
-        if (result.usedFallback && typeof onRpcError === "function") {
+        setActionButtonGasReady(actionButtonId, state);
+        // Offline: never toast on gas estimation failures; keep/upgrade silently.
+        if (!offline && result.usedFallback && typeof onRpcError === "function") {
             onRpcError(result.error);
         }
     } catch (e: any) {
         if (myToken !== s._token) { setGasIconPulse(iconId, false); return; }
+        if (offline) {
+            // Keep eager fallback; refine fee via local SDK if we only have a limit.
+            if (!s.overridden && ctx.defaultGasLimit) {
+                const fullSign = await advancedSigningGetDefaultValue();
+                if (myToken !== s._token) return;
+                applyEagerOfflineFallback(ctx, s, labelId, actionButtonId, fullSign === true);
+            }
+            setGasIconPulse(iconId, false);
+            setActionButtonGasReady(actionButtonId, state);
+            return;
+        }
         s.gasLimit = null;
         s.gasFee = null;
         s.overridden = false;
         if (labelId) setGasFeeLabel(labelId, "");
         setGasIconPulse(iconId, false);
+        setActionButtonGasReady(actionButtonId, state);
         if (typeof onRpcError === "function") {
             onRpcError((e && e.message) ? String(e.message) : String(e));
         }
@@ -298,7 +414,8 @@ export async function runGasEstimation(ctxProvider: TxContextProvider, iconId: s
 // `ctxProvider` (optional) is used to gate the offline-default pre-apply: the default
 // fee is only applied when the tx context is valid (inputs present), so no fee is
 // shown before the required quantity/inputs have been entered.
-export function onGasIconClick(labelId: string, state?: GasState | null, ctxProvider?: () => TxContext | null): boolean {
+// `actionButtonId` (optional) is re-enabled once the user confirms a manual override.
+export function onGasIconClick(labelId: string, state?: GasState | null, ctxProvider?: () => TxContext | null, actionButtonId?: string | null): boolean {
     const s = state || currentGasConfig;
     if (s.gasLimit == null && typeof ctxProvider === "function") {
         const ctx = ctxProvider();
@@ -320,6 +437,7 @@ export function onGasIconClick(labelId: string, state?: GasState | null, ctxProv
             s.gasFee = String(result.gasFee);
             s.overridden = true;
             if (labelId) setGasFeeLabel(labelId, s.gasFee);
+            setActionButtonGasReady(actionButtonId, state);
         },
     });
     return false;
@@ -331,16 +449,28 @@ export function resolveGasForTx(defaultGasLimit: number, state?: GasState | null
     if (s.gasLimit != null && s.gasLimit !== "") {
         const gl = parseInt(s.gasLimit, 10);
         if (!isNaN(gl) && gl > 0) {
-            const fee = s.gasFee != null ? s.gasFee : (gl * SWAP_GAS_FEE_RATE);
+            const fee = s.gasFee != null ? s.gasFee : computeLocalGasFeeQSync(gl);
             return { gasLimit: String(gl), gasFee: formatGasFeeQ(fee) };
         }
     }
     return {
         gasLimit: String(defaultGasLimit),
-        gasFee: formatGasFeeQ(defaultGasLimit * SWAP_GAS_FEE_RATE),
+        gasFee: formatGasFeeQ(computeLocalGasFeeQSync(defaultGasLimit)),
     };
 }
 
 // Swap gas defaults (offline / network-failure fallbacks).
 export const SWAP_DEFAULT_GAS = 200000;
 export const APPROVE_DEFAULT_GAS = 84000;
+
+/** Offline submit helper: try RPC estimate, else keep defaultGasLimit (never throws). */
+export async function estimateGasLimitOfflineSafe(ctx: TxContext): Promise<number> {
+    const fallback = ctx.defaultGasLimit || 0;
+    try {
+        const result = await estimateGasForContext(ctx);
+        const n = parseInt(String(result.gasLimit), 10);
+        return (!isNaN(n) && n > 0) ? n : fallback;
+    } catch {
+        return fallback;
+    }
+}

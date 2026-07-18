@@ -85,6 +85,7 @@ import { openSwapScreen } from "./swap";
 import { swapReleasesInit, swapReleasesLoadAll } from "../lib/release";
 import { refreshCurrentSwapRelease, setCustomReleaseBannerAllowed } from "./release";
 import { setTokenListLoading } from "./token-list-state";
+import { offlineTxnSigningGetDefaultValue } from "./settings";
 
 export function checkDuplicateIds(): void {
     const nodes = document.querySelectorAll("[id]");
@@ -122,6 +123,9 @@ export async function initApp(): Promise<void> {
     }
 
     walletStore.STORAGE_PATH = await storageGetPath();
+    // Hydrate offline-signing before any wallet/home balance refresh so
+    // connectivity alerts can be suppressed in offline mode.
+    await offlineTxnSigningGetDefaultValue();
 
     // Capture the row templates before any screen mutates them (the old app
     // captured outerHTML strings here).
@@ -926,6 +930,7 @@ export async function showWalletScreen(): Promise<boolean> {
     setHeaderBand("home");
     byId("walletAddress").textContent = walletStore.currentWalletAddress;
 
+    await offlineTxnSigningGetDefaultValue();
     initRefreshAccountBalanceBackground();
 
     return false;
@@ -1570,7 +1575,19 @@ export async function checkAndAddNetwork(): Promise<void> {
     }
 }
 
-export async function refreshAccountBalance(): Promise<void> {
+// Offline mode: suppress connectivity alerts for automatic/background balance
+// loads. Pass manualRefresh=true from the home refresh control so the user still
+// sees "server might be busy / internet" when they explicitly ask.
+async function shouldAlertConnectivityFailure(manualRefresh: boolean): Promise<boolean> {
+    if (manualRefresh) {
+        return true;
+    }
+    // Re-read storage: settingsStore may still be false if home opened before hydrate.
+    const offline = await offlineTxnSigningGetDefaultValue();
+    return offline !== true;
+}
+
+export async function refreshAccountBalance(manualRefresh = false): Promise<void> {
     try {
         if (walletStore.isRefreshingBalance == true) {
             return;
@@ -1609,6 +1626,9 @@ export async function refreshAccountBalance(): Promise<void> {
         byId("divLoadingBalance").style.display = "none";
         walletStore.isRefreshingBalance = false;
         setTokenListLoading(false);
+        if (!(await shouldAlertConnectivityFailure(manualRefresh))) {
+            return;
+        }
         if (isNetworkError(error)) {
             showWarnAlert(langJson.errors.internetDisconnected);
         } else {
@@ -1798,10 +1818,13 @@ export async function refreshAccountBalanceBackground(): Promise<void> {
 
         if (walletStore.isFirstTimeAccountRefresh == true) { //Show error only when wallet screen displayed first time after the app is opened
             walletStore.isFirstTimeAccountRefresh = false;
-            if (isNetworkError(error)) {
-                showWarnAlert(langJson.errors.internetDisconnected);
-            } else {
-                showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+            // Offline mode: first-time background refresh must stay silent.
+            if (await shouldAlertConnectivityFailure(false)) {
+                if (isNetworkError(error)) {
+                    showWarnAlert(langJson.errors.internetDisconnected);
+                } else {
+                    showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+                }
             }
         }
     }
@@ -1864,7 +1887,7 @@ export function getTokenBalance(contactAddress: string): string | null {
     return null;
 }
 
-export async function showTransactionsScreen(): Promise<boolean> {
+export async function showTransactionsScreen(manualRefresh = false): Promise<boolean> {
     byId("HomeScreen").style.display = "none";
     byId("TransactionsScreen").style.display = "block";
     setHeaderBand("compact");
@@ -1874,7 +1897,7 @@ export async function showTransactionsScreen(): Promise<boolean> {
 
     removeAllChildren(byId("tbodyComplextedTransactions"));
     txnStore.currentTxnPageIndex = 0;
-    await refreshTransactionList();
+    await refreshTransactionList(manualRefresh);
 
     return false;
 }
@@ -1886,11 +1909,11 @@ export function showSwapScreen(): boolean {
     return false;
 }
 
-export async function refreshTransactionList(): Promise<void> {
-    return await refreshTransactionListWithContext(false);
+export async function refreshTransactionList(manualRefresh = false): Promise<void> {
+    return await refreshTransactionListWithContext(false, manualRefresh);
 }
 
-export async function refreshTransactionListWithContext(isPrev: boolean): Promise<void> {
+export async function refreshTransactionListWithContext(isPrev: boolean, manualRefresh = false): Promise<void> {
     try {
         byId("divTxnRefreshStatus").style.display = "none";
         byId("divTxnLoadingStatus").style.display = "block";
@@ -1908,10 +1931,12 @@ export async function refreshTransactionListWithContext(isPrev: boolean): Promis
         byId("divTxnRefreshStatus").focus();
     }
     catch (error: any) {
-        if (isNetworkError(error)) {
-            showWarnAlert(langJson.errors.internetDisconnected);
-        } else {
-            showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+        if (await shouldAlertConnectivityFailure(manualRefresh)) {
+            if (isNetworkError(error)) {
+                showWarnAlert(langJson.errors.internetDisconnected);
+            } else {
+                showWarnAlert(langJson.errors.invalidApiResponse + " " + error);
+            }
         }
 
         setTimeout(() => {

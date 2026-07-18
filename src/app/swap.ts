@@ -32,11 +32,25 @@ import {
     APPROVE_DEFAULT_GAS,
     SWAP_DEFAULT_GAS,
     SWAP_GAS_FEE_RATE,
+    computeLocalGasFeeQ,
     estimateGasForContext,
+    estimateGasLimitOfflineSafe,
     formatGasFeeQ,
 } from "./gas";
 import { ReviewedTxStepDefinition, requireTxHash, showReviewThenSteps } from "./txflow";
 import { createSwapReviewQuantities, createSwapSuccessAmounts, createSwapWorkflowStepPlan } from "./swap-flow";
+import { showTxStepsDialog, TxStepDefinition, TxStepGasEstimate } from "./txsteps";
+
+// In offline mode, RPC quote/pair checks fail with native "fetch failed" errors.
+// These are expected (the user is offline) and must not surface as alerts.
+function isOfflineMode(): boolean {
+    return settingsStore.offlineSignEnabled === true;
+}
+
+function showSwapNetworkError(e: any): void {
+    if (isOfflineMode()) return;
+    showWarnAlert((e && e.message) ? e.message : String(e));
+}
 import { showTransactionReviewDialog, showWarnAlert, txReviewNetworkText } from "./dialog";
 import { OpenScanTxn, refreshAccountBalance, removeOptions, setHeaderBand, showWalletScreen } from "./app";
 import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
@@ -49,8 +63,8 @@ import {
     setTokenPickerTriggerText,
 } from "./token-picker";
 import { offlineTxnSigningGetDefaultValue } from "./settings";
-import { amountAfterSlippage, offlineDeadline, prepareOfflineDefaults, signOfflineBundle, OfflineBundleStep } from "./offline-flow";
-import { buildOfflineSwapPath } from "./offline-flow-core";
+import { amountAfterSlippage, offlineDeadline, prepareOfflineDefaults, signOfflineStep, OfflineBundleStep } from "./offline-flow";
+import { buildOfflineSwapPath, nextOfflineNonce } from "./offline-flow-core";
 
 export const SWAP_SHOW_NATIVE_COIN = false;
 
@@ -456,14 +470,14 @@ export async function updateToQuantityFromFrom(): Promise<void> {
             const outStr = String(result.amountOut).replace(/\.?0+$/, "") || result.amountOut;
             inputById("txtSwapToQuantity").value = outStr;
         } else {
-            inputById("txtSwapToQuantity").value = "";
+            if (!isOfflineMode()) inputById("txtSwapToQuantity").value = "";
             if (result && !result.success && result.error) {
-                showWarnAlert(result.error);
+                if (!isOfflineMode()) showWarnAlert(result.error);
             }
         }
     } catch (e: any) {
-        inputById("txtSwapToQuantity").value = "";
-        showWarnAlert((e && e.message) ? e.message : String(e));
+        if (!isOfflineMode()) inputById("txtSwapToQuantity").value = "";
+        showSwapNetworkError(e);
     } finally {
         showSwapQuoteLoading(false);
         swapQuantityUpdating = false;
@@ -513,14 +527,14 @@ export async function updateFromQuantityFromTo(): Promise<void> {
             const inStr = String(result.amountIn).replace(/\.?0+$/, "") || result.amountIn;
             inputById("txtSwapFromQuantity").value = inStr;
         } else {
-            inputById("txtSwapFromQuantity").value = "";
+            if (!isOfflineMode()) inputById("txtSwapFromQuantity").value = "";
             if (result && !result.success && result.error) {
-                showWarnAlert(result.error);
+                if (!isOfflineMode()) showWarnAlert(result.error);
             }
         }
     } catch (e: any) {
-        inputById("txtSwapFromQuantity").value = "";
-        showWarnAlert((e && e.message) ? e.message : String(e));
+        if (!isOfflineMode()) inputById("txtSwapFromQuantity").value = "";
+        showSwapNetworkError(e);
     } finally {
         showSwapQuoteLoading(false);
         swapQuantityUpdating = false;
@@ -563,14 +577,14 @@ export async function updateSwapScreenInfo(): Promise<boolean> {
             updateSwapRoutePathDisplay(buildSwapRouteFromCheckResult(result));
         } else {
             if (result && result.error) {
-                showWarnAlert(result.error);
+                if (!isOfflineMode()) showWarnAlert(result.error);
             } else {
                 showWarnAlert((langJson && langJson.langValues && langJson.langValues["swap-no-pair"]) || "No swap route exists between these two tokens (max 3 hops)");
             }
             inputById("txtSwapToQuantity").value = "";
         }
     } catch (e: any) {
-        showWarnAlert((e && e.message) ? e.message : String(e));
+        showSwapNetworkError(e);
         inputById("txtSwapToQuantity").value = "";
     }
     if (pairExists) {
@@ -599,10 +613,6 @@ export async function openSwapScreen(): Promise<boolean> {
     settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
     byId("divSwapOfflineOptions").style.display = settingsStore.offlineSignEnabled ? "block" : "none";
     inputById("txtSwapOfflineDeadline").value = offlineDeadline();
-    if (settingsStore.offlineSignEnabled) {
-        const prepared = await prepareOfflineDefaults();
-        inputById("txtSwapOfflineDeadline").value = prepared.deadline;
-    }
     updateSwapRoutePathDisplay(null);
     inputById("txtSwapFromQuantity").focus();
     updateSwapBalanceLabels();
@@ -624,54 +634,43 @@ async function signSwapOffline(
     const fromDecimals = Number(inputById("txtSwapOfflineFromDecimals").value || getSwapTokenDecimals(fromValue));
     const toDecimals = Number(inputById("txtSwapOfflineToDecimals").value || getSwapTokenDecimals(toValue));
     const deadline = inputById("txtSwapOfflineDeadline").value || offlineDeadline();
-    const intermediates = (inputById("txtSwapOfflineIntermediatePath").value || "")
-        .split(",").map((value) => value.trim()).filter(Boolean);
-    let path = buildOfflineSwapPath(mappedOfflineToken(fromValue), mappedOfflineToken(toValue), intermediates);
-    if (intermediates.length === 0 && swapCurrentRoute && swapCurrentRoute.length >= 2) {
-        path = swapCurrentRoute.map((entry) => entry.address);
-    }
-    let approvalGas = Number(inputById("txtSwapOfflineApprovalGas").value) || APPROVE_DEFAULT_GAS;
-    let swapGas = Number(inputById("txtSwapOfflineGas").value) || SWAP_DEFAULT_GAS;
-    if (approvalGas === APPROVE_DEFAULT_GAS && fromValue !== "Q") {
-        approvalGas = Number((await estimateGasForContext({
-            txKind: "approve", fromTokenValue: fromValue, amount: fromQty,
-            fromDecimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
-        })).gasLimit);
-    }
-    if (swapGas === SWAP_DEFAULT_GAS) {
-        swapGas = Number((await estimateGasForContext({
-            txKind: "swap", fromTokenValue: fromValue, toTokenValue: toValue,
-            amountIn: fromQty, amountOut: toQty, lastChanged: "from", slippagePercent,
-            fromDecimals, toDecimals, recipientAddress: walletStore.currentWalletAddress,
-            defaultGasLimit: SWAP_DEFAULT_GAS,
-        })).gasLimit);
-    }
-    const steps: OfflineBundleStep[] = [];
+    const path = swapCurrentRoute && swapCurrentRoute.length >= 2
+        ? swapCurrentRoute.map((entry) => entry.address)
+        : buildOfflineSwapPath(mappedOfflineToken(fromValue), mappedOfflineToken(toValue), []);
+    const stepDefinitions: TxStepDefinition[] = [];
+    const stepKinds: Array<"approve" | "swap"> = [];
     if (fromValue !== "Q") {
-        steps.push({
-            kind: "approve",
+        stepKinds.push("approve");
+        stepDefinitions.push({
             label: (langJson.langValues["step-approve"] || "Approve") + " " + getSwapCachedSymbol(fromValue),
-            gasLimit: approvalGas,
-            data: { tokenAddress: fromValue },
+            prepare: async () => {
+                const gasLimit = await estimateGasLimitOfflineSafe({
+                    txKind: "approve", fromTokenValue: fromValue, amount: fromQty,
+                    fromDecimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
+                });
+                const gasFee = await computeLocalGasFeeQ(gasLimit);
+                return { gasLimit: String(gasLimit), gasFee: String(gasFee), feePerGas: gasFee / gasLimit };
+            },
         });
     }
-    steps.push({
-        kind: "swap",
+    stepKinds.push("swap");
+    stepDefinitions.push({
         label: langJson.langValues.swap || "Swap",
-        gasLimit: swapGas,
-        data: {
-            path,
-            amountIn: fromQty,
-            amountOutMin: amountAfterSlippage(toQty, toDecimals, slippagePercent),
-            fromDecimals,
-            toDecimals,
-            recipientAddress: walletStore.currentWalletAddress,
-            deadline,
+        prepare: async (): Promise<TxStepGasEstimate> => {
+            const gasLimit = await estimateGasLimitOfflineSafe({
+                txKind: "swap", fromTokenValue: fromValue, toTokenValue: toValue,
+                amountIn: fromQty, amountOut: toQty, lastChanged: swapLastChanged || "from", slippagePercent,
+                fromDecimals, toDecimals, recipientAddress: walletStore.currentWalletAddress,
+                defaultGasLimit: SWAP_DEFAULT_GAS,
+            });
+            const gasFee = await computeLocalGasFeeQ(gasLimit);
+            return { gasLimit: String(gasLimit), gasFee: String(gasFee), feePerGas: gasFee / gasLimit };
         },
     });
-    const prepared = await prepareOfflineDefaults();
     const fromSymbol = getSwapCachedSymbol(fromValue);
     const toSymbol = getSwapCachedSymbol(toValue);
+    const prepared = await prepareOfflineDefaults();
+    let nextNonce = prepared.nonce;
     const reviewQuantities = createSwapReviewQuantities(
         fromValue,
         fromQty,
@@ -680,22 +679,83 @@ async function signSwapOffline(
         amountAfterSlippage(toQty, toDecimals, slippagePercent),
         toSymbol,
     );
-    showTransactionReviewDialog({
-        asset: fromSymbol + " -> " + toSymbol,
-        fromTokenContractAddress: fromValue,
-        toTokenContractAddress: toValue,
-        fromAddress: walletStore.currentWalletAddress,
-        toAddress: currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router,
-        quantityValue: reviewQuantities.quantityValue,
-        tokenQuantityValue: reviewQuantities.tokenQuantityValue,
-        gasLimit: steps.map((step) => step.gasLimit).join(" + "),
-        gasFee: "",
-        nonce: prepared.nonce,
-        requireNonce: true,
-        requirePassword: true,
-        networkText: txReviewNetworkText(),
-        submitLabelKey: "sign-offline",
-        onSubmit: (submission) => signOfflineBundle(steps, submission),
+    showTxStepsDialog({
+        title: langJson.langValues.swap || "Swap",
+        steps: stepDefinitions,
+        configurationOnly: true,
+        onConfigureStep: async (index, selection) => {
+            const isApproval = stepKinds[index] === "approve";
+            const step: OfflineBundleStep = isApproval
+                ? {
+                    kind: "approve",
+                    label: stepDefinitions[index].label,
+                    gasLimit: selection.gasLimit,
+                    data: { tokenAddress: fromValue },
+                }
+                : {
+                    kind: "swap",
+                    label: stepDefinitions[index].label,
+                    gasLimit: selection.gasLimit,
+                    data: {
+                        path,
+                        amountIn: fromQty,
+                        amountOutMin: amountAfterSlippage(toQty, toDecimals, slippagePercent),
+                        fromDecimals,
+                        toDecimals,
+                        recipientAddress: walletStore.currentWalletAddress,
+                        deadline,
+                    },
+                };
+            return await new Promise<boolean>((resolve) => {
+                let settled = false;
+                const settle = (completed: boolean): void => {
+                    if (settled) return;
+                    settled = true;
+                    resolve(completed);
+                };
+                const commonReview = {
+                    fromAddress: walletStore.currentWalletAddress,
+                    gasLimit: String(selection.gasLimit),
+                    gasFee: formatGasFeeQ(selection.gasFee),
+                    nonce: nextNonce,
+                    requireNonce: true,
+                    requirePassword: true,
+                    networkText: txReviewNetworkText(),
+                    submitLabelKey: "sign-offline",
+                    onCancel: () => settle(false),
+                    onSubmit: async (submission: { password: string; startingNonce: number | null }) => {
+                        if (submission.startingNonce == null) return false;
+                        const usedNonce = submission.startingNonce;
+                        return await signOfflineStep(step, submission, () => {
+                            nextNonce = nextOfflineNonce(usedNonce);
+                            settle(true);
+                        });
+                    },
+                };
+                if (isApproval) {
+                    showTransactionReviewDialog({
+                        ...commonReview,
+                        asset: stepDefinitions[index].label,
+                        fromTokenContractAddress: fromValue,
+                        toAddress: fromValue,
+                        quantityLabelKey: "send-quantity",
+                        quantityValue: "0",
+                        tokenQuantityLabelKey: "approval-token-quantity",
+                        tokenQuantityValue: fromQty + " " + fromSymbol,
+                    });
+                } else {
+                    showTransactionReviewDialog({
+                        ...commonReview,
+                        asset: fromSymbol + " -> " + toSymbol,
+                        fromTokenContractAddress: fromValue,
+                        toTokenContractAddress: toValue,
+                        toAddress: currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router,
+                        quantityValue: reviewQuantities.quantityValue,
+                        tokenQuantityValue: reviewQuantities.tokenQuantityValue,
+                    });
+                }
+            });
+        },
     });
     return false;
 }
