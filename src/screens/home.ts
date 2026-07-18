@@ -15,16 +15,19 @@ import {
 } from "../app/app";
 import { showSendScreen } from "../app/send";
 
-function actionButton(label: string, langKey: string, tabindex: string, buttonStyle: string, buttonClass: string, iconSrc: string, action: () => unknown, nameProps: Record<string, string> = {}): HTMLElement {
+function actionButton(label: string, langKey: string, tabindex: string, buttonStyle: string, buttonClass: string, iconSrc: string, action: () => unknown, nameProps: Record<string, string> = {}, iconSize = "30px"): HTMLElement {
     return el("div", { class: "buttonBox", role: "button", tabindex, onclick: () => { void action(); } }, [
         el("div", { class: buttonClass, style: buttonStyle }, [
-            el("img", { src: iconSrc, alt: label, style: "width: 30px; height: 30px; position: relative; top: 50%; transform: translateY(-50%);" }),
+            el("img", { src: iconSrc, alt: label, style: "width:" + iconSize + ";height:" + iconSize + ";position:relative;top:50%;transform:translateY(-50%);" }),
         ]),
         el("div", { class: "button-name", "data-lang-key": langKey, ...nameProps }, [label]),
     ]);
 }
 
 function buildHomeScreen(): HTMLElement {
+    const quantumTheme = document.body.classList.contains("theme-quantum");
+    const quantumButtonStyle = "border-radius:10px;align-self:center;min-height:50px;min-width:50px;";
+    const legacyAssetStyle = "background:transparent !important;border-radius:10px;align-self:center;min-height:50px;min-width:50px;";
     return el("div", { class: "center-content home-content", id: "HomeScreen" }, [
         el("div", { class: "center-content-rounded-container" }, [
             el("div", { class: "roundex-box boxeffect" }, [
@@ -34,7 +37,7 @@ function buildHomeScreen(): HTMLElement {
                 el("div", { style: "display: flex; flex-direction: row; height: 40px; justify-content: center;" }, [
                     el("div", { class: "copy-container", role: "button", tabindex: "1", onclick: () => { void copyAddress(); } }),
                     el("div", { class: "scan-container", role: "button", style: "margin-left:15px;margin-top:-2px;", tabindex: "2", onclick: () => { void openBlockExplorerAccount(); } }),
-                    el("div", { class: "refresh-container", role: "button", style: "margin-left:15px;", id: "divRefreshBalance", tabindex: "3", onclick: () => { void refreshAccountBalance(); } }),
+                    el("div", { class: "refresh-container", role: "button", style: "margin-left:15px;", id: "divRefreshBalance", tabindex: "3", onclick: () => { void refreshAccountBalance(true); } }),
                     el("div", { style: "float: left; width: 30px; height: 30px; margin-left:15px;", id: "divLoadingBalance" }, [
                         el("img", { src: "assets/icons/loading.gif", style: "width:30px;height:30px" }),
                     ]),
@@ -48,9 +51,9 @@ function buildHomeScreen(): HTMLElement {
                 ]),
                 el("div", { class: "divider", style: "margin-top: -25px;" }),
                 el("div", { class: "buttons-container" }, [
-                    actionButton("Send", "send", "3", "background: #FFB400 !important; border-radius: 10px; align-self: center; min-height: 50px; min-width: 50px; ", "button", "assets/svg/arrow-up-outline.svg", showSendScreen),
-                    actionButton("Receive", "receive", "4", "background: #1DCC70 !important; border-radius: 10px; align-self: center; min-height: 50px; min-width: 50px; ", "button", "assets/svg/arrow-down-outline.svg", showReceiveScreen, { role: "button" }),
-                    actionButton("Transactions", "transactions", "5", "background: #55D0F0 !important; border-radius: 10px; align-self: center; min-height: 50px; min-width: 50px; ", "button", "assets/svg/txn-outline.svg", showTransactionsScreen),
+                    actionButton("Send", "send", "3", quantumTheme ? quantumButtonStyle : legacyAssetStyle, "button", quantumTheme ? "assets/svg/arrow-up-outline.svg" : "assets/svg/send.svg", showSendScreen, {}, quantumTheme ? "30px" : "48px"),
+                    actionButton("Receive", "receive", "4", quantumTheme ? quantumButtonStyle : legacyAssetStyle, "button", quantumTheme ? "assets/svg/arrow-down-outline.svg" : "assets/svg/receive.svg", showReceiveScreen, { role: "button" }, quantumTheme ? "30px" : "48px"),
+                    actionButton("Transactions", "transactions", "5", quantumTheme ? quantumButtonStyle : legacyAssetStyle, "button", quantumTheme ? "assets/svg/txn-outline.svg" : "assets/svg/transactions.svg", showTransactionsScreen, {}, quantumTheme ? "30px" : "48px"),
                     actionButton("Swap", "swap", "6", "border-radius: 10px; align-self: center; min-height: 50px; min-width: 50px; ", "button button-swap", "assets/svg/dex-swap-outline.svg", showSwapScreen),
                 ]),
             ]),

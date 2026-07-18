@@ -9,6 +9,7 @@ import { registerLiquidityHandlers } from "./ipc/liquidity";
 import { registerGasHandlers } from "./ipc/gas";
 import { registerSendHandlers } from "./ipc/send";
 import { registerStakingHandlers } from "./ipc/staking";
+import { registerOfflineSigningHandlers } from "./ipc/offline";
 
 const RENDERER_ROOT = path.join(__dirname, "..", "renderer");
 
@@ -90,6 +91,7 @@ app.whenReady().then(() => {
     registerGasHandlers();
     registerSendHandlers();
     registerStakingHandlers();
+    registerOfflineSigningHandlers();
 
     createWindow();
 

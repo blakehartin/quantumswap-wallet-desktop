@@ -78,6 +78,247 @@ img.qs-eye {
     z-index: auto;
 }
 
+/* Shared searchable token selector. */
+#modalTokenPicker {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.token-picker-trigger {
+    width: 100%;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding: 7px 36px 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+}
+
+.token-picker-trigger::after {
+    content: "\25be";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.token-picker-trigger:hover,
+.token-picker-trigger:focus-visible {
+    border-color: #8c71ff;
+    outline: none;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.modal-content.token-picker-dialog {
+    width: min(430px, calc(100vw - 40px));
+    max-width: 430px;
+    height: auto;
+    max-height: calc(100vh - 80px);
+    margin: 0;
+    box-sizing: border-box;
+    padding: 18px;
+    overflow: hidden;
+    background: #17151f;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+}
+
+.token-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.token-picker-head h3 {
+    margin: 0;
+    color: #fff;
+}
+
+.token-picker-close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    color: #fff;
+    font-size: 25px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.token-picker-search-wrap {
+    position: relative;
+    margin-top: 15px;
+}
+
+input.token-picker-search {
+    width: 100%;
+    height: 42px;
+    box-sizing: border-box;
+    padding: 8px 42px 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+input.token-picker-search:focus {
+    border-color: #8c71ff;
+    outline: none;
+}
+
+.token-picker-unrecognized-toggle {
+    align-items: center;
+    gap: 7px;
+    margin: 10px 2px 0;
+    color: #ddd8e9;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.token-picker-unrecognized-toggle input {
+    margin: 0;
+    accent-color: #8c71ff;
+}
+
+.token-picker-spinner {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #9b85ff;
+    border-radius: 50%;
+    animation: token-picker-spin 0.8s linear infinite;
+}
+
+@keyframes token-picker-spin {
+    to { transform: rotate(360deg); }
+}
+
+.token-picker-status {
+    min-height: 18px;
+    margin: 7px 2px 3px;
+    color: #c7c1d9;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.token-picker-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.token-picker-row {
+    display: flex;
+    width: 100%;
+    min-height: 67px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    box-sizing: border-box;
+    padding: 9px 8px;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.token-picker-row:hover,
+.token-picker-row:focus-visible {
+    background: rgba(139, 112, 255, 0.18);
+    outline: 1px solid rgba(139, 112, 255, 0.7);
+}
+
+.token-picker-row > span:first-child,
+.token-picker-symbol {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.token-picker-row > span:first-child {
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.token-picker-symbol {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.token-picker-marker {
+    color: #7bdc9b;
+    font-size: 11px;
+}
+
+.token-picker-name,
+.token-picker-address {
+    max-width: 270px;
+    overflow: hidden;
+    color: #aaa4bb;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.token-picker-balance {
+    flex-shrink: 0;
+    max-width: 55%;
+    overflow: hidden;
+    color: #fff;
+    font-size: 13px;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.token-picker-badge {
+    padding: 1px 5px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 500;
+}
+
+.token-picker-badge.default {
+    background: rgba(71, 203, 116, 0.2);
+    color: #7ee6a0;
+}
+
+.token-picker-badge.imported {
+    background: rgba(155, 133, 255, 0.2);
+    color: #b5a4ff;
+}
+
+.token-picker-badge.unrecognized {
+    background: rgba(255, 174, 66, 0.18);
+    color: #ffc16e;
+}
+
 /* Release banner (when shown) takes its own full row below the logo row. */
 .gradient .custom-release-banner {
     flex: 1 0 100%;
@@ -211,4 +452,47 @@ img.qs-eye {
     float: none;
     margin-top: 0;
     flex-direction: row;
+}
+
+/* Match the web-app swap-direction control. The negative bottom margin only
+   swallows dead space below the button (the "To token" heading's 3px top
+   margin plus its line-box leading), so the visual gap above the button
+   (to the from-quantity input's edge) and below it (to the "To token"
+   glyphs) come out the same. */
+.swap-flip {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 -8px;
+    position: relative;
+    z-index: 2;
+}
+
+.swap-flip button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgb(28 31 47);
+    border: 1px solid rgb(145 125 207 / 60%);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 16px -4px rgba(108, 59, 255, 0.7);
+    transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease, transform 0.08s ease;
+}
+
+.swap-flip button:hover:not(:disabled) {
+    background: rgb(42, 46, 70);
+    border-color: rgb(165, 148, 220);
+}
+
+.swap-flip button:active:not(:disabled) {
+    transform: scale(0.96);
+    filter: brightness(0.88);
+}
+
+.swap-flip button:disabled {
+    cursor: default;
+    opacity: 0.45;
 }

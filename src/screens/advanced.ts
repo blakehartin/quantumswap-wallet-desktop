@@ -15,6 +15,7 @@ import {
     onAddLiquidityClick,
     onRemoveLiquidityClick,
     onLiquidityAmountInput,
+    openAdvancedTokenPicker,
     onLiquidityBackClick,
     onLiquiditySlippageInput,
     onLiquidityTokenChange,
@@ -27,6 +28,7 @@ import {
     setRemovePercentPreset,
     showAdvancedScreen,
     showLiquidityAddPanel,
+    showLiquidityOfflineRemovePanel,
     showLiquidityScreen,
     showPoolsCreatePanel,
     showPoolsScreen,
@@ -57,8 +59,14 @@ function menuLink(langKey: string, textContent: string, tabindex: string, action
 // Token picker: the swap screen's selectwrapper + selectbox combo so the
 // dropdown fills the row like the textboxes do.
 function tokenPicker(selectId: string, tabindex: string, onchange: () => unknown): HTMLElement {
-    return el("div", { class: "selectwrapper", style: "width:100%;" }, [
-        el("select", { id: selectId, class: "selectbox", tabindex, onchange: () => { void onchange(); } }),
+    return el("div", { style: "width:100%;" }, [
+        el("button", {
+            id: "btn" + selectId + "Picker", class: "token-picker-trigger", type: "button",
+            tabindex, onclick: () => openAdvancedTokenPicker(selectId),
+        }, ["Select token"]),
+        el("div", { class: "selectwrapper", style: "display:none;" }, [
+            el("select", { id: selectId, class: "selectbox", onchange: () => { void onchange(); } }),
+        ]),
     ]);
 }
 
@@ -88,13 +96,18 @@ function pickerInfoRows(suffix: string): HTMLElement[] {
 
 // Header row with a gas fee label + gas icon pinned to the right (same
 // structure as the send / swap screens' gas-header-row).
-function gasHeaderRow(headingLangKey: string, headingText: string, gasFeeId: string, gasIconId: string, gasTabIndex: string, onGasClick: () => unknown): HTMLElement {
+function gasHeaderRow(headingLangKey: string, headingText: string, gasFeeId: string, gasIconId: string, gasTabIndex: string, onGasClick: () => unknown, tokenLoadingId?: string): HTMLElement {
+    const rightChildren: HTMLElement[] = [];
+    if (tokenLoadingId) {
+        rightChildren.push(el("div", { id: tokenLoadingId, style: "display:none; width:30px; height:30px;" }, [
+            el("img", { src: "assets/icons/loading.gif", alt: "Loading tokens", style: "width:30px; height:30px;" }),
+        ]));
+    }
+    rightChildren.push(el("span", { id: gasFeeId, class: "gas-fee-label" }));
+    rightChildren.push(el("div", { id: gasIconId, class: "gas-container", role: "button", tabindex: gasTabIndex, onclick: () => { void onGasClick(); } }));
     return el("div", { class: "gas-header-row" }, [
         el("div", { class: "heading bold", "data-lang-key": headingLangKey }, [headingText]),
-        el("div", { class: "gas-header-right" }, [
-            el("span", { id: gasFeeId, class: "gas-fee-label" }),
-            el("div", { id: gasIconId, class: "gas-container", role: "button", tabindex: gasTabIndex, onclick: () => { void onGasClick(); } }),
-        ]),
+        el("div", { class: "gas-header-right" }, rightChildren),
     ]);
 }
 
@@ -168,6 +181,7 @@ function buildTokenCreateScreen(): HTMLElement {
                             el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtCreateTokenSupply", name: "token_supply", tabindex: "4", oninput: () => onCreateTokenInput() }),
                             el("div", { class: "divider" }),
                             el("div", { id: "divCreateTokenError", class: "tx-steps-error", style: "display:none;" }),
+                            el("div", { id: "divCreateTokenOfflineNotice", class: "tx-steps-error", style: "display:none;" }, ["Offline signing: RPC values are used when reachable; the transaction will not be broadcast."]),
                         ]),
                         actionButtonRow("btnCreateToken", "create", "Create", "5", onCreateTokenClick),
                     ]),
@@ -207,7 +221,7 @@ function buildPoolsScreen(): HTMLElement {
 
                     // Create-pair panel (opened via the Create Pair button).
                     el("div", { id: "divPoolsCreatePanel", style: "display:none;" }, [
-                        gasHeaderRow("create-pair", "Create Pair", "spanCreatePairGasFee", "divCreatePairGasIcon", "10", onCreatePairGasIconClick),
+                        gasHeaderRow("create-pair", "Create Pair", "spanCreatePairGasFee", "divCreatePairGasIcon", "10", onCreatePairGasIconClick, "divPoolsTokenListLoading"),
                         el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; " + ADV_SCROLL_PAD }, [
                             el("div", { class: "input_container" }, [
                                 el("div", { class: "heading medium", "data-lang-key": "token-a" }, ["Token A"]),
@@ -215,12 +229,13 @@ function buildPoolsScreen(): HTMLElement {
                                 ...pickerInfoRows("PoolsA"),
                                 el("div", { class: "divider" }),
                                 el("div", { class: "heading medium", "data-lang-key": "token-b" }, ["Token B"]),
-                                tokenPicker("ddlPoolsTokenB", "12", onPoolsTokenChange),
+                                tokenPicker("ddlPoolsTokenB", "13", onPoolsTokenChange),
                                 ...pickerInfoRows("PoolsB"),
                                 el("div", { class: "divider" }),
                                 el("div", { id: "divPoolsPairWarn", class: "tx-steps-error", style: "display:none;" }),
+                                el("div", { id: "divCreatePairOfflineNotice", class: "tx-steps-error", style: "display:none;" }, ["Offline signing: pair existence may not be verified."]),
                             ]),
-                            actionButtonRow("btnPoolsCreatePair", "create-pair", "Create Pair", "13", onCreatePairClick),
+                            actionButtonRow("btnPoolsCreatePair", "create-pair", "Create Pair", "15", onCreatePairClick),
                         ]),
                     ]),
                 ]),
@@ -251,31 +266,46 @@ function buildLiquidityScreen(): HTMLElement {
                         el("div", { class: "divider" }),
                         el("div", { style: "align-content:center;" }, [
                             el("a", { href: "#", "data-lang-key": "add-liquidity", tabindex: "1", onclick: (event: Event) => { event.preventDefault(); void showLiquidityAddPanel(null); } }, ["Add Liquidity"]),
+                            el("span", { id: "linkLiquidityOfflineRemove", style: "display:none;" }, [
+                                " \u00a0 ",
+                                el("a", { href: "#", onclick: (event: Event) => { event.preventDefault(); showLiquidityOfflineRemovePanel(); } }, ["Remove Liquidity Offline"]),
+                            ]),
                         ]),
                     ]),
 
                     // Add-liquidity panel.
                     el("div", { id: "divLiquidityAddPanel", style: "display:none;" }, [
-                        el("div", { class: "heading bold", "data-lang-key": "add-liquidity" }, ["Add Liquidity"]),
+                        el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
+                            el("div", { class: "heading bold", "data-lang-key": "add-liquidity" }, ["Add Liquidity"]),
+                            el("div", { id: "divLiquidityTokenListLoading", style: "display:none; width:30px; height:30px;" }, [
+                                el("img", { src: "assets/icons/loading.gif", alt: "Loading tokens", style: "width:30px; height:30px;" }),
+                            ]),
+                        ]),
                         el("div", { class: "blocks-content scrollbar", style: "text-align: left; overflow: auto; " + ADV_SCROLL_PAD }, [
                             el("div", { class: "input_container" }, [
                                 el("div", { class: "heading medium", "data-lang-key": "token-a" }, ["Token A"]),
                                 tokenPicker("ddlLiquidityTokenA", "11", onLiquidityTokenChange),
                                 ...pickerInfoRows("LiquidityA"),
-                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquidityAmountA", name: "liq_amount_a", "data-placeholder-key": "quantity", placeholder: "Quantity", tabindex: "12", oninput: () => { void onLiquidityAmountInput("A"); } }),
+                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquidityAmountA", name: "liq_amount_a", "data-placeholder-key": "quantity", placeholder: "Quantity", tabindex: "13", oninput: () => { void onLiquidityAmountInput("A"); } }),
                                 el("div", { class: "divider" }),
                                 el("div", { class: "heading medium", "data-lang-key": "token-b" }, ["Token B"]),
-                                tokenPicker("ddlLiquidityTokenB", "13", onLiquidityTokenChange),
+                                tokenPicker("ddlLiquidityTokenB", "14", onLiquidityTokenChange),
                                 ...pickerInfoRows("LiquidityB"),
-                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquidityAmountB", name: "liq_amount_b", "data-placeholder-key": "quantity", placeholder: "Quantity", tabindex: "14", oninput: () => { void onLiquidityAmountInput("B"); } }),
+                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquidityAmountB", name: "liq_amount_b", "data-placeholder-key": "quantity", placeholder: "Quantity", tabindex: "16", oninput: () => { void onLiquidityAmountInput("B"); } }),
                                 el("div", { class: "divider" }),
                                 el("div", { class: "heading medium", "data-lang-key": "slippage" }, ["Slippage %"]),
-                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquiditySlippage", name: "liq_slippage", value: "0.5", tabindex: "15", oninput: () => onLiquiditySlippageInput() }),
+                                el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquiditySlippage", name: "liq_slippage", value: "0.5", tabindex: "17", oninput: () => onLiquiditySlippageInput() }),
                                 el("div", { class: "divider" }),
+                                el("div", { id: "divLiquidityOfflineAddFields", style: "display:none;" }, [
+                                    el("div", { class: "tx-steps-error" }, ["Offline signing: allowances and pair state may not be verified."]),
+                                    el("input", { id: "txtLiquidityOfflineDeadline", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", placeholder: "Deadline (Unix timestamp)" }),
+                                    el("input", { id: "txtLiquidityOfflineApprovalGas", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "84000", placeholder: "Approval gas limit" }),
+                                    el("input", { id: "txtLiquidityOfflineAddGas", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "600000", placeholder: "Add-liquidity gas limit" }),
+                                ]),
                                 el("div", { id: "divLiquidityFirstProviderWarn", style: "display:none;", "data-lang-key": "first-provider-warn" }, ["This pool is empty. You are the first liquidity provider: the ratio of the amounts you add sets the initial price of this pair."]),
                                 el("div", { id: "divLiquidityAddError", class: "tx-steps-error", style: "display:none;" }),
                             ]),
-                            actionButtonRow("btnLiquidityAdd", "add", "Add", "16", onAddLiquidityClick, "15px"),
+                            actionButtonRow("btnLiquidityAdd", "add", "Add", "18", onAddLiquidityClick, "15px"),
                         ]),
                     ]),
 
@@ -304,6 +334,19 @@ function buildLiquidityScreen(): HTMLElement {
                                 el("div", { class: "divider" }),
                                 el("div", { id: "divLiquidityRemoveEstimates", style: "white-space:pre-line;" }),
                                 el("div", { class: "divider" }),
+                                el("div", { id: "divLiquidityOfflineRemoveFields", style: "display:none;" }, [
+                                    el("input", { id: "txtLiquidityOfflinePairAddress", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "LP pair contract address" }),
+                                    el("input", { id: "txtLiquidityOfflineTokenA", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "Token A contract" }),
+                                    el("input", { id: "txtLiquidityOfflineTokenB", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "Token B contract" }),
+                                    el("input", { id: "txtLiquidityOfflineDecimalsA", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "18", placeholder: "Token A decimals" }),
+                                    el("input", { id: "txtLiquidityOfflineDecimalsB", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "18", placeholder: "Token B decimals" }),
+                                    el("input", { id: "txtLiquidityOfflineLpAmount", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "LP amount" }),
+                                    el("input", { id: "txtLiquidityOfflineMinA", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "Minimum token A amount" }),
+                                    el("input", { id: "txtLiquidityOfflineMinB", class: "tab-name", style: ADV_INPUT_STYLE, type: "text", placeholder: "Minimum token B amount" }),
+                                    el("input", { id: "txtLiquidityOfflineRemoveDeadline", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", placeholder: "Deadline (Unix timestamp)" }),
+                                    el("input", { id: "txtLiquidityOfflineRemoveApprovalGas", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "84000", placeholder: "LP approval gas limit" }),
+                                    el("input", { id: "txtLiquidityOfflineRemoveGas", class: "tab-name", style: ADV_INPUT_STYLE, type: "number", value: "600000", placeholder: "Remove-liquidity gas limit" }),
+                                ]),
                                 el("div", { class: "heading medium", "data-lang-key": "slippage" }, ["Slippage %"]),
                                 el("input", { class: "tab-name", style: ADV_INPUT_STYLE, type: "text", autocomplete: "off", id: "txtLiquidityRemoveSlippage", name: "liq_rem_slippage", value: "0.5", tabindex: "31", oninput: () => onRemoveSlippageInput() }),
                                 el("div", { class: "divider" }),

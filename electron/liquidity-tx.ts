@@ -46,7 +46,9 @@ export async function buildAddLiquidityCall(data: any, release: SwapReleaseAddre
     const amountAMinWei = minWeiWithSlippage(amountAWei, slippagePercent);
     const amountBMinWei = minWeiWithSlippage(amountBWei, slippagePercent);
     const to = getAddress(String(data.ownerAddress));
-    const deadline = await getSwapTxDeadline(provider, LIQUIDITY_DEADLINE_SECONDS);
+    const deadline = data.deadline != null
+        ? asBigInt(data.deadline)
+        : await getSwapTxDeadline(provider, LIQUIDITY_DEADLINE_SECONDS);
 
     const aIsNative = data.tokenAValue === "Q";
     const bIsNative = data.tokenBValue === "Q";
@@ -95,7 +97,9 @@ export async function buildRemoveLiquidityCall(data: any, release: SwapReleaseAd
     const amountAMin = asBigInt(data.amountAMinWei);
     const amountBMin = asBigInt(data.amountBMinWei);
     const to = getAddress(String(data.ownerAddress));
-    const deadline = await getSwapTxDeadline(provider, LIQUIDITY_DEADLINE_SECONDS);
+    const deadline = data.deadline != null
+        ? asBigInt(data.deadline)
+        : await getSwapTxDeadline(provider, LIQUIDITY_DEADLINE_SECONDS);
 
     const wqLower = release.wq.toLowerCase();
     const aIsWq = tokenA.toLowerCase() === wqLower;

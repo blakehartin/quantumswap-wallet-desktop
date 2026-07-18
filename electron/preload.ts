@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld("SeedWordsApi", makeApi([
 ]));
 
 contextBridge.exposeInMainWorld("SwapQuoteApi", makeApi([
+    "SwapTokenGetMetadata",
     "SwapQuoteGetAmountsOut",
     "SwapQuoteGetAmountsIn",
     "SwapQuoteCheckPairExists",
@@ -82,6 +83,8 @@ contextBridge.exposeInMainWorld("SwapQuoteApi", makeApi([
     "OfflineSignTokenTransaction",
     "StakingContractSubmit",
     "StakingContractOfflineSign",
+    "OfflineSignTransactionBundle",
+    "OfflinePrepareSigning",
     "estimateGas",
     "estimateGasFee",
 ]));

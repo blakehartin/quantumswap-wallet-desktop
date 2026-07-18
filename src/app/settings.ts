@@ -1,7 +1,7 @@
 // Offline-signing and advanced-signing settings. 1:1 port of the
 // corresponding functions from the old src/js/app.js.
 import { storageGetItem, storageSetItem } from "../lib/storage";
-import { DEFAULT_ADVANCED_SIGNING_SETTING_KEY, DEFAULT_OFFLINE_TXN_SIGNING_SETTING_KEY } from "./state";
+import { DEFAULT_ADVANCED_SIGNING_SETTING_KEY, DEFAULT_OFFLINE_TXN_SIGNING_SETTING_KEY, settingsStore } from "./state";
 import { getGenericError } from "./app";
 import { showWarnAlert } from "./dialog";
 
@@ -10,6 +10,7 @@ export async function offlineTxnSigningSetDefaultValue(value: string): Promise<b
     if (itemStoreResult != true) {
         throw new Error("offlineTxnSigningSetDefaultValue item store failed");
     }
+    settingsStore.offlineSignEnabled = value === "enabled";
 
     return true;
 }
@@ -17,14 +18,13 @@ export async function offlineTxnSigningSetDefaultValue(value: string): Promise<b
 export async function offlineTxnSigningGetDefaultValue(): Promise<boolean> {
     const value = await storageGetItem(DEFAULT_OFFLINE_TXN_SIGNING_SETTING_KEY);
     if (value == null) {
+        settingsStore.offlineSignEnabled = false;
         return false;
     }
 
-    if (value === "enabled") {
-        return true;
-    }
-
-    return false;
+    const enabled = value === "enabled";
+    settingsStore.offlineSignEnabled = enabled;
+    return enabled;
 }
 
 export async function saveSelectedOfflineTxnSigningSetting(): Promise<void> {

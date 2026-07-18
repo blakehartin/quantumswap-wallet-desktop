@@ -235,8 +235,8 @@ function buildTransactionReviewDialog(): HTMLElement {
         ]);
 
     return el("dialog", { id: "modalTransactionReview", class: "modal", tabindex: "-1", role: "dialog", style: "overflow:hidden;" }, [
-        el("div", { class: "modal-content", style: "margin:8% auto; max-height:90vh; display:flex; flex-direction:column; overflow:hidden;" }, [
-            el("p", { id: "pTxReviewPrompt", style: "font-weight:bold;overflow:auto;", class: "scrollbar", "data-lang-key": "review-transaction-prompt", tabindex: "6" }, ["Please review your transaction request to be sent:"]),
+        el("div", { class: "modal-content", style: "margin:8% auto; max-height:calc(90vh - 50px); display:flex; flex-direction:column; overflow:hidden;" }, [
+            el("p", { id: "pTxReviewPrompt", style: "font-weight:bold;overflow:visible;min-height:24px;flex-shrink:0;", "data-lang-key": "review-transaction-prompt", tabindex: "6" }, ["Please review your transaction request to be sent:"]),
             el("div", { class: "scrollbar", style: "overflow:auto; flex:1 1 auto; min-height:0;" }, [
                 el("div", { style: "margin-top:8px;" }, [
                     el("label", { id: "lblTxReviewAsset", "data-lang-key": "what-is-being-sent", style: "font-weight:bold;display:block;" }, ["What is being sent"]),
@@ -246,15 +246,28 @@ function buildTransactionReviewDialog(): HTMLElement {
                     el("label", { "data-lang-key": "contract-address", style: "font-weight:bold;display:block;" }, ["Contract address"]),
                     el("span", { id: "spanTxReviewContract", style: "word-break:break-all;" }),
                 ]),
+                el("div", { id: "rowTxReviewFromTokenContract", style: "margin-top:8px;display:none;" }, [
+                    el("label", { "data-lang-key": "swap-from-token-contract", style: "font-weight:bold;display:block;" }, ["From token contract"]),
+                    el("span", { id: "spanTxReviewFromTokenContract", style: "word-break:break-all;" }),
+                ]),
+                el("div", { id: "rowTxReviewToTokenContract", style: "margin-top:8px;display:none;" }, [
+                    el("label", { "data-lang-key": "swap-to-token-contract", style: "font-weight:bold;display:block;" }, ["To token contract"]),
+                    el("span", { id: "spanTxReviewToTokenContract", style: "word-break:break-all;" }),
+                ]),
                 labelledRow("from-address", "From Address", "spanTxReviewFrom"),
                 el("div", { id: "rowTxReviewTo", style: "margin-top:8px;" }, [
                     el("label", { "data-lang-key": "to-address", style: "font-weight:bold;display:block;" }, ["To Address"]),
                     el("span", { id: "spanTxReviewTo", style: "word-break:break-all;" }),
                 ]),
                 el("div", { style: "margin-top:8px;" }, [
-                    el("label", { id: "lblTxReviewQuantity", "data-lang-key": "send-quantity", style: "font-weight:bold;" }, ["Quantity"]),
+                    el("label", { id: "lblTxReviewQuantity", "data-lang-key": "send-quantity", style: "font-weight:bold;" }, ["Quantity (Q)"]),
                     " : ",
                     el("span", { id: "spanTxReviewQuantity", style: "word-break:break-all;" }),
+                ]),
+                el("div", { id: "rowTxReviewTokenQuantity", style: "margin-top:8px;display:none;" }, [
+                    el("label", { id: "lblTxReviewTokenQuantity", "data-lang-key": "token-quantity", style: "font-weight:bold;" }, ["Token quantity"]),
+                    " : ",
+                    el("span", { id: "spanTxReviewTokenQuantity", style: "word-break:break-all;" }),
                 ]),
                 el("div", { id: "rowTxReviewGasLimit", style: "margin-top:8px;" }, [
                     el("label", { "data-lang-key": "gas-limit", style: "font-weight:bold;" }, ["Gas limit (gas-units)"]),
@@ -265,11 +278,6 @@ function buildTransactionReviewDialog(): HTMLElement {
                     el("label", { "data-lang-key": "gas-fee", style: "font-weight:bold;" }, ["Estimated gas fee (coins)"]),
                     " : ",
                     el("span", { id: "spanTxReviewGasFee" }),
-                ]),
-                el("div", { id: "rowTxReviewNonce", style: "margin-top:8px;display:none;" }, [
-                    el("label", { "data-lang-key": "current-nonce", style: "font-weight:bold;" }, ["Current Nonce"]),
-                    " : ",
-                    el("span", { id: "spanTxReviewNonce" }),
                 ]),
                 el("div", { style: "margin-top:8px;" }, [
                     el("label", { "data-lang-key": "network", style: "font-weight:bold;" }, ["Network"]),
@@ -290,15 +298,22 @@ function buildTransactionReviewDialog(): HTMLElement {
                 el("div", { style: "display:flex;align-items:center;gap:6px;margin-top:4px;" }, [
                     el("input", { type: "password", style: "width:100%;max-width:200px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;", id: "txtTxReviewPassword", tabindex: "2", autocomplete: "off" }),
                     el("img", {
-                        src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye", style: "flex-shrink:0;",
+                        id: "imgTxReviewPasswordEye", src: "assets/svg/eye-outline.svg", alt: "Show Password", class: "qs-eye", style: "flex-shrink:0;",
                         "data-alt-key": "show-password", role: "button", tabindex: "3", title: "Show/Hide password",
                         onclick: (event: Event) => togglePasswordBox(event.currentTarget as HTMLElement, "txtTxReviewPassword"),
                     }),
                 ]),
             ]),
+            el("div", { id: "rowTxReviewNonce", style: "margin-top:12px;display:none;" }, [
+                el("label", { "data-lang-key": "current-nonce", style: "display:block;font-weight:bold;" }, ["Current Nonce"]),
+                el("input", {
+                    id: "txtTxReviewNonce", type: "number", min: "0", step: "1", tabindex: "4",
+                    autocomplete: "off", style: "width:110px;font-size:16px;border-radius:10px;border:1px solid;padding:3px;margin-top:4px;",
+                }),
+            ]),
             el("div", { style: "margin-top:25px;display:flex;gap:15px;justify-content:flex-end;" }, [
-                el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "5", id: "btnTxReviewCancel" }, ["Cancel"]),
-                el("button", { class: "proceed", "data-lang-key": "ok", role: "button", tabindex: "4", id: "btnTxReviewSubmit" }, ["Ok"]),
+                el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "6", id: "btnTxReviewCancel" }, ["Cancel"]),
+                el("button", { class: "proceed", "data-lang-key": "ok", role: "button", tabindex: "5", id: "btnTxReviewSubmit" }, ["Ok"]),
             ]),
         ]),
     ]);
@@ -312,9 +327,12 @@ function buildGasConfigDialog(): HTMLElement {
                 el("div", { class: "heading medium", "data-lang-key": "gas-limit" }, ["Gas limit (gas-units)"]),
                 el("input", { class: "tab-name", type: "number", min: "0", step: "1", id: "txtGasLimit", style: "text-align: left; width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;", tabindex: "1" }),
             ]),
-            el("div", { class: "input_container", style: "margin-top:10px;" }, [
+            el("div", { class: "input_container", style: "margin-top:10px;gap:2px;" }, [
                 el("div", { class: "heading medium", "data-lang-key": "gas-fee" }, ["Estimated gas fee (coins)"]),
-                el("input", { class: "tab-name", type: "text", id: "txtGasFee", readOnly: true, style: "text-align: left; width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 6px;", tabindex: "2" }),
+                el("div", { class: "tab-name", style: "display:flex;align-items:center;gap:5px;text-align:left;width:100%;padding:0;" }, [
+                    el("span", { id: "spanGasFee" }),
+                    el("span", {}, ["Q"]),
+                ]),
             ]),
             el("div", { style: "margin-top:20px; display:flex; gap:15px; justify-content:flex-end;" }, [
                 el("button", { class: "cancel", "data-lang-key": "cancel", role: "button", tabindex: "4", id: "btnGasConfigCancel" }, ["Cancel"]),
@@ -334,26 +352,25 @@ function buildTxStepsDialog(): HTMLElement {
         el("div", { class: "modal-content", style: "margin:10% auto; max-width:520px;" }, [
             el("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:12px;" }, [
                 el("h3", { id: "h3TxStepsTitle", style: "margin:0;" }),
-                el("button", {
-                    id: "btnTxStepsDismiss", type: "button", title: "Close", "aria-label": "Close",
-                    style: "border:0; background:transparent; color:inherit; font-size:24px; line-height:1; cursor:pointer; padding:0 2px;",
-                }, ["\u00d7"]),
-            ]),
-            el("ol", { id: "olTxStepsList", class: "tx-step-list" }),
-            el("div", { id: "divTxStepsGas", style: "display:none; margin-top:12px;" }, [
-                el("div", { id: "lblTxStepsGasAction", style: "font-weight:bold; margin-bottom:8px;" }),
-                el("label", { "data-lang-key": "gas-limit", style: "display:block; font-weight:bold;" }, ["Gas limit (gas-units)"]),
-                el("input", {
-                    id: "txtTxStepsGasLimit", type: "number", min: "1", step: "1",
-                    style: "width:100%; box-sizing:border-box; margin-top:4px; padding:6px; border:1px solid #ccc; border-radius:6px;",
-                }),
-                el("div", { style: "margin-top:8px;" }, [
-                    el("label", { "data-lang-key": "estimated-gas-fee", style: "font-weight:bold;" }, ["Estimated gas fee"]),
-                    " : ",
-                    el("span", { id: "spanTxStepsGasFee" }),
+                el("div", { style: "display:flex; align-items:center; gap:12px; flex-shrink:0;" }, [
+                    el("div", { id: "divTxStepsGas", class: "gas-header-right", style: "display:none;" }, [
+                        el("span", { id: "spanTxStepsGasFee", class: "gas-fee-label" }),
+                        el("div", {
+                            id: "divTxStepsGasIcon", class: "gas-container", role: "button",
+                            tabindex: "2", title: "Gas",
+                        }),
+                    ]),
+                    el("button", {
+                        id: "btnTxStepsDismiss", type: "button", title: "Close", "aria-label": "Close",
+                        style: "border:0; background:transparent; color:inherit; font-size:24px; line-height:1; cursor:pointer; padding:0 2px;",
+                    }, ["\u00d7"]),
                 ]),
-                el("p", { id: "pTxStepsGasError", class: "tx-steps-error", style: "display:none; margin:6px 0 0;" }),
             ]),
+            el("div", {
+                id: "divTxStepsWait", style: "display:none; margin-top:12px; color:#ffffff;",
+                "data-lang-key": "tx-step-please-wait",
+            }, ["Please wait, this can take up to a minute..."]),
+            el("ol", { id: "olTxStepsList", class: "tx-step-list" }),
             el("div", { id: "divTxStepsHashRow", style: "display:none; margin-top:12px;" }, [
                 el("div", { style: "display:flex; align-items:center; justify-content:space-between;" }, [
                     el("label", { "data-lang-key": "transaction-id", style: "font-weight:bold;" }, ["Transaction ID"]),
@@ -436,6 +453,48 @@ function buildSendCompletedDialog(): HTMLElement {
     ]);
 }
 
+function buildTokenPickerDialog(): HTMLElement {
+    return el("dialog", { id: "modalTokenPicker", class: "modal", tabindex: "-1", role: "dialog" }, [
+        el("div", { class: "modal-content token-picker-dialog" }, [
+            el("div", { class: "token-picker-head" }, [
+                el("h3", { "data-lang-key": "select-a-token" }, ["Select a token"]),
+                el("button", {
+                    id: "btnTokenPickerClose", class: "token-picker-close", type: "button",
+                    title: "Close", "aria-label": "Close",
+                }, ["\u00d7"]),
+            ]),
+            el("div", { class: "token-picker-search-wrap" }, [
+                el("input", {
+                    id: "txtTokenPickerSearch", class: "token-picker-search", type: "text",
+                    autocomplete: "off", spellcheck: "false",
+                    "data-placeholder-key": "token-picker-search-placeholder",
+                    placeholder: "Search name / symbol or paste address",
+                }),
+                el("span", { id: "spanTokenPickerSpinner", class: "token-picker-spinner", style: "display:none;", "aria-hidden": "true" }),
+            ]),
+            el("label", { id: "labelTokenPickerUnrecognized", class: "token-picker-unrecognized-toggle", style: "display:none;" }, [
+                el("input", { id: "chkTokenPickerUnrecognized", type: "checkbox" }),
+                el("span", { "data-lang-key": "show-unrecognized-tokens" }, ["Show unrecognized tokens"]),
+            ]),
+            el("div", { id: "divTokenPickerStatus", class: "token-picker-status" }),
+            el("div", { id: "divTokenPickerList", class: "token-picker-list scrollbar", role: "listbox" }),
+        ]),
+    ]);
+}
+
+function buildOfflineBundleDialog(): HTMLElement {
+    return el("dialog", { id: "modalOfflineBundle", class: "modal", tabindex: "-1", role: "dialog" }, [
+        el("div", { class: "modal-content", style: "max-width:680px;max-height:80vh;overflow:auto;" }, [
+            el("h3", { "data-lang-key": "offline-signed-transactions" }, ["Offline Signed Transactions"]),
+            el("div", { id: "divOfflineBundleTransactions" }),
+            el("div", { style: "margin-top:18px;display:flex;justify-content:flex-end;gap:12px;" }, [
+                el("button", { id: "btnOfflineBundleCopy", class: "proceed", type: "button", "data-lang-key": "copy-bundle" }, ["Copy Bundle"]),
+                el("button", { id: "btnOfflineBundleClose", class: "cancel", type: "button", "data-lang-key": "close" }, ["Close"]),
+            ]),
+        ]),
+    ]);
+}
+
 export const dialogModules: ScreenModule[] = [
     { parentId: null, build: buildEulaDialog },
     { parentId: null, build: buildOkDialog },
@@ -452,4 +511,6 @@ export const dialogModules: ScreenModule[] = [
     { parentId: null, build: buildReleasePasswordDialog },
     { parentId: null, build: buildGasToast },
     { parentId: null, build: buildSendCompletedDialog },
+    { parentId: null, build: buildTokenPickerDialog },
+    { parentId: null, build: buildOfflineBundleDialog },
 ];

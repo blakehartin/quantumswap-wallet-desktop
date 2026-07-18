@@ -13,8 +13,12 @@ import { buildAddLiquidityCall, buildRemoveLiquidityCall, buildDeployTokenTx, pa
 
 const GAS_ESTIMATE_BUFFER_PERCENT = 10;
 const WEI_PER_ETH = 1000000000000000000n;
-const GAS_FEE_FALLBACK_RATE_NUM = 1000 / 21000; // current default rate, used only when network lookup fails
+const GAS_FEE_FALLBACK_RATE_NUM = 1000 / 21000; // last-resort only when SDK pricing is unavailable
 const DEFAULT_WALLET_KEY_TYPE = 3; // keyType 3 (HYBRIDEDMLDSASLHDSA); 5 = HYBRIDEDMLDSASLHDSA5
+// Mirror of quantum-coin-js-sdk getGasPrice constants (used when provider is unavailable).
+const SDK_DYNAMIC_BASE_GAS_PRICE_WEI = 47619047619047600n / 10n;
+const SDK_SIGNING_CONTEXT_LEVEL1_MULTIPLIER = 20n;
+const SDK_SIGNING_CONTEXT_LEVEL2_MULTIPLIER = 30n;
 
 function toBigInt(value: unknown): bigint | null {
     if (typeof value === "bigint") return value;
@@ -26,22 +30,32 @@ function toBigInt(value: unknown): bigint | null {
     try { return BigInt(s); } catch { return null; }
 }
 
-// Resolve the current gas price (wei) from the provider. QuantumCoin's getFeeData is
-// a local computation: provider.getFeeData(keyType, fullSign) -> qcsdk.getGasPrice(keyType, fullSign).
-// keyType (3 or 5) is derived from the wallet's public key length and drives gas-price
-// selection; fullSign applies only to keyType 3. Falls back to the fixed default rate
-// only when the lookup fails or no keyType is available.
+function sdkGasPriceWei(keyType: number, fullSign: boolean): bigint | null {
+    if (keyType === 3) {
+        return SDK_DYNAMIC_BASE_GAS_PRICE_WEI * (fullSign ? SDK_SIGNING_CONTEXT_LEVEL2_MULTIPLIER : 1n);
+    }
+    if (keyType === 5) {
+        return SDK_DYNAMIC_BASE_GAS_PRICE_WEI * SDK_SIGNING_CONTEXT_LEVEL1_MULTIPLIER;
+    }
+    return null;
+}
+
+// Resolve the current gas price (wei). QuantumCoin's getFeeData is a local computation
+// (provider.getFeeData(keyType, fullSign) -> qcsdk.getGasPrice). When the provider is
+// missing or getFeeData fails, mirror the SDK formula before the crude 1000/21000 rate.
 async function resolveGasPriceWei(provider: any, keyType: unknown, fullSign: boolean): Promise<{ gasPriceWei: bigint | null; usedFallback: boolean }> {
+    const kt = Number.isInteger(keyType) ? (keyType as number) : DEFAULT_WALLET_KEY_TYPE;
     if (provider && typeof provider.getFeeData === "function") {
-        const kt = Number.isInteger(keyType) ? (keyType as number) : DEFAULT_WALLET_KEY_TYPE;
         try {
             const fd = await provider.getFeeData(kt, fullSign === true);
             if (fd && fd.gasPrice != null) {
                 const gp = toBigInt(fd.gasPrice);
                 if (gp != null) return { gasPriceWei: gp, usedFallback: false };
             }
-        } catch { /* fall through to fallback */ }
+        } catch { /* fall through to SDK mirror */ }
     }
+    const mirrored = sdkGasPriceWei(kt, fullSign === true);
+    if (mirrored != null) return { gasPriceWei: mirrored, usedFallback: false };
     return { gasPriceWei: null, usedFallback: true };
 }
 
@@ -206,11 +220,12 @@ export function registerGasHandlers(): void {
     ipcMain.handle("estimateGasFee", async (_event, data) => {
         try {
             const chainId = Number(data.chainId);
-            if (!Number.isInteger(chainId)) return { success: false, gasFeeEth: null, gasPriceWei: null, usedFallback: true, error: "Invalid chain ID" };
-            const provider = createQuantumRpcProvider(data.rpcEndpoint, chainId);
-            if (!provider) return { success: false, gasFeeEth: null, gasPriceWei: null, usedFallback: true, error: "Invalid RPC endpoint" };
-
             const gasLimitBi = toBigInt(data.gasLimit);
+            // Provider is optional: getFeeData / SDK mirror are local. Invalid RPC
+            // endpoints still produce an SDK-priced fee when keyType is known.
+            const provider = Number.isInteger(chainId)
+                ? createQuantumRpcProvider(data.rpcEndpoint, chainId)
+                : null;
             const resolved = await resolveGasPriceWei(provider, data.keyType, data.fullSign === true);
             if (resolved.usedFallback || resolved.gasPriceWei == null) {
                 const fallbackFee = gasLimitBi != null ? (Number(gasLimitBi) * GAS_FEE_FALLBACK_RATE_NUM) : 0;
@@ -220,6 +235,19 @@ export function registerGasHandlers(): void {
             return { success: true, gasFeeEth: weiToEthString(totalWei), gasPriceWei: resolved.gasPriceWei.toString(), usedFallback: false, error: null };
         } catch (err: any) {
             const gasLimitBi = toBigInt(data.gasLimit);
+            const mirrored = sdkGasPriceWei(
+                Number.isInteger(data.keyType) ? Number(data.keyType) : DEFAULT_WALLET_KEY_TYPE,
+                data.fullSign === true,
+            );
+            if (gasLimitBi != null && mirrored != null) {
+                return {
+                    success: true,
+                    gasFeeEth: weiToEthString(gasLimitBi * mirrored),
+                    gasPriceWei: mirrored.toString(),
+                    usedFallback: false,
+                    error: null,
+                };
+            }
             const fallbackFee = gasLimitBi != null ? (Number(gasLimitBi) * GAS_FEE_FALLBACK_RATE_NUM) : 0;
             return { success: false, gasFeeEth: String(fallbackFee), gasPriceWei: null, usedFallback: true, error: (err && err.message) ? err.message : String(err) };
         }

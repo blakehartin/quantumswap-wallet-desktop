@@ -44,7 +44,7 @@ function buildTransactionsScreen(): HTMLElement {
         el("div", { class: "center-content-rounded-container", style: "width:95%;max-width: 95%;" }, [
             el("div", { style: "display: flex; margin-bottom: 5px;" }, [
                 el("div", { class: "back-container", role: "button", style: "float: left;", tabindex: "320", onclick: () => { void showWalletScreen(); } }),
-                el("div", { class: "refresh-container", role: "button", id: "divTxnRefreshStatus", tabindex: "321", onclick: () => { void showTransactionsScreen(); } }),
+                el("div", { class: "refresh-container", role: "button", id: "divTxnRefreshStatus", tabindex: "321", onclick: () => { void showTransactionsScreen(true); } }),
                 el("div", { style: "float: left; width: 30px; height: 30px; ", id: "divTxnLoadingStatus" }, [
                     el("img", { src: "assets/icons/loading.gif", style: "width:30px;height:30px" }),
                 ]),

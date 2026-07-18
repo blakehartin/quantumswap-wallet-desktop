@@ -75,6 +75,48 @@ export async function compareEther(val1: string, val2: string): Promise<number> 
     return await FormatApi.send("FormatApiCompareEther", { num1: val1, num2: val2 });
 }
 
+export interface SwapTokenMetadataResult {
+    success: boolean;
+    contractAddress?: string;
+    name?: string;
+    symbol?: string;
+    decimals?: number;
+    balance?: string;
+    error?: string | null;
+}
+
+export async function getSwapTokenMetadata(payload: unknown): Promise<SwapTokenMetadataResult> {
+    return await SwapQuoteApi.send("SwapTokenGetMetadata", payload);
+}
+
+export interface OfflineSignedTransaction {
+    label: string;
+    nonce: number;
+    txData: string;
+    contractAddress?: string;
+}
+
+export interface OfflineBundleResult {
+    success: boolean;
+    transactions: OfflineSignedTransaction[] | null;
+    error: string | null;
+}
+
+export async function offlineSignTransactionBundle(payload: unknown): Promise<OfflineBundleResult> {
+    return await SwapQuoteApi.send("OfflineSignTransactionBundle", payload);
+}
+
+export interface OfflinePreparationResult {
+    success: boolean;
+    nonce: number | null;
+    chainTimestamp: number | null;
+    error: string | null;
+}
+
+export async function prepareOfflineSigning(payload: unknown): Promise<OfflinePreparationResult> {
+    return await SwapQuoteApi.send("OfflinePrepareSigning", payload);
+}
+
 export async function getSwapQuoteAmountsOut(payload: unknown): Promise<any> {
     return await SwapQuoteApi.send("SwapQuoteGetAmountsOut", payload);
 }

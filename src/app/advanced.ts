@@ -43,18 +43,22 @@ import {
     inputById,
     networkStore,
     selectById,
+    settingsStore,
+    tokenStore,
     walletStore,
 } from "./state";
 import {
     hideWaitingBox,
     showLoadingAndExecuteAsync,
+    showTransactionReviewDialog,
     showWarnAlert,
+    txReviewNetworkText,
 } from "./dialog";
-import { TxStepDefinition } from "./txsteps";
-import { requireTxHash, showReviewThenSteps } from "./txflow";
+import { ReviewedTxStepDefinition, requireTxHash, showReviewThenSteps } from "./txflow";
 import {
     APPROVE_DEFAULT_GAS,
     estimateGasForContext,
+    estimateGasLimitOfflineSafe,
     onGasIconClick,
     resetCurrentGasConfig,
     resolveGasForTx,
@@ -65,6 +69,15 @@ import { OpenScanAddress, removeOptions, setHeaderBand } from "./app";
 import { getSwapBalanceForSymbol, getSwapRouteDisplaySymbol, getSwapTokenDecimals, getSwapTokenListFromWallet } from "./swap";
 import { applySwapReleaseToPayload, currentSwapRelease } from "./release";
 import { BUILTIN_SWAP_RELEASES } from "../lib/release";
+import { getCachedManualToken } from "./manual-token";
+import { TOKEN_LIST_STATE_EVENT } from "./token-list-state";
+import { offlineTxnSigningGetDefaultValue } from "./settings";
+import { offlineDeadline, prepareOfflineDefaults, signOfflineBundle, OfflineBundleStep } from "./offline-flow";
+import {
+    applyTokenPickerSelection,
+    openTokenPicker,
+    setTokenPickerTriggerText,
+} from "./token-picker";
 
 // Hardcoded gas-limit fallbacks, used when estimateGas fails (e.g. the
 // estimate reverts because a required approval has not run yet).
@@ -95,10 +108,12 @@ function activeWqAddress(): string {
 
 // Picker value ("Q" or a contract address) decimals / display symbol.
 function tokenValueDecimals(value: string): number {
-    return value === "Q" ? 18 : getSwapTokenDecimals(value);
+    if (value === "Q") return 18;
+    return advancedTokenDecimalsCache.get(String(value).toLowerCase()) ?? getSwapTokenDecimals(value);
 }
 
 const advancedTokenSymbolCache = new Map<string, string>([["q", "Q"]]);
+const advancedTokenDecimalsCache = new Map<string, number>();
 
 function tokenValueSymbol(value: string): string {
     const cached = advancedTokenSymbolCache.get(String(value).toLowerCase());
@@ -119,6 +134,7 @@ function pairTokenSymbol(address: string, symbol: string | null): string {
 function populateTokenPicker(selectId: string): void {
     const ddl = selectById(selectId);
     const previous = ddl.value;
+    const previousText = ddl.options[ddl.selectedIndex]?.text || previous;
     removeOptions(ddl);
     const placeholder = document.createElement("option");
     placeholder.value = "";
@@ -135,8 +151,39 @@ function populateTokenPicker(selectId: string): void {
             item.value === "Q" ? "Q" : getSwapRouteDisplaySymbol(item.value, null),
         );
     }
-    if (previous) ddl.value = previous;
+    if (previous) {
+        const existing = Array.from(ddl.options).find((option) => option.value.toLowerCase() === previous.toLowerCase());
+        if (existing) {
+            ddl.value = existing.value;
+        } else {
+            const option = document.createElement("option");
+            option.value = previous;
+            option.text = previousText;
+            ddl.add(option);
+            ddl.value = previous;
+        }
+    }
+    setTokenPickerTriggerText(selectId, "btn" + selectId + "Picker");
 }
+
+function syncAdvancedTokenListState(): void {
+    const display = tokenStore.isTokenListLoading ? "block" : "none";
+    const poolsLoading = document.getElementById("divPoolsTokenListLoading");
+    const liquidityLoading = document.getElementById("divLiquidityTokenListLoading");
+    if (poolsLoading) poolsLoading.style.display = display;
+    if (liquidityLoading) liquidityLoading.style.display = display;
+    if (tokenStore.isTokenListLoading) return;
+    if (document.getElementById("ddlPoolsTokenA")) {
+        populateTokenPicker("ddlPoolsTokenA");
+        populateTokenPicker("ddlPoolsTokenB");
+    }
+    if (document.getElementById("ddlLiquidityTokenA")) {
+        populateTokenPicker("ddlLiquidityTokenA");
+        populateTokenPicker("ddlLiquidityTokenB");
+    }
+}
+
+window.addEventListener(TOKEN_LIST_STATE_EVENT, syncAdvancedTokenListState);
 
 // Select a picker option by value, matching addresses case-insensitively
 // (chain addresses are checksummed; wallet-list values may differ in case).
@@ -146,6 +193,7 @@ function setPickerValue(selectId: string, value: string): void {
     for (let i = 0; i < ddl.options.length; i++) {
         if (ddl.options[i].value.toLowerCase() === lower) {
             ddl.selectedIndex = i;
+            setTokenPickerTriggerText(selectId, "btn" + selectId + "Picker");
             return;
         }
     }
@@ -233,9 +281,9 @@ function getCreateTokenTxContext(): TxContext | null {
 }
 
 function getCreatePairTxContext(): TxContext | null {
-    const a = selectById("ddlPoolsTokenA").value;
-    const b = selectById("ddlPoolsTokenB").value;
-    if (!a || !b || a === b) return null;
+    const a = selectedAdvancedToken("ddlPoolsTokenA", "PoolsA");
+    const b = selectedAdvancedToken("ddlPoolsTokenB", "PoolsB");
+    if (!a || !b || a.toLowerCase() === b.toLowerCase()) return null;
     return {
         txKind: "createPair",
         defaultGasLimit: CREATE_PAIR_DEFAULT_GAS,
@@ -245,11 +293,11 @@ function getCreatePairTxContext(): TxContext | null {
 }
 
 function scheduleCreateTokenGas(): void {
-    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState);
+    scheduleGasEstimation(getCreateTokenTxContext, "divCreateTokenGasIcon", "spanCreateTokenGasFee", createTokenGasState, null, "btnCreateToken");
 }
 
 function scheduleCreatePairGas(): void {
-    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState);
+    scheduleGasEstimation(getCreatePairTxContext, "divCreatePairGasIcon", "spanCreatePairGasFee", createPairGasState, null, "btnPoolsCreatePair");
 }
 
 export function onCreateTokenInput(): void {
@@ -266,14 +314,84 @@ export function onRemoveSlippageInput(): void {
 }
 
 export function onCreateTokenGasIconClick(): boolean {
-    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext);
+    return onGasIconClick("spanCreateTokenGasFee", createTokenGasState, getCreateTokenTxContext, "btnCreateToken");
 }
 
 export function onCreatePairGasIconClick(): boolean {
-    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext);
+    return onGasIconClick("spanCreatePairGasFee", createPairGasState, getCreatePairTxContext, "btnPoolsCreatePair");
 }
 
 // ---------------- Balance / contract rows under the token pickers ----------------
+
+function selectedAdvancedToken(selectId: string, _suffix: string): string {
+    return selectById(selectId).value;
+}
+
+function offlineTokenAddress(value: string): string {
+    return value === "Q" ? activeWqAddress() : value;
+}
+
+function liquidityReviewQuantities(
+    tokenA: string,
+    amountA: string,
+    symbolA: string,
+    tokenB: string,
+    amountB: string,
+    symbolB: string,
+): { quantityValue: string; tokenQuantityValue: string | null } {
+    const tokenQuantities: string[] = [];
+    if (tokenA !== "Q") tokenQuantities.push(amountA + " " + symbolA);
+    if (tokenB !== "Q") tokenQuantities.push(amountB + " " + symbolB);
+    return {
+        quantityValue: tokenA === "Q" ? amountA : (tokenB === "Q" ? amountB : "0"),
+        tokenQuantityValue: tokenQuantities.length > 0 ? tokenQuantities.join(" + ") : null,
+    };
+}
+
+async function showOfflineAdvancedReview(
+    asset: string,
+    contractAddress: string | null,
+    quantityValue: string,
+    steps: OfflineBundleStep[],
+    tokenQuantityValue: string | null = null,
+): Promise<void> {
+    const prepared = await prepareOfflineDefaults();
+    showTransactionReviewDialog({
+        asset,
+        contractAddress,
+        toAddress: contractAddress,
+        fromAddress: walletStore.currentWalletAddress,
+        quantityValue,
+        tokenQuantityValue,
+        gasLimit: steps.map((step) => step.gasLimit).join(" + "),
+        gasFee: "",
+        nonce: prepared.nonce,
+        requireNonce: true,
+        requirePassword: true,
+        networkText: txReviewNetworkText(),
+        submitLabelKey: "sign-offline",
+        onSubmit: (submission) => signOfflineBundle(steps, submission),
+    });
+}
+
+export function openAdvancedTokenPicker(selectId: string): void {
+    const isPools = selectId.startsWith("ddlPools");
+    const oppositeId = selectId.endsWith("A")
+        ? selectId.slice(0, -1) + "B"
+        : selectId.slice(0, -1) + "A";
+    openTokenPicker({
+        allowNativeQ: false,
+        allowUnrecognized: true,
+        allowOfflineFallback: settingsStore.offlineSignEnabled === true,
+        excludeValue: selectById(oppositeId).value,
+        onSelect: (item) => {
+            applyTokenPickerSelection(selectId, "btn" + selectId + "Picker", item);
+            advancedTokenSymbolCache.set(item.value.toLowerCase(), item.symbol);
+            advancedTokenDecimalsCache.set(item.value.toLowerCase(), item.decimals);
+            void (isPools ? onPoolsTokenChange() : onLiquidityTokenChange());
+        },
+    });
+}
 
 // Update the "Balance: N" + full-contract-address rows under a token picker
 // (suffix is PoolsA / PoolsB / LiquidityA / LiquidityB).
@@ -301,26 +419,48 @@ async function updatePickerInfoRows(suffix: string, value: string): Promise<void
         };
         contractRow.style.display = "flex";
     }
-    const balance = await getSwapBalanceForSymbol(value);
+    let balance: string | null = null;
+    if (networkStore.currentBlockchainNetwork) {
+        balance = getCachedManualToken(
+            parseInt(String(networkStore.currentBlockchainNetwork.networkId), 10),
+            value,
+        )?.balance || null;
+    }
+    if (balance == null) balance = await getSwapBalanceForSymbol(value);
     byId("spanAdvBalance" + suffix).textContent = balance;
     balanceRow.style.display = "block";
 }
 
-function approveStep(label: string, tokenAddress: string, privateKey: string, publicKey: string, advancedSigningEnabled: boolean): TxStepDefinition {
+function approveStep(
+    label: string,
+    tokenAddress: string,
+    quantityValue: string,
+    showAsTokenQuantity = false,
+): ReviewedTxStepDefinition {
     return {
         label,
+        review: {
+            asset: label,
+            assetLabelKey: "what-is-being-sent",
+            contractAddress: tokenAddress,
+            toAddress: tokenAddress,
+            quantityLabelKey: "send-quantity",
+            quantityValue: showAsTokenQuantity ? "0" : quantityValue,
+            tokenQuantityLabelKey: showAsTokenQuantity ? "approval-token-quantity" : undefined,
+            tokenQuantityValue: showAsTokenQuantity ? quantityValue : null,
+        },
         prepare: async () => estimateGasForContext({
             txKind: "approveToken",
             defaultGasLimit: APPROVE_DEFAULT_GAS,
             tokenAddress,
         }),
-        run: async (gasLimit) => requireTxHash(await submitLiquidityApprove({
+        run: async (gasLimit, credentials) => requireTxHash(await submitLiquidityApprove({
             ...chainPayload(),
             tokenAddress,
-            privateKey,
-            publicKey,
-            gasLimit: gasLimit || APPROVE_DEFAULT_GAS,
-            advancedSigningEnabled,
+            privateKey: credentials.privateKey,
+            publicKey: credentials.publicKey,
+            gasLimit,
+            advancedSigningEnabled: credentials.advancedSigningEnabled,
         })),
     };
 }
@@ -375,6 +515,22 @@ export function showAdvancedScreen(): boolean {
     return false;
 }
 
+async function syncAdvancedOfflineUi(): Promise<void> {
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    const display = settingsStore.offlineSignEnabled ? "block" : "none";
+    for (const id of ["divCreateTokenOfflineNotice", "divCreatePairOfflineNotice", "divLiquidityOfflineAddFields", "linkLiquidityOfflineRemove"]) {
+        const element = document.getElementById(id);
+        if (element) element.style.display = display;
+    }
+    const deadline = document.getElementById("txtLiquidityOfflineDeadline") as HTMLInputElement | null;
+    if (settingsStore.offlineSignEnabled) {
+        const prepared = await prepareOfflineDefaults();
+        if (deadline && !deadline.value) deadline.value = prepared.deadline;
+        const removeDeadline = document.getElementById("txtLiquidityOfflineRemoveDeadline") as HTMLInputElement | null;
+        if (removeDeadline && !removeDeadline.value) removeDeadline.value = prepared.deadline;
+    }
+}
+
 export function showTokenCreateScreen(): boolean {
     showAdvancedChild("tokenCreateScreen");
     inputById("txtCreateTokenName").value = "";
@@ -382,8 +538,9 @@ export function showTokenCreateScreen(): boolean {
     selectById("ddlCreateTokenDecimals").value = "18";
     inputById("txtCreateTokenSupply").value = "";
     setInlineError("divCreateTokenError", null);
-    resetCurrentGasConfig(createTokenGasState);
+    resetCurrentGasConfig(createTokenGasState, "btnCreateToken");
     setGasFeeLabel("spanCreateTokenGasFee", "");
+    void syncAdvancedOfflineUi();
     return false;
 }
 
@@ -402,20 +559,25 @@ export function showPoolsCreatePanel(): boolean {
     // The refresh icon / spinner in the screen header only applies to the pool list.
     byId("divPoolsRefresh").style.display = "none";
     byId("divPoolsRefreshLoading").style.display = "none";
+    syncAdvancedTokenListState();
     populateTokenPicker("ddlPoolsTokenA");
     populateTokenPicker("ddlPoolsTokenB");
     selectById("ddlPoolsTokenA").value = "";
     selectById("ddlPoolsTokenB").value = "";
+    setTokenPickerTriggerText("ddlPoolsTokenA", "btnddlPoolsTokenAPicker");
+    setTokenPickerTriggerText("ddlPoolsTokenB", "btnddlPoolsTokenBPicker");
     setInlineError("divPoolsPairWarn", null);
     void updatePickerInfoRows("PoolsA", "");
     void updatePickerInfoRows("PoolsB", "");
-    resetCurrentGasConfig(createPairGasState);
+    resetCurrentGasConfig(createPairGasState, "btnPoolsCreatePair");
     setGasFeeLabel("spanCreatePairGasFee", "");
+    void syncAdvancedOfflineUi();
     return false;
 }
 
 export function showLiquidityScreen(): boolean {
     showAdvancedChild("liquidityScreen");
+    void syncAdvancedOfflineUi();
     void showLiquidityPositionsPanel();
     return false;
 }
@@ -535,12 +697,12 @@ let poolsPairCheckToken = 0;
 
 export async function onPoolsTokenChange(): Promise<void> {
     setInlineError("divPoolsPairWarn", null);
-    const a = selectById("ddlPoolsTokenA").value;
-    const b = selectById("ddlPoolsTokenB").value;
+    const a = selectedAdvancedToken("ddlPoolsTokenA", "PoolsA");
+    const b = selectedAdvancedToken("ddlPoolsTokenB", "PoolsB");
     void updatePickerInfoRows("PoolsA", a);
     void updatePickerInfoRows("PoolsB", b);
     scheduleCreatePairGas();
-    if (!a || !b || a === b || !networkStore.currentBlockchainNetwork) return;
+    if (!a || !b || a.toLowerCase() === b.toLowerCase() || !networkStore.currentBlockchainNetwork) return;
     const myToken = ++poolsPairCheckToken;
     const res = await getLiquidityPairInfo({ ...chainPayload(), tokenAValue: a, tokenBValue: b });
     if (myToken !== poolsPairCheckToken) return;
@@ -551,17 +713,33 @@ export async function onPoolsTokenChange(): Promise<void> {
 
 export async function onCreatePairClick(): Promise<void> {
     if (!networkStore.currentBlockchainNetwork) return;
-    const a = selectById("ddlPoolsTokenA").value;
-    const b = selectById("ddlPoolsTokenB").value;
+    const a = selectedAdvancedToken("ddlPoolsTokenA", "PoolsA");
+    const b = selectedAdvancedToken("ddlPoolsTokenB", "PoolsB");
     if (!a || !b) {
         setInlineError("divPoolsPairWarn", t("select-both-tokens", "Select both tokens."));
         return;
     }
-    if (a === b) {
+    if (a.toLowerCase() === b.toLowerCase()) {
         setInlineError("divPoolsPairWarn", t("identical-tokens", "Select two different tokens."));
         return;
     }
     setInlineError("divPoolsPairWarn", null);
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled) {
+        const factoryAddress = currentSwapRelease ? currentSwapRelease.factory : BUILTIN_SWAP_RELEASES[0].factory;
+        showOfflineAdvancedReview(
+            t("create-pair", "Create Pair") + ": " + tokenValueSymbol(a) + " / " + tokenValueSymbol(b),
+            factoryAddress,
+            "0",
+            [{
+                kind: "createPair",
+                label: t("step-create-pair", "Create pair"),
+                gasLimit: Number(resolveGasForTx(CREATE_PAIR_DEFAULT_GAS, createPairGasState).gasLimit),
+                data: { tokenAAddress: offlineTokenAddress(a), tokenBAddress: offlineTokenAddress(b) },
+            }],
+        );
+        return;
+    }
 
     showLoadingAndExecuteAsync(langJson.langValues.pleaseWait || "Please wait...", async function () {
         try {
@@ -571,8 +749,6 @@ export async function onCreatePairClick(): Promise<void> {
                 setInlineError("divPoolsPairWarn", t("pair-exists-warn", "This pair already exists."));
                 return;
             }
-            const resolvedGas = resolveGasForTx(CREATE_PAIR_DEFAULT_GAS, createPairGasState);
-            const gasLimit = parseInt(resolvedGas.gasLimit, 10);
             hideWaitingBox();
             const symA = tokenValueSymbol(a);
             const symB = tokenValueSymbol(b);
@@ -587,20 +763,24 @@ export async function onCreatePairClick(): Promise<void> {
                     toAddress: factoryAddress,
                     quantityLabelKey: "send-quantity",
                     quantityValue: "0",
-                    gasLimit: resolvedGas.gasLimit,
-                    gasFee: resolvedGas.gasFee,
                 },
                 stepsTitle: t("create-pair", "Create Pair"),
-                buildSteps: (privateKey, publicKey, advancedSigningEnabled) => [{
+                buildSteps: () => [{
                     label: stepLabel,
-                    run: async () => requireTxHash(await submitPoolsCreatePair({
+                    prepare: async () => estimateGasForContext({
+                        txKind: "createPair",
+                        defaultGasLimit: CREATE_PAIR_DEFAULT_GAS,
+                        tokenAValue: a,
+                        tokenBValue: b,
+                    }),
+                    run: async (gasLimit, credentials) => requireTxHash(await submitPoolsCreatePair({
                         ...chainPayload(),
                         tokenAValue: a,
                         tokenBValue: b,
-                        privateKey,
-                        publicKey,
+                        privateKey: credentials.privateKey,
+                        publicKey: credentials.publicKey,
                         gasLimit,
-                        advancedSigningEnabled,
+                        advancedSigningEnabled: credentials.advancedSigningEnabled,
                     })),
                 }],
                 onClose: () => {
@@ -653,9 +833,22 @@ export async function onCreateTokenClick(): Promise<void> {
         return;
     }
     setInlineError("divCreateTokenError", null);
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled) {
+        showOfflineAdvancedReview(
+            name + " (" + symbol + ")",
+            null,
+            supply + " " + symbol,
+            [{
+                kind: "deployToken",
+                label: t("step-deploy-token", "Deploy token") + " " + symbol,
+                gasLimit: Number(resolveGasForTx(DEPLOY_TOKEN_DEFAULT_GAS, createTokenGasState).gasLimit),
+                data: { name, symbol, decimals, totalSupply: supply },
+            }],
+        );
+        return;
+    }
 
-    const resolvedGas = resolveGasForTx(DEPLOY_TOKEN_DEFAULT_GAS, createTokenGasState);
-    const gasLimit = parseInt(resolvedGas.gasLimit, 10);
     let deployedAddress: string | null = null;
     showReviewThenSteps({
         review: {
@@ -665,24 +858,30 @@ export async function onCreateTokenClick(): Promise<void> {
             toAddress: null,
             quantityLabelKey: "token-total-supply",
             quantityValue: supply + " " + symbol,
-            gasLimit: resolvedGas.gasLimit,
-            gasFee: resolvedGas.gasFee,
         },
         stepsTitle: t("create-token-status", "Create Token Status"),
         progressText: t("create-token-progress", "Creating token."),
-        buildSteps: (privateKey, publicKey, advancedSigningEnabled) => [{
+        buildSteps: () => [{
             label: t("step-deploy-token", "Deploy token") + " " + symbol,
-            run: async () => {
+            prepare: async () => estimateGasForContext({
+                txKind: "deployToken",
+                defaultGasLimit: DEPLOY_TOKEN_DEFAULT_GAS,
+                name,
+                symbol,
+                decimals,
+                totalSupply: supply,
+            }),
+            run: async (gasLimit, credentials) => {
                 const result = await submitTokenCreate({
                     ...chainPayload(),
                     name,
                     symbol,
                     decimals,
                     totalSupply: supply,
-                    privateKey,
-                    publicKey,
+                    privateKey: credentials.privateKey,
+                    publicKey: credentials.publicKey,
                     gasLimit,
-                    advancedSigningEnabled,
+                    advancedSigningEnabled: credentials.advancedSigningEnabled,
                 });
                 const txHash = requireTxHash(result);
                 deployedAddress = result.contractAddress ? String(result.contractAddress) : null;
@@ -867,6 +1066,8 @@ let liquidityAutofillInProgress = false;
 
 export async function showLiquidityAddPanel(position: LiquidityPositionSnapshot | null): Promise<void> {
     showLiquidityPanel("divLiquidityAddPanel");
+    await syncAdvancedOfflineUi();
+    syncAdvancedTokenListState();
     populateTokenPicker("ddlLiquidityTokenA");
     populateTokenPicker("ddlLiquidityTokenB");
     inputById("txtLiquidityAmountA").value = "";
@@ -886,11 +1087,11 @@ export async function onLiquidityTokenChange(): Promise<void> {
     addPairInfo = null;
     byId("divLiquidityFirstProviderWarn").style.display = "none";
     setInlineError("divLiquidityAddError", null);
-    const a = selectById("ddlLiquidityTokenA").value;
-    const b = selectById("ddlLiquidityTokenB").value;
+    const a = selectedAdvancedToken("ddlLiquidityTokenA", "LiquidityA");
+    const b = selectedAdvancedToken("ddlLiquidityTokenB", "LiquidityB");
     void updatePickerInfoRows("LiquidityA", a);
     void updatePickerInfoRows("LiquidityB", b);
-    if (!a || !b || a === b || !networkStore.currentBlockchainNetwork) return;
+    if (!a || !b || a.toLowerCase() === b.toLowerCase() || !networkStore.currentBlockchainNetwork) return;
     const myToken = ++addPairInfoToken;
     const res = await getLiquidityPairInfo({
         ...chainPayload(),
@@ -922,8 +1123,8 @@ export function onLiquidityAmountInput(side: "A" | "B"): void {
     sanitizeNumericInput(inputById(side === "A" ? "txtLiquidityAmountA" : "txtLiquidityAmountB"));
     const reserves = orientedAddReserves();
     if (reserves == null) return;
-    const a = selectById("ddlLiquidityTokenA").value;
-    const b = selectById("ddlLiquidityTokenB").value;
+    const a = selectedAdvancedToken("ddlLiquidityTokenA", "LiquidityA");
+    const b = selectedAdvancedToken("ddlLiquidityTokenB", "LiquidityB");
     if (!a || !b) return;
     const fromInput = inputById(side === "A" ? "txtLiquidityAmountA" : "txtLiquidityAmountB");
     const toInput = inputById(side === "A" ? "txtLiquidityAmountB" : "txtLiquidityAmountA");
@@ -945,13 +1146,13 @@ export function onLiquidityAmountInput(side: "A" | "B"): void {
 
 export async function onAddLiquidityClick(): Promise<void> {
     if (!networkStore.currentBlockchainNetwork) return;
-    const a = selectById("ddlLiquidityTokenA").value;
-    const b = selectById("ddlLiquidityTokenB").value;
+    const a = selectedAdvancedToken("ddlLiquidityTokenA", "LiquidityA");
+    const b = selectedAdvancedToken("ddlLiquidityTokenB", "LiquidityB");
     if (!a || !b) {
         setInlineError("divLiquidityAddError", t("select-both-tokens", "Select both tokens."));
         return;
     }
-    if (a === b) {
+    if (a.toLowerCase() === b.toLowerCase()) {
         setInlineError("divLiquidityAddError", t("identical-tokens", "Select two different tokens."));
         return;
     }
@@ -978,6 +1179,66 @@ export async function onAddLiquidityClick(): Promise<void> {
 
     const symA = tokenValueSymbol(a);
     const symB = tokenValueSymbol(b);
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled) {
+        const deadline = inputById("txtLiquidityOfflineDeadline").value || offlineDeadline();
+        let approvalGas = Number(inputById("txtLiquidityOfflineApprovalGas").value) || APPROVE_DEFAULT_GAS;
+        let addGas = Number(inputById("txtLiquidityOfflineAddGas").value) || ADD_LIQUIDITY_DEFAULT_GAS;
+        if (approvalGas === APPROVE_DEFAULT_GAS) {
+            const token = a !== "Q" ? a : b;
+            const amount = a !== "Q" ? amountA : amountB;
+            const decimals = a !== "Q" ? decimalsA : decimalsB;
+            if (token !== "Q") {
+                approvalGas = await estimateGasLimitOfflineSafe({
+                    txKind: "approveToken", tokenAddress: token, amount,
+                    fromDecimals: decimals, defaultGasLimit: APPROVE_DEFAULT_GAS,
+                });
+            }
+        }
+        if (addGas === ADD_LIQUIDITY_DEFAULT_GAS) {
+            addGas = await estimateGasLimitOfflineSafe({
+                txKind: "addLiquidity", tokenAValue: a, tokenBValue: b,
+                amountA, amountB, decimalsA, decimalsB, slippagePercent,
+                ownerAddress: walletStore.currentWalletAddress,
+                defaultGasLimit: ADD_LIQUIDITY_DEFAULT_GAS,
+            });
+        }
+        const steps: OfflineBundleStep[] = [];
+        if (a !== "Q") steps.push({
+            kind: "approve", label: t("step-approve", "Approve") + " " + symA,
+            gasLimit: approvalGas, data: { tokenAddress: a },
+        });
+        if (b !== "Q") steps.push({
+            kind: "approve", label: t("step-approve", "Approve") + " " + symB,
+            gasLimit: approvalGas, data: { tokenAddress: b },
+        });
+        steps.push({
+            kind: "addLiquidity",
+            label: t("step-add-liquidity", "Add liquidity") + " " + symA + " / " + symB,
+            gasLimit: addGas,
+            data: {
+                tokenAValue: a,
+                tokenBValue: b,
+                amountA,
+                amountB,
+                decimalsA,
+                decimalsB,
+                slippagePercent,
+                ownerAddress: walletStore.currentWalletAddress,
+                deadline,
+            },
+        });
+        const router = currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router;
+        const reviewQuantities = liquidityReviewQuantities(a, amountA, symA, b, amountB, symB);
+        showOfflineAdvancedReview(
+            symA + " / " + symB,
+            router,
+            reviewQuantities.quantityValue,
+            steps,
+            reviewQuantities.tokenQuantityValue,
+        );
+        return;
+    }
 
     showLoadingAndExecuteAsync(langJson.langValues.pleaseWait || "Please wait...", async function () {
         try {
@@ -986,12 +1247,20 @@ export async function onAddLiquidityClick(): Promise<void> {
             const info = await getLiquidityPairInfo({ ...chainPayload(), tokenAValue: a, tokenBValue: b });
             const pairExists = !!(info && info.success && info.exists && info.pair != null && BigInt(info.pair.reserve0) > 0n);
 
-            const approvals: { tokenAddress: string; label: string }[] = [];
+            const approvals: { tokenAddress: string; label: string; quantityValue: string }[] = [];
             if (a !== "Q" && await needsRouterApproval(a, amountAWei)) {
-                approvals.push({ tokenAddress: a, label: t("step-approve", "Approve") + " " + symA });
+                approvals.push({
+                    tokenAddress: a,
+                    label: t("step-approve", "Approve") + " " + symA,
+                    quantityValue: amountA + " " + symA,
+                });
             }
             if (b !== "Q" && await needsRouterApproval(b, amountBWei)) {
-                approvals.push({ tokenAddress: b, label: t("step-approve", "Approve") + " " + symB });
+                approvals.push({
+                    tokenAddress: b,
+                    label: t("step-approve", "Approve") + " " + symB,
+                    quantityValue: amountB + " " + symB,
+                });
             }
 
             const defaultGas = pairExists ? ADD_LIQUIDITY_DEFAULT_GAS : CREATE_PAIR_DEFAULT_GAS;
@@ -1000,6 +1269,7 @@ export async function onAddLiquidityClick(): Promise<void> {
             const routerAddress = currentSwapRelease
                 ? currentSwapRelease.router
                 : BUILTIN_SWAP_RELEASES[0].router;
+            const reviewQuantities = liquidityReviewQuantities(a, amountA, symA, b, amountB, symB);
             showReviewThenSteps({
                 review: {
                     asset: symA + " / " + symB,
@@ -1007,13 +1277,13 @@ export async function onAddLiquidityClick(): Promise<void> {
                     contractAddress: routerAddress,
                     toAddress: routerAddress,
                     quantityLabelKey: "send-quantity",
-                    quantityValue: amountA + " " + symA + " + " + amountB + " " + symB,
+                    quantityValue: reviewQuantities.quantityValue,
+                    tokenQuantityValue: reviewQuantities.tokenQuantityValue,
                 },
                 stepsTitle: t("add-liquidity", "Add Liquidity"),
-                interactive: true,
-                buildSteps: (privateKey, publicKey, advancedSigningEnabled) => {
-                    const steps: TxStepDefinition[] = approvals.map((ap) =>
-                        approveStep(ap.label, ap.tokenAddress, privateKey, publicKey, advancedSigningEnabled));
+                buildSteps: () => {
+                    const steps: ReviewedTxStepDefinition[] = approvals.map((ap) =>
+                        approveStep(ap.label, ap.tokenAddress, ap.quantityValue, true));
                     steps.push({
                         label: t("step-add-liquidity", "Add liquidity") + " " + symA + " / " + symB,
                         // This estimate runs only after all approval receipts
@@ -1030,7 +1300,7 @@ export async function onAddLiquidityClick(): Promise<void> {
                             slippagePercent,
                             ownerAddress: walletStore.currentWalletAddress,
                         }),
-                        run: async (gasLimit) => requireTxHash(await submitLiquidityAdd({
+                        run: async (gasLimit, credentials) => requireTxHash(await submitLiquidityAdd({
                             ...chainPayload(),
                             tokenAValue: a,
                             tokenBValue: b,
@@ -1040,10 +1310,10 @@ export async function onAddLiquidityClick(): Promise<void> {
                             decimalsB,
                             slippagePercent,
                             ownerAddress: walletStore.currentWalletAddress,
-                            privateKey,
-                            publicKey,
-                            gasLimit: gasLimit || defaultGas,
-                            advancedSigningEnabled,
+                            privateKey: credentials.privateKey,
+                            publicKey: credentials.publicKey,
+                            gasLimit,
+                            advancedSigningEnabled: credentials.advancedSigningEnabled,
                         })),
                     });
                     return steps;
@@ -1074,8 +1344,68 @@ export function showLiquidityRemovePanel(position: LiquidityPositionSnapshot): v
     byId("divLiquidityRemovePair").textContent = sym0 + " / " + sym1;
     inputById("rngLiquidityRemovePercent").value = "50";
     inputById("txtLiquidityRemoveSlippage").value = "0.5";
+    byId("divLiquidityOfflineRemoveFields").style.display = settingsStore.offlineSignEnabled ? "block" : "none";
+    inputById("txtLiquidityOfflinePairAddress").value = position.pairAddress;
+    inputById("txtLiquidityOfflineTokenA").value = position.token0;
+    inputById("txtLiquidityOfflineTokenB").value = position.token1;
+    inputById("txtLiquidityOfflineDecimalsA").value = String(position.decimals0);
+    inputById("txtLiquidityOfflineDecimalsB").value = String(position.decimals1);
+    inputById("txtLiquidityOfflineRemoveDeadline").value = offlineDeadline();
     setInlineError("divLiquidityRemoveError", null);
     onRemovePercentChange();
+}
+
+export function showLiquidityOfflineRemovePanel(): void {
+    removePosition = null;
+    showLiquidityPanel("divLiquidityRemovePanel");
+    byId("divLiquidityRemovePair").textContent = t("remove-liquidity", "Remove Liquidity") + " (offline)";
+    byId("divLiquidityOfflineRemoveFields").style.display = "block";
+    byId("divLiquidityRemoveEstimates").textContent = "Enter the LP pair, token contracts, LP amount, and minimum outputs.";
+    inputById("txtLiquidityOfflinePairAddress").value = "";
+    inputById("txtLiquidityOfflineTokenA").value = "";
+    inputById("txtLiquidityOfflineTokenB").value = "";
+    inputById("txtLiquidityOfflineLpAmount").value = "";
+    inputById("txtLiquidityOfflineMinA").value = "";
+    inputById("txtLiquidityOfflineMinB").value = "";
+    inputById("txtLiquidityOfflineRemoveDeadline").value = offlineDeadline();
+    setInlineError("divLiquidityRemoveError", null);
+}
+
+async function signManualRemoveLiquidityOffline(): Promise<void> {
+    const pairAddress = inputById("txtLiquidityOfflinePairAddress").value.trim();
+    const tokenA = inputById("txtLiquidityOfflineTokenA").value.trim();
+    const tokenB = inputById("txtLiquidityOfflineTokenB").value.trim();
+    const decimalsA = Number(inputById("txtLiquidityOfflineDecimalsA").value);
+    const decimalsB = Number(inputById("txtLiquidityOfflineDecimalsB").value);
+    try {
+        const liquidityWei = parseBaseUnits(inputById("txtLiquidityOfflineLpAmount").value, LP_TOKEN_DECIMALS);
+        const amountAMinWei = parseBaseUnits(inputById("txtLiquidityOfflineMinA").value, decimalsA);
+        const amountBMinWei = parseBaseUnits(inputById("txtLiquidityOfflineMinB").value, decimalsB);
+        if (!pairAddress || !tokenA || !tokenB || liquidityWei <= 0n) throw new Error("Invalid offline remove-liquidity fields.");
+        const steps: OfflineBundleStep[] = [{
+            kind: "approve",
+            label: t("step-approve", "Approve") + " LP",
+            gasLimit: Number(inputById("txtLiquidityOfflineRemoveApprovalGas").value) || APPROVE_DEFAULT_GAS,
+            data: { tokenAddress: pairAddress },
+        }, {
+            kind: "removeLiquidity",
+            label: t("step-remove-liquidity", "Remove liquidity"),
+            gasLimit: Number(inputById("txtLiquidityOfflineRemoveGas").value) || REMOVE_LIQUIDITY_DEFAULT_GAS,
+            data: {
+                tokenAAddress: tokenA,
+                tokenBAddress: tokenB,
+                liquidityWei: liquidityWei.toString(),
+                amountAMinWei: amountAMinWei.toString(),
+                amountBMinWei: amountBMinWei.toString(),
+                ownerAddress: walletStore.currentWalletAddress,
+                deadline: inputById("txtLiquidityOfflineRemoveDeadline").value || offlineDeadline(),
+            },
+        }];
+        const router = currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router;
+        showOfflineAdvancedReview("LP " + getShortAddress(pairAddress), router, inputById("txtLiquidityOfflineLpAmount").value + " LP", steps);
+    } catch (err: any) {
+        setInlineError("divLiquidityRemoveError", err && err.message ? String(err.message) : String(err));
+    }
 }
 
 function currentRemovePercent(): number {
@@ -1116,7 +1446,12 @@ export function setRemovePercentPreset(percent: number): void {
 }
 
 export async function onRemoveLiquidityClick(): Promise<void> {
-    if (removePosition == null || !networkStore.currentBlockchainNetwork) return;
+    if (!networkStore.currentBlockchainNetwork) return;
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (removePosition == null) {
+        if (settingsStore.offlineSignEnabled) await signManualRemoveLiquidityOffline();
+        return;
+    }
     const position = removePosition;
     const est = computeRemoveEstimates();
     if (est == null || est.burnWei <= 0n) {
@@ -1131,6 +1466,39 @@ export async function onRemoveLiquidityClick(): Promise<void> {
     const amount1Min = minWithSlippage(est.amount1, slippagePercent);
     const sym0 = pairTokenSymbol(position.token0, position.symbol0);
     const sym1 = pairTokenSymbol(position.token1, position.symbol1);
+    settingsStore.offlineSignEnabled = await offlineTxnSigningGetDefaultValue();
+    if (settingsStore.offlineSignEnabled) {
+        const deadlineInput = document.getElementById("txtLiquidityOfflineRemoveDeadline") as HTMLInputElement | null;
+        const pairInput = document.getElementById("txtLiquidityOfflinePairAddress") as HTMLInputElement | null;
+        const pairAddress = (pairInput?.value || position.pairAddress).trim();
+        const steps: OfflineBundleStep[] = [{
+            kind: "approve",
+            label: t("step-approve", "Approve") + " " + sym0 + "/" + sym1 + " LP",
+            gasLimit: Number(inputById("txtLiquidityOfflineRemoveApprovalGas").value) || APPROVE_DEFAULT_GAS,
+            data: { tokenAddress: pairAddress },
+        }, {
+            kind: "removeLiquidity",
+            label: t("step-remove-liquidity", "Remove liquidity") + " " + sym0 + " / " + sym1,
+            gasLimit: Number(inputById("txtLiquidityOfflineRemoveGas").value) || REMOVE_LIQUIDITY_DEFAULT_GAS,
+            data: {
+                tokenAAddress: position.token0,
+                tokenBAddress: position.token1,
+                liquidityWei: est.burnWei.toString(),
+                amountAMinWei: amount0Min.toString(),
+                amountBMinWei: amount1Min.toString(),
+                ownerAddress: walletStore.currentWalletAddress,
+                deadline: deadlineInput?.value || offlineDeadline(),
+            },
+        }];
+        const router = currentSwapRelease ? currentSwapRelease.router : BUILTIN_SWAP_RELEASES[0].router;
+        showOfflineAdvancedReview(
+            sym0 + " / " + sym1,
+            router,
+            formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP",
+            steps,
+        );
+        return;
+    }
 
     showLoadingAndExecuteAsync(langJson.langValues.pleaseWait || "Please wait...", async function () {
         try {
@@ -1151,13 +1519,14 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                     quantityValue: formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP (" + currentRemovePercent() + "%)",
                 },
                 stepsTitle: t("remove-liquidity", "Remove Liquidity"),
-                interactive: true,
-                buildSteps: (privateKey, publicKey, advancedSigningEnabled) => {
-                    const steps: TxStepDefinition[] = [];
+                buildSteps: () => {
+                    const steps: ReviewedTxStepDefinition[] = [];
                     if (needsLpApproval) {
                         steps.push(approveStep(
                             t("step-approve", "Approve") + " " + sym0 + "/" + sym1 + " LP",
-                            position.pairAddress, privateKey, publicKey, advancedSigningEnabled));
+                            position.pairAddress,
+                            formatBaseUnits(est.burnWei, LP_TOKEN_DECIMALS) + " LP",
+                        ));
                     }
                     steps.push({
                         label: t("step-remove-liquidity", "Remove liquidity") + " " + sym0 + " / " + sym1,
@@ -1171,7 +1540,7 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                             amountBMinWei: amount1Min.toString(),
                             ownerAddress: walletStore.currentWalletAddress,
                         }),
-                        run: async (gasLimit) => requireTxHash(await submitLiquidityRemove({
+                        run: async (gasLimit, credentials) => requireTxHash(await submitLiquidityRemove({
                             ...chainPayload(),
                             tokenAAddress: position.token0,
                             tokenBAddress: position.token1,
@@ -1179,10 +1548,10 @@ export async function onRemoveLiquidityClick(): Promise<void> {
                             amountAMinWei: amount0Min.toString(),
                             amountBMinWei: amount1Min.toString(),
                             ownerAddress: walletStore.currentWalletAddress,
-                            privateKey,
-                            publicKey,
-                            gasLimit: gasLimit || REMOVE_LIQUIDITY_DEFAULT_GAS,
-                            advancedSigningEnabled,
+                            privateKey: credentials.privateKey,
+                            publicKey: credentials.publicKey,
+                            gasLimit,
+                            advancedSigningEnabled: credentials.advancedSigningEnabled,
                         })),
                     });
                     return steps;

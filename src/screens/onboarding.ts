@@ -105,7 +105,7 @@ function buildWelcomeScreen(): HTMLElement {
                     el("div", { class: "divider" }),
                     el("div", { id: "infoContainer" }, [
                         el("div", { class: "heading bold medium", id: "divInfoPanelTitle" }, ["Info Title"]),
-                        el("div", { class: "heading bold medium", id: "divInfoPanelDetail" }, ["Info Detail"]),
+                        el("div", { class: "heading medium", id: "divInfoPanelDetail", style: "font-weight:400; white-space:normal; overflow-wrap:anywhere; word-break:break-word; min-width:0;" }, ["Info Detail"]),
                     ]),
                     el("div", { class: "divider" }),
                     el("div", { style: "display: flex; justify-content: flex-end;" }, [
@@ -129,7 +129,7 @@ function buildQuizScreen(): HTMLElement {
                     el("div", { class: "tab-name", id: "divSafetyQuizQuestion" }, ["What coins or tokens can you send to this wallet ?"]),
                     // Hidden choice template cloned per quiz answer by
                     // displayQuizStep(); the clones get real values/labels.
-                    el("label", { class: "tab-label safety_quiz_label", style: "text-align: left;display:none;cursor:pointer;", id: "lblSafetyQuizChoice" }, [
+                    el("label", { class: "tab-label safety_quiz_label", style: "text-align:left; display:none; cursor:pointer; width:100%; max-width:100%; box-sizing:border-box; white-space:normal; overflow-wrap:anywhere; word-break:break-word;", id: "lblSafetyQuizChoice" }, [
                         el("input", { type: "radio", name: "quiz_option", value: "", class: "safety_quiz_option", tabindex: "[TAB_INDEX]" }),
                     ]),
                     el("form", { id: "quizForm", style: "display: flex; flex-direction: column; gap: 10px;" }),
