@@ -22,8 +22,8 @@
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.0",
-    "quantumcoin": "^8.0.2",
-    "quantumswap": "^1.0.2",
+    "quantumcoin": "^8.0.3",
+    "quantumswap": "^1.0.3",
     "seed-words": "^1.1.1"
   },
   "devDependencies": {

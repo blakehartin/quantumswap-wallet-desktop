@@ -97,8 +97,8 @@ describe("swapReleasesInit seeding", () => {
         for (const key of memoryStore.keys()) {
             expect(key.startsWith("SWAP_RELEASE_")).toBe(false);
         }
-        expect(secureStore.has("SWAP_RELEASE_2_0")).toBe(true);
-        expect(secureStore.has("SWAP_RELEASE_2_1")).toBe(true);
+        expect(secureStore.has("SWAP_RELEASE_3_0")).toBe(true);
+        expect(secureStore.has("SWAP_RELEASE_3_1")).toBe(true);
     });
 });
 
@@ -185,7 +185,7 @@ describe("undecryptable entries", () => {
         await swapReleaseAddNew(WALLET_PASSWORD, "First", VALID_WQ, VALID_FACTORY, VALID_ROUTER);
         await swapReleaseAddNew(WALLET_PASSWORD, "Second", VALID_WQ, VALID_FACTORY, VALID_ROUTER);
 
-        secureStore.set("SWAP_RELEASE_2_1", "not valid json");
+        secureStore.set("SWAP_RELEASE_3_1", "not valid json");
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
         try {
             const releases = await swapReleasesLoadAll(WALLET_PASSWORD);
